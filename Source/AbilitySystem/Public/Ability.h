@@ -8,6 +8,8 @@
 
 class ACharacter;
 class UAbilityComponent;
+class UMotionWarpingComponent;
+class UTargetingComponent;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UAbility : public UObject
@@ -134,6 +136,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	bool IsCommitted() const { return bCommitted; }
+	
+	UFUNCTION(BlueprintPure, Category = "Ability|References")
+	UTargetingComponent* GetTargetingComponent() const { return TargetingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|References")
+	UMotionWarpingComponent* GetMotionWarpingComponent() const { return MotionWarpingComponent; }
 
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	UAbilityComponent* GetAbilityComponent() const { return AbilityComponent; }
@@ -282,6 +290,8 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Early Cancellation")
 	FGameplayTagContainer AllowedEarlyCancellationAbilityTags;
+	
+	
 
 private:
 	friend class UAbilityComponent;
@@ -308,4 +318,10 @@ private:
 
 	UPROPERTY(Transient)
 	bool bEarlyCancellationClosed = false;
+	
+	UPROPERTY(Transient)
+	TObjectPtr<UTargetingComponent> TargetingComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMotionWarpingComponent> MotionWarpingComponent;
 };

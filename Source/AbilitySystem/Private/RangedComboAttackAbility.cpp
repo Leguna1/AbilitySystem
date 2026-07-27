@@ -26,6 +26,10 @@ void URangedComboAttackAbility::ActivateAbility_Implementation()
 	CurrentComboIndex = 0;
 	bChangingComboStep = false;
 
+	/*
+	 * UOffensiveAbilityBase configures the target-facing warp before the first
+	 * combo montage is played.
+	 */
 	Super::ActivateAbility_Implementation();
 
 	if (GetAbilityStatus() == EAbilityStatus::Active &&
@@ -132,6 +136,12 @@ UAnimMontage* URangedComboAttackAbility::SelectAbilityMontage_Implementation() c
 
 bool URangedComboAttackAbility::PlayCurrentComboStep()
 {
+	/*
+	 * The target may have moved or changed since the preceding combo step.
+	 * Refresh the named warp target immediately before the next montage.
+	 */
+	ConfigureTargetFacingWarp();
+
 	UAnimMontage* Montage = SelectAbilityMontage();
 
 	return IsValid(Montage) &&

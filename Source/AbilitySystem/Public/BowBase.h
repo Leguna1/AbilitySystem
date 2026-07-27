@@ -2,17 +2,36 @@
 
 #include "CoreMinimal.h"
 #include "ArrowBase.h"
-#include "ArrowData.h"
+#include "BowDataAsset.h"
 #include "GameFramework/Actor.h"
 #include "BowBase.generated.h"
 
 class AArrowBase;
+class UArrowDataAsset;
 class UAudioComponent;
+class UNiagaraComponent;
 class USkeletalMeshComponent;
-class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBowArrowFiredSignature, AArrowBase*, Arrow, float, ShotStrength);
 
+UENUM()
+enum class EBowFeedbackSetType : uint8
+{
+	Start,
+	Ongoing,
+	End
+};
+USTRUCT()
+struct FBowFeedbackRuntime
+{
+	GENERATED_BODY()
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> Sound;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> Effect;
+};
 UCLASS()
 class ABILITYSYSTEM_API ABowBase : public AActor
 {
@@ -21,23 +40,25 @@ class ABILITYSYSTEM_API ABowBase : public AActor
 public:
 	ABowBase();
 
-	/* -------------------- Bow visuals -------------------- */
-
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Bow|Visuals")
+	virtual void Tick(float DeltaTime) override;
+	
+	UFUNCTION(BlueprintCallable, Category = "Bow|Animation")
 	void BeginDrawVisuals();
-	virtual void BeginDrawVisuals_Implementation();
 
-	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Bow|Visuals")
+	UFUNCTION(BlueprintCallable, Category = "Bow|Animation")
 	void EndDrawVisuals();
-	virtual void EndDrawVisuals_Implementation();
 
-	UFUNCTION(BlueprintPure, Category = "Bow|Visuals")
+	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
 	bool AreDrawVisualsActive() const { return bDrawVisualsActive; }
+
+	UFUNCTION(BlueprintCallable, Category = "Bow|Feedback")
+	void HandleFeedbackPoint(EBowFeedbackPoint FeedbackPoint, UBowDataAsset* InBowData);
+
+	UFUNCTION(BlueprintCallable, Category = "Bow|Feedback")
+	void ClearAllFeedback();
 
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	USkeletalMeshComponent* GetBowMesh() const { return BowMesh; }
-
-	/* -------------------- Wielder setup -------------------- */
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Setup")
 	void SetWielderMesh(USkeletalMeshComponent* InWielderMesh);
@@ -45,10 +66,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bow|Setup")
 	USkeletalMeshComponent* GetWielderMesh() const { return WielderMesh; }
 
-	/* -------------------- Prepared arrow -------------------- */
-
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool PrepareArrow(const FArrowStats& ArrowStats);
+	bool PrepareArrow(UArrowDataAsset* ArrowData);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	bool AttachPreparedArrowToWielder(FName SocketName, const FTransform& RelativeOffset);
@@ -57,7 +76,7 @@ public:
 	bool AttachPreparedArrowToBow(FName SocketName, const FTransform& RelativeOffset);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool ReleasePreparedArrow(const FVector& Direction, float Strength);
+	bool ReleasePreparedArrow(const FVector& Direction, float Strength, bool bTargetedShot);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	void DiscardPreparedArrow();
@@ -74,40 +93,52 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowArrowFiredSignature OnArrowFired;
 
-	/* -------------------- Pool -------------------- */
-
-	UFUNCTION(BlueprintCallable, Category = "Bow|Pool")
-	void InitializeArrowPool();
-
 	UFUNCTION(BlueprintPure, Category = "Bow|Pool")
 	int32 GetSpawnedArrowCount() const { return AllSpawnedArrows.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Pool")
 	int32 GetAvailableArrowCount() const { return AvailableArrows.Num(); }
 
+	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
+	float GetDrawAlpha() const { return DrawAlpha; }
+
+	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
+	FVector GetStringTargetLocation() const { return StringTargetLocation; }
+
 protected:
-	virtual void BeginPlay() override;
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
 	TObjectPtr<USkeletalMeshComponent> BowMesh;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Visuals")
-	TObjectPtr<USoundBase> DrawSound;
+	UPROPERTY(Transient, BlueprintReadOnly, Category = "Bow|Feedback")
+	TObjectPtr<UBowDataAsset> ActiveBowData;
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Bow|Visuals")
-	TObjectPtr<UAudioComponent> DrawSoundRef;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bow|Runtime")
+	float DrawAlpha = 0.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Arrow")
-	TSubclassOf<AArrowBase> ArrowClass;
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Bow|Runtime")
+	FVector StringTargetLocation = FVector::ZeroVector;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Pool", meta = (ClampMin = "1"))
-	int32 InitialArrowPoolSize = 6;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.0"))
+	float DrawInterpSpeed = 15.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation", meta = (ClampMin = "0.0"))
+	float ReleaseInterpSpeed = 20.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
+	FName DrawHandSocketName = TEXT("BowString");
 
 private:
-	AArrowBase* CreateArrow();
-	AArrowBase* AcquireAvailableArrow();
+	AArrowBase* CreateArrow(TSubclassOf<AArrowBase> ArrowClass);
+	AArrowBase* AcquireAvailableArrow(TSubclassOf<AArrowBase> ArrowClass);
+
+	void ProcessFeedbackSet(EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet, EBowFeedbackPoint FeedbackPoint);
+	void ActivateFeedbackSet(EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet);
+	void ClearFeedbackSet(EBowFeedbackSetType SetType);
 	void DestroyArrowPool();
+
+	FBowFeedbackRuntime& GetFeedbackRuntime(EBowFeedbackSetType SetType);
 
 	UFUNCTION()
 	void HandleArrowReadyToRecycle(AArrowBase* Arrow);
@@ -126,6 +157,15 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AArrowBase>> AvailableArrows;
+
+	UPROPERTY(Transient)
+	FBowFeedbackRuntime StartFeedbackRuntime;
+
+	UPROPERTY(Transient)
+	FBowFeedbackRuntime OngoingFeedbackRuntime;
+
+	UPROPERTY(Transient)
+	FBowFeedbackRuntime EndFeedbackRuntime;
 
 	bool bDrawVisualsActive = false;
 };

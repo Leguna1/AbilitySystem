@@ -11,6 +11,8 @@
 class ACharacter;
 class UAbility;
 class UInputBufferComponent;
+class UMotionWarpingComponent;
+class UTargetingComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
@@ -28,6 +30,8 @@ public:
 	UAbilityComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	
+	
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
 	bool GrantAbility(TSubclassOf<UAbility> AbilityClass);
@@ -97,6 +101,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	UInputBufferComponent* GetInputBufferComponent() const { return InputBufferComponent; }
+	
+	UFUNCTION(BlueprintPure, Category = "Ability|References")
+	UTargetingComponent* GetTargetingComponent() const { return TargetingComponent; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|References")
+	UMotionWarpingComponent* GetMotionWarpingComponent() const { return MotionWarpingComponent; }
+	
+	
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	FVector2D GetMovementInput() const;
@@ -162,6 +174,12 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputBufferComponent> InputBufferComponent;
+	
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UTargetingComponent> TargetingComponent;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UMotionWarpingComponent> MotionWarpingComponent;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Granted", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<UAbility>> GrantedAbilityClasses;

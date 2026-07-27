@@ -1,35 +1,56 @@
 #include "BowBase.h"
 
+#include "ArrowDataAsset.h"
 #include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
-#include "Sound/SoundBase.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
 ABowBase::ABowBase()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	BowMesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("BowMesh"));
 	SetRootComponent(BowMesh);
 }
 
-void ABowBase::BeginPlay()
+void ABowBase::Tick(const float DeltaTime)
 {
-	Super::BeginPlay();
+	Super::Tick(DeltaTime);
 
-	InitializeArrowPool();
+	const float TargetAlpha = bDrawVisualsActive ? 1.0f : 0.0f;
+	const float InterpSpeed = bDrawVisualsActive ? DrawInterpSpeed : ReleaseInterpSpeed;
+
+	DrawAlpha = FMath::FInterpTo(DrawAlpha, TargetAlpha, DeltaTime, InterpSpeed);
+
+	if (bDrawVisualsActive &&
+		IsValid(WielderMesh) &&
+		!DrawHandSocketName.IsNone() &&
+		WielderMesh->DoesSocketExist(DrawHandSocketName))
+	{
+		StringTargetLocation = WielderMesh->GetSocketLocation(DrawHandSocketName);
+	}
+
+	if (!bDrawVisualsActive && FMath::IsNearlyZero(DrawAlpha, 0.001f))
+	{
+		DrawAlpha = 0.0f;
+		SetActorTickEnabled(false);
+	}
 }
 
 void ABowBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	EndDrawVisuals();
+	ClearAllFeedback();
 	DestroyArrowPool();
 
 	Super::EndPlay(EndPlayReason);
 }
 
-void ABowBase::BeginDrawVisuals_Implementation()
+void ABowBase::BeginDrawVisuals()
 {
 	if (bDrawVisualsActive)
 	{
@@ -37,32 +58,48 @@ void ABowBase::BeginDrawVisuals_Implementation()
 	}
 
 	bDrawVisualsActive = true;
-
-	if (!IsValid(DrawSound))
-	{
-		return;
-	}
-
-	if (IsValid(DrawSoundRef))
-	{
-		DrawSoundRef->Stop();
-		DrawSoundRef = nullptr;
-	}
-
-	DrawSoundRef = UGameplayStatics::SpawnSoundAttached(DrawSound, BowMesh);
+	SetActorTickEnabled(true);
 }
 
-void ABowBase::EndDrawVisuals_Implementation()
+void ABowBase::EndDrawVisuals()
 {
 	bDrawVisualsActive = false;
+}
 
-	if (!IsValid(DrawSoundRef))
+void ABowBase::HandleFeedbackPoint(const EBowFeedbackPoint FeedbackPoint, UBowDataAsset* InBowData)
+{
+	if (IsValid(InBowData))
+	{
+		if (IsValid(ActiveBowData) && ActiveBowData != InBowData)
+		{
+			ClearAllFeedback();
+		}
+
+		ActiveBowData = InBowData;
+	}
+
+	if (!IsValid(ActiveBowData))
 	{
 		return;
 	}
 
-	DrawSoundRef->Stop();
-	DrawSoundRef = nullptr;
+	ProcessFeedbackSet(EBowFeedbackSetType::Start, ActiveBowData->StartFeedback, FeedbackPoint);
+	ProcessFeedbackSet(EBowFeedbackSetType::Ongoing, ActiveBowData->OngoingFeedback, FeedbackPoint);
+	ProcessFeedbackSet(EBowFeedbackSetType::End, ActiveBowData->EndFeedback, FeedbackPoint);
+
+	if (FeedbackPoint == EBowFeedbackPoint::AbilityEnd)
+	{
+		ActiveBowData = nullptr;
+	}
+}
+
+void ABowBase::ClearAllFeedback()
+{
+	ClearFeedbackSet(EBowFeedbackSetType::Start);
+	ClearFeedbackSet(EBowFeedbackSetType::Ongoing);
+	ClearFeedbackSet(EBowFeedbackSetType::End);
+
+	ActiveBowData = nullptr;
 }
 
 void ABowBase::SetWielderMesh(USkeletalMeshComponent* InWielderMesh)
@@ -70,21 +107,29 @@ void ABowBase::SetWielderMesh(USkeletalMeshComponent* InWielderMesh)
 	WielderMesh = InWielderMesh;
 }
 
-bool ABowBase::PrepareArrow(const FArrowStats& ArrowStats)
+bool ABowBase::PrepareArrow(UArrowDataAsset* ArrowData)
 {
-	if (IsValid(PreparedArrow))
+	if (IsValid(PreparedArrow) ||
+		!IsValid(ArrowData) ||
+		!ArrowData->ArrowClass)
 	{
 		return false;
 	}
 
-	PreparedArrow = AcquireAvailableArrow();
+	PreparedArrow = AcquireAvailableArrow(ArrowData->ArrowClass);
 
 	if (!IsValid(PreparedArrow))
 	{
 		return false;
 	}
 
-	PreparedArrow->ActivateFromPool(ArrowStats);
+	if (!PreparedArrow->ActivateFromPool(ArrowData))
+	{
+		AvailableArrows.AddUnique(PreparedArrow);
+		PreparedArrow = nullptr;
+		return false;
+	}
+
 	return true;
 }
 
@@ -98,10 +143,7 @@ bool ABowBase::AttachPreparedArrowToWielder(const FName SocketName, const FTrans
 		return false;
 	}
 
-	if (!PreparedArrow->AttachToComponent(
-		WielderMesh,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		SocketName))
+	if (!PreparedArrow->AttachToComponent(WielderMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName))
 	{
 		return false;
 	}
@@ -120,10 +162,7 @@ bool ABowBase::AttachPreparedArrowToBow(const FName SocketName, const FTransform
 		return false;
 	}
 
-	if (!PreparedArrow->AttachToComponent(
-		BowMesh,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		SocketName))
+	if (!PreparedArrow->AttachToComponent(BowMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName))
 	{
 		return false;
 	}
@@ -132,7 +171,7 @@ bool ABowBase::AttachPreparedArrowToBow(const FName SocketName, const FTransform
 	return true;
 }
 
-bool ABowBase::ReleasePreparedArrow(const FVector& Direction, const float Strength)
+bool ABowBase::ReleasePreparedArrow(const FVector& Direction, const float Strength, const bool bTargetedShot)
 {
 	if (!IsValid(PreparedArrow))
 	{
@@ -151,7 +190,7 @@ bool ABowBase::ReleasePreparedArrow(const FVector& Direction, const float Streng
 
 	ArrowToFire->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-	if (!ArrowToFire->Fire(NormalizedDirection, ClampedStrength))
+	if (!ArrowToFire->Fire(NormalizedDirection, ClampedStrength, bTargetedShot))
 	{
 		return false;
 	}
@@ -176,31 +215,87 @@ void ABowBase::DiscardPreparedArrow()
 	ArrowToDiscard->ReturnToPool();
 }
 
-void ABowBase::InitializeArrowPool()
+void ABowBase::ProcessFeedbackSet(const EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet, const EBowFeedbackPoint FeedbackPoint)
 {
-	DiscardPreparedArrow();
-	DestroyArrowPool();
+	if (FeedbackSet.ClearAt == FeedbackPoint)
+	{
+		ClearFeedbackSet(SetType);
+	}
 
-	if (!ArrowClass)
+	if (FeedbackSet.ActivateAt == FeedbackPoint)
+	{
+		ActivateFeedbackSet(SetType, FeedbackSet);
+	}
+}
+
+void ABowBase::ActivateFeedbackSet(const EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet)
+{
+	if (!IsValid(BowMesh))
 	{
 		return;
 	}
 
-	AllSpawnedArrows.Reserve(InitialArrowPoolSize);
-	AvailableArrows.Reserve(InitialArrowPoolSize);
+	ClearFeedbackSet(SetType);
 
-	for (int32 Index = 0; Index < InitialArrowPoolSize; ++Index)
+	FBowFeedbackRuntime& Runtime = GetFeedbackRuntime(SetType);
+
+	if (IsValid(FeedbackSet.Sound))
 	{
-		AArrowBase* NewArrow = CreateArrow();
+		Runtime.Sound = UGameplayStatics::SpawnSoundAttached(
+			FeedbackSet.Sound,
+			BowMesh
+		);
+	}
 
-		if (IsValid(NewArrow))
-		{
-			AvailableArrows.Add(NewArrow);
-		}
+	if (IsValid(FeedbackSet.Effect))
+	{
+		Runtime.Effect = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			FeedbackSet.Effect,
+			BowMesh,
+			NAME_None,
+			FVector::ZeroVector,
+			FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget,
+			false
+		);
 	}
 }
 
-AArrowBase* ABowBase::CreateArrow()
+void ABowBase::ClearFeedbackSet(const EBowFeedbackSetType SetType)
+{
+	FBowFeedbackRuntime& Runtime = GetFeedbackRuntime(SetType);
+
+	if (IsValid(Runtime.Sound))
+	{
+		Runtime.Sound->Stop();
+		Runtime.Sound = nullptr;
+	}
+
+	if (IsValid(Runtime.Effect))
+	{
+		Runtime.Effect->Deactivate();
+		Runtime.Effect->DestroyComponent();
+		Runtime.Effect = nullptr;
+	}
+}
+
+FBowFeedbackRuntime& ABowBase::GetFeedbackRuntime(const EBowFeedbackSetType SetType)
+{
+	switch (SetType)
+	{
+	case EBowFeedbackSetType::Start:
+		return StartFeedbackRuntime;
+
+	case EBowFeedbackSetType::Ongoing:
+		return OngoingFeedbackRuntime;
+
+	case EBowFeedbackSetType::End:
+	default:
+		return EndFeedbackRuntime;
+	}
+}
+
+AArrowBase* ABowBase::CreateArrow(const TSubclassOf<AArrowBase> ArrowClass)
 {
 	UWorld* World = GetWorld();
 
@@ -228,19 +323,26 @@ AArrowBase* ABowBase::CreateArrow()
 	return NewArrow;
 }
 
-AArrowBase* ABowBase::AcquireAvailableArrow()
+AArrowBase* ABowBase::AcquireAvailableArrow(const TSubclassOf<AArrowBase> ArrowClass)
 {
-	while (!AvailableArrows.IsEmpty())
+	for (int32 Index = AvailableArrows.Num() - 1; Index >= 0; --Index)
 	{
-		AArrowBase* Candidate = AvailableArrows.Pop();
+		AArrowBase* Candidate = AvailableArrows[Index];
 
-		if (IsValid(Candidate))
+		if (!IsValid(Candidate))
 		{
+			AvailableArrows.RemoveAtSwap(Index);
+			continue;
+		}
+
+		if (Candidate->IsA(ArrowClass))
+		{
+			AvailableArrows.RemoveAtSwap(Index);
 			return Candidate;
 		}
 	}
 
-	return CreateArrow();
+	return CreateArrow(ArrowClass);
 }
 
 void ABowBase::DestroyArrowPool()

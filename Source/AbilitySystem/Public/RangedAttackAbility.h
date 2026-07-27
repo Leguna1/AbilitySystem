@@ -1,11 +1,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ArrowData.h"
 #include "OffensiveAbilityBase.h"
 #include "RangedAttackAbility.generated.h"
 
 class UBowComponent;
+class UArrowDataAsset;
+class UBowDataAsset;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API URangedAttackAbility : public UOffensiveAbilityBase
@@ -49,6 +50,10 @@ protected:
 	bool ReleaseProjectile();
 	virtual bool ReleaseProjectile_Implementation();
 
+	/**
+	 * Fallback direction used when this ability does not use the current
+	 * target or when no target is available.
+	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	FVector ResolveProjectileDirection() const;
 	virtual FVector ResolveProjectileDirection_Implementation() const;
@@ -56,6 +61,17 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	float ResolveProjectileStrength() const;
 	virtual float ResolveProjectileStrength_Implementation() const;
+
+	/**
+	 * Determines whether this ranged ability should use the current automatic
+	 * target when releasing its projectile.
+	 *
+	 * Override and return false for abilities with custom aiming behavior,
+	 * such as Volley Shot.
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged|Targeting")
+	bool ShouldUseCurrentTarget() const;
+	virtual bool ShouldUseCurrentTarget_Implementation() const;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Ranged")
 	void OnProjectilePrepared();
@@ -74,7 +90,10 @@ protected:
 	virtual void OnRangedAttackFinished_Implementation(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
-	FArrowStats ProjectileStats;
+	TObjectPtr<UArrowDataAsset> ArrowData;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Feedback")
+	TObjectPtr<UBowDataAsset> BowData;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
 	FName ProjectileHandSocketName = NAME_None;
@@ -82,12 +101,6 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
 	FTransform ProjectileHandOffset = FTransform::Identity;
 
-	/**
-	 * Optional bow socket used when the Nock event fires.
-	 *
-	 * Leave NockProjectileEventTag invalid when an ability should keep the
-	 * projectile attached to the hand until release.
-	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow")
 	FName ProjectileBowSocketName = NAME_None;
 
@@ -111,7 +124,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UBowComponent> BowComponent;
-
+	
 	UPROPERTY(Transient)
 	bool bProjectilePrepared = false;
 

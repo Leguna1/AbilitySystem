@@ -3,6 +3,8 @@
 #include "Ability.h"
 #include "GameFramework/Character.h"
 #include "InputBufferComponent.h"
+#include "MotionWarpingComponent.h"
+#include "TargetingComponent.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -16,6 +18,8 @@ void UAbilityComponent::BeginPlay()
 
 	OwningCharacter = Cast<ACharacter>(GetOwner());
 	InputBufferComponent = GetOwner()->FindComponentByClass<UInputBufferComponent>();
+	TargetingComponent = GetOwner()->FindComponentByClass<UTargetingComponent>();
+	MotionWarpingComponent = GetOwner()->FindComponentByClass<UMotionWarpingComponent>();
 
 	if (!IsValid(OwningCharacter))
 	{
@@ -27,6 +31,16 @@ void UAbilityComponent::BeginPlay()
 	{
 		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires UInputBufferComponent on %s."), *GetNameSafe(GetOwner()));
 		return;
+	}
+
+	if (!IsValid(MotionWarpingComponent))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UAbilityComponent could not find UMotionWarpingComponent on %s."), *GetNameSafe(GetOwner()));
+	}
+
+	if (!IsValid(TargetingComponent))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UAbilityComponent could not find UTargetingComponent on %s."), *GetNameSafe(GetOwner()));
 	}
 
 	for (const TSubclassOf<UAbility> AbilityClass : StartingAbilityClasses)

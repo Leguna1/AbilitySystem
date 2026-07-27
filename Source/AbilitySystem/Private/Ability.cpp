@@ -7,6 +7,15 @@ void UAbility::InitializeAbility(UAbilityComponent* InAbilityComponent, ACharact
 {
 	AbilityComponent = InAbilityComponent;
 	OwningCharacter = InOwningCharacter;
+
+	TargetingComponent = IsValid(AbilityComponent)
+		? AbilityComponent->GetTargetingComponent()
+		: nullptr;
+
+	MotionWarpingComponent = IsValid(AbilityComponent)
+		? AbilityComponent->GetMotionWarpingComponent()
+		: nullptr;
+
 	AbilityStatus = EAbilityStatus::Inactive;
 	bCommitted = false;
 	bTransitionOpen = false;

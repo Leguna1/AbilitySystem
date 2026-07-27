@@ -1,9 +1,11 @@
 #include "BowComponent.h"
 
 #include "ArrowBase.h"
+#include "ArrowDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "BowDataAsset.h"
 
 UBowComponent::UBowComponent()
 {
@@ -92,8 +94,9 @@ void UBowComponent::UnequipBow()
 	}
 
 	Bow->OnArrowFired.RemoveDynamic(this, &UBowComponent::HandleBowArrowFired);
-	Bow->DiscardPreparedArrow();
 	Bow->EndDrawVisuals();
+	Bow->ClearAllFeedback();
+	Bow->DiscardPreparedArrow();
 	Bow->Destroy();
 
 	Bow = nullptr;
@@ -115,9 +118,25 @@ void UBowComponent::EndDrawVisuals()
 	}
 }
 
-bool UBowComponent::PrepareArrow(const FArrowStats& ArrowStats)
+void UBowComponent::HandleFeedbackPoint(const EBowFeedbackPoint FeedbackPoint, UBowDataAsset* BowData)
 {
-	return IsValid(Bow) && Bow->PrepareArrow(ArrowStats);
+	if (IsValid(Bow))
+	{
+		Bow->HandleFeedbackPoint(FeedbackPoint, BowData);
+	}
+}
+
+void UBowComponent::ClearAllFeedback()
+{
+	if (IsValid(Bow))
+	{
+		Bow->ClearAllFeedback();
+	}
+}
+
+bool UBowComponent::PrepareArrow(UArrowDataAsset* ArrowData)
+{
+	return IsValid(Bow) && Bow->PrepareArrow(ArrowData);
 }
 
 bool UBowComponent::AttachPreparedArrowToWielder(const FName SocketName, const FTransform& RelativeOffset)
@@ -130,9 +149,9 @@ bool UBowComponent::AttachPreparedArrowToBow(const FName SocketName, const FTran
 	return IsValid(Bow) && Bow->AttachPreparedArrowToBow(SocketName, RelativeOffset);
 }
 
-bool UBowComponent::ReleasePreparedArrow(const FVector& Direction, const float Strength)
+bool UBowComponent::ReleasePreparedArrow(const FVector& Direction, const float Strength, const bool bTargetedShot)
 {
-	return IsValid(Bow) && Bow->ReleasePreparedArrow(Direction, Strength);
+	return IsValid(Bow) && Bow->ReleasePreparedArrow(Direction, Strength, bTargetedShot);
 }
 
 void UBowComponent::DiscardPreparedArrow()

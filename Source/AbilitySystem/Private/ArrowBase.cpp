@@ -1,6 +1,8 @@
 #include "ArrowBase.h"
 
+#include "ArrowDataAsset.h"
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
@@ -18,6 +20,7 @@ AArrowBase::AArrowBase()
 
 	HitBox = CreateDefaultSubobject<UBoxComponent>(TEXT("HitBox"));
 	SetRootComponent(HitBox);
+
 	HitBox->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
 	HitBox->SetGenerateOverlapEvents(true);
 
@@ -49,7 +52,10 @@ void AArrowBase::BeginPlay()
 	if (IsValid(HitBox))
 	{
 		HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		HitBox->OnComponentBeginOverlap.AddDynamic(this, &AArrowBase::HandleHitBoxBeginOverlap);
+		HitBox->OnComponentBeginOverlap.AddDynamic(
+			this,
+			&AArrowBase::HandleHitBoxBeginOverlap
+		);
 	}
 
 	if (IsValid(ArrowMesh))
@@ -93,20 +99,20 @@ void AArrowBase::Tick(const float DeltaTime)
 	}
 }
 
-void AArrowBase::SetArrowStats(const FArrowStats& NewArrowStats)
-{
-	ArrowStats = NewArrowStats;
-}
-
 float AArrowBase::GetCalculatedDamage() const
 {
+	if (!IsValid(ArrowData))
+	{
+		return 0.0f;
+	}
+
 	const float StrengthMultiplier = FMath::Lerp(
 		1.0f,
-		ArrowStats.MaximumDamageMultiplier,
+		ArrowData->MaximumDamageMultiplier,
 		FiredStrength
 	);
 
-	return ArrowStats.BaseDamage * StrengthMultiplier;
+	return ArrowData->BaseDamage * StrengthMultiplier;
 }
 
 void AArrowBase::SpinBegin_Implementation()
@@ -123,9 +129,11 @@ void AArrowBase::SpinBegin_Implementation()
 	SetActorTickEnabled(true);
 }
 
-bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Strength)
+bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Strength, const bool bTargetedShot)
 {
-	if (!IsValid(ProjectileMovement) || bIsInFlight)
+	if (!IsValid(ArrowData) ||
+		!IsValid(ProjectileMovement) ||
+		bIsInFlight)
 	{
 		return false;
 	}
@@ -138,25 +146,31 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Stren
 	}
 
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
-	GetWorldTimerManager().ClearTimer(TrailDestroyTimerHandle);
 
-	DestroyTrailEffect();
+	StopOngoingFeedback();
 
 	FiredStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
+	bWasTargetedShot = bTargetedShot;
 	bIsInFlight = true;
 	bHasImpacted = false;
 
 	const float Speed = FMath::Lerp(
-		ArrowConfiguration.MinSpeed,
-		ArrowConfiguration.MaxSpeed,
+		ArrowData->MinimumSpeed,
+		ArrowData->MaximumSpeed,
 		FiredStrength
-	) * ArrowStats.SpeedMultiplier;
+	);
 
 	const float GravityScale = FMath::Lerp(
-		ArrowConfiguration.MaxGravity,
-		ArrowConfiguration.MinGravity,
+		ArrowData->MaximumGravityScale,
+		ArrowData->MinimumGravityScale,
 		FiredStrength
-	) * ArrowStats.GravityMultiplier;
+	);
+
+	if (Speed <= KINDA_SMALL_NUMBER)
+	{
+		bIsInFlight = false;
+		return false;
+	}
 
 	SetActorRotation(NormalizedDirection.Rotation());
 
@@ -176,60 +190,50 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Stren
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 
-	ScheduleRecycle(ArrowConfiguration.FlyingLifespan);
+	if (!bWasTargetedShot &&
+		ArrowData->MaximumUntargetedTravelDistance > 0.0f)
+	{
+		ScheduleFlightExpiry(
+			ArrowData->MaximumUntargetedTravelDistance / Speed
+		);
+	}
+	else
+	{
+		ScheduleFlightExpiry(ArrowData->TargetedFlightLifespan);
+	}
+
 	SpinBegin();
-
-	USoundBase* WhooshSound = IsValid(ArrowStats.WhooshSound)
-		? ArrowStats.WhooshSound
-		: ArrowConfiguration.WhooshSound;
-
-	UNiagaraSystem* TrailEffect = IsValid(ArrowStats.TrailEffect)
-		? ArrowStats.TrailEffect
-		: ArrowConfiguration.TrailEffect;
-
-	if (IsValid(WhooshSound))
-	{
-		UGameplayStatics::PlaySoundAtLocation(
-			this,
-			WhooshSound,
-			GetActorLocation()
-		);
-	}
-
-	if (IsValid(TrailEffect) && IsValid(TipLocation))
-	{
-		TrailEffectRef = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			TrailEffect,
-			TipLocation,
-			NAME_None,
-			FVector::ZeroVector,
-			FRotator::ZeroRotator,
-			EAttachLocation::KeepRelativeOffset,
-			false
-		);
-	}
+	
+	StartOngoingFeedback();
 
 	return true;
 }
 
-void AArrowBase::ActivateFromPool(const FArrowStats& NewArrowStats)
+bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 {
+	if (!IsValid(NewArrowData) || !IsValid(NewArrowData->ArrowMesh))
+	{
+		return false;
+	}
+
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
-	GetWorldTimerManager().ClearTimer(TrailDestroyTimerHandle);
 
-	DestroyTrailEffect();
+	StopOngoingFeedback();
 
-	if (GetAttachParentActor() != nullptr || GetRootComponent()->GetAttachParent() != nullptr)
+	if (GetAttachParentActor() != nullptr ||
+		(IsValid(GetRootComponent()) &&
+			GetRootComponent()->GetAttachParent() != nullptr))
 	{
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	}
 
-	ArrowStats = NewArrowStats;
+	ArrowData = NewArrowData;
 	FiredStrength = 0.0f;
 	Velocity = FVector::ZeroVector;
 
 	bIsInFlight = false;
 	bHasImpacted = false;
+	bWasTargetedShot = false;
 	bIsSpinning = false;
 	SpinElapsedTime = 0.0f;
 
@@ -248,23 +252,26 @@ void AArrowBase::ActivateFromPool(const FArrowStats& NewArrowStats)
 
 	if (IsValid(ArrowMesh))
 	{
+		ArrowMesh->SetStaticMesh(ArrowData->ArrowMesh);
 		ArrowMesh->SetRelativeRotation(DefaultArrowMeshRotation);
 	}
 
 	SetActorTickEnabled(false);
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
+
+	return true;
 }
 
 void AArrowBase::ResetForPool()
 {
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
-	GetWorldTimerManager().ClearTimer(TrailDestroyTimerHandle);
 
-	DestroyTrailEffect();
+	StopOngoingFeedback();
 
 	if (GetAttachParentActor() != nullptr ||
-		(IsValid(GetRootComponent()) && GetRootComponent()->GetAttachParent() != nullptr))
+		(IsValid(GetRootComponent()) &&
+			GetRootComponent()->GetAttachParent() != nullptr))
 	{
 		DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	}
@@ -287,12 +294,13 @@ void AArrowBase::ResetForPool()
 		ArrowMesh->SetRelativeRotation(DefaultArrowMeshRotation);
 	}
 
-	ArrowStats = FArrowStats();
+	ArrowData = nullptr;
 	FiredStrength = 0.0f;
 	Velocity = FVector::ZeroVector;
 
 	bIsInFlight = false;
 	bHasImpacted = false;
+	bWasTargetedShot = false;
 	bIsSpinning = false;
 	SpinElapsedTime = 0.0f;
 
@@ -332,7 +340,12 @@ void AArrowBase::HandleHitBoxBeginOverlap(
 		HitComponent = OtherComponent;
 	}
 
-	HandleImpact(OtherActor, HitComponent, bFromSweep, SweepResult);
+	HandleImpact(
+		OtherActor,
+		HitComponent,
+		bFromSweep,
+		SweepResult
+	);
 }
 
 void AArrowBase::HandleImpact(
@@ -341,7 +354,9 @@ void AArrowBase::HandleImpact(
 	const bool bFromSweep,
 	const FHitResult& SweepResult)
 {
-	if (bHasImpacted || !IsValid(HitActor))
+	if (bHasImpacted ||
+		!IsValid(HitActor) ||
+		!IsValid(ArrowData))
 	{
 		return;
 	}
@@ -349,6 +364,10 @@ void AArrowBase::HandleImpact(
 	bHasImpacted = true;
 	bIsInFlight = false;
 	bIsSpinning = false;
+
+	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
+
+	StopOngoingFeedback();
 
 	if (IsValid(ProjectileMovement))
 	{
@@ -372,43 +391,26 @@ void AArrowBase::HandleImpact(
 			true
 		);
 
-		AttachToComponent(HitComponent, AttachmentRules);
-	}
-
-	USoundBase* ImpactSound = IsValid(ArrowStats.ImpactSound)
-		? ArrowStats.ImpactSound
-		: ArrowConfiguration.ArrowImpactSound;
-
-	UNiagaraSystem* ImpactEffect = IsValid(ArrowStats.ImpactEffect)
-		? ArrowStats.ImpactEffect
-		: ArrowConfiguration.ImpactEffect;
-
-	const FVector ImpactLocation = bFromSweep && !SweepResult.ImpactPoint.IsNearlyZero()
-	? FVector(SweepResult.ImpactPoint)
-	: GetActorLocation();
-
-	if (IsValid(ImpactSound))
-	{
-		UGameplayStatics::PlaySoundAtLocation(
-			this,
-			ImpactSound,
-			ImpactLocation
+		AttachToComponent(
+			HitComponent,
+			AttachmentRules
 		);
 	}
 
-	if (IsValid(ImpactEffect))
+	FVector ImpactLocation = GetActorLocation();
+
+	if (bFromSweep && !SweepResult.ImpactPoint.IsNearlyZero())
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
-			ImpactEffect,
-			ImpactLocation
-		);
+		ImpactLocation = FVector(SweepResult.ImpactPoint);
 	}
 
-	if (IsValid(HitComponent) && HitComponent->IsSimulatingPhysics())
+	PlayEndFeedback(ImpactLocation);
+
+	if (IsValid(HitComponent) &&
+		HitComponent->IsSimulatingPhysics())
 	{
 		HitComponent->AddImpulseAtLocation(
-			Velocity * ArrowStats.ImpactImpulseMultiplier,
+			Velocity * ArrowData->ImpactImpulseMultiplier,
 			ImpactLocation
 		);
 	}
@@ -420,27 +422,169 @@ void AArrowBase::HandleImpact(
 		SweepResult
 	);
 
-	ScheduleRecycle(ArrowConfiguration.ImpactLifespan);
-
-	GetWorldTimerManager().SetTimer(
-		TrailDestroyTimerHandle,
-		this,
-		&AArrowBase::DestroyTrailEffect,
-		0.2f,
-		false
-	);
+	ScheduleRecycle(ArrowData->ImpactLifespan);
 }
 
-void AArrowBase::DestroyTrailEffect()
+void AArrowBase::PlayStartFeedback()
 {
-	if (!IsValid(TrailEffectRef))
+	if (!IsValid(ArrowData))
 	{
 		return;
 	}
 
-	TrailEffectRef->Deactivate();
-	TrailEffectRef->DestroyComponent();
-	TrailEffectRef = nullptr;
+	const FVector FeedbackLocation = IsValid(TipLocation)
+		? TipLocation->GetComponentLocation()
+		: GetActorLocation();
+
+	if (IsValid(ArrowData->StartSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			ArrowData->StartSound,
+			FeedbackLocation
+		);
+	}
+
+	if (IsValid(ArrowData->StartEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			ArrowData->StartEffect,
+			FeedbackLocation,
+			GetActorRotation()
+		);
+	}
+}
+
+void AArrowBase::StartOngoingFeedback()
+{
+	if (!IsValid(ArrowData))
+	{
+		return;
+	}
+
+	USceneComponent* AttachComponent = GetRootComponent();
+
+	if (IsValid(TipLocation))
+	{
+		AttachComponent = TipLocation.Get();
+	}
+
+	if (!IsValid(AttachComponent))
+	{
+		return;
+	}
+
+	if (IsValid(ArrowData->OngoingSound))
+	{
+		OngoingSoundRef = UGameplayStatics::SpawnSoundAttached(
+			ArrowData->OngoingSound,
+			AttachComponent
+		);
+	}
+
+	if (IsValid(ArrowData->OngoingEffect))
+	{
+		OngoingEffectRef = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			ArrowData->OngoingEffect,
+			AttachComponent,
+			NAME_None,
+			FVector::ZeroVector,
+			FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget,
+			false
+		);
+	}
+}
+
+void AArrowBase::StopOngoingFeedback()
+{
+	if (IsValid(OngoingSoundRef))
+	{
+		OngoingSoundRef->Stop();
+		OngoingSoundRef = nullptr;
+	}
+
+	if (IsValid(OngoingEffectRef))
+	{
+		OngoingEffectRef->Deactivate();
+		OngoingEffectRef->DestroyComponent();
+		OngoingEffectRef = nullptr;
+	}
+}
+
+void AArrowBase::PlayEndFeedback(const FVector& FeedbackLocation)
+{
+	if (!IsValid(ArrowData))
+	{
+		return;
+	}
+
+	if (IsValid(ArrowData->EndSound))
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			ArrowData->EndSound,
+			FeedbackLocation
+		);
+	}
+
+	if (IsValid(ArrowData->EndEffect))
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			ArrowData->EndEffect,
+			FeedbackLocation,
+			GetActorRotation()
+		);
+	}
+}
+
+void AArrowBase::HandleFlightExpired()
+{
+	if (!bIsInFlight || bHasImpacted)
+	{
+		return;
+	}
+
+	StopOngoingFeedback();
+	SpawnPoolReturnEffect();
+	ReturnToPool();
+}
+
+void AArrowBase::SpawnPoolReturnEffect()
+{
+	if (!IsValid(ArrowData) ||
+		!IsValid(ArrowData->PoolReturnEffect))
+	{
+		return;
+	}
+
+	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+		this,
+		ArrowData->PoolReturnEffect,
+		GetActorLocation(),
+		GetActorRotation()
+	);
+}
+
+void AArrowBase::ScheduleFlightExpiry(const float Delay)
+{
+	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
+
+	if (Delay <= 0.0f)
+	{
+		HandleFlightExpired();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		RecycleTimerHandle,
+		this,
+		&AArrowBase::HandleFlightExpired,
+		Delay,
+		false
+	);
 }
 
 void AArrowBase::ScheduleRecycle(const float Delay)

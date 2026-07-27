@@ -1,14 +1,16 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ArrowData.h"
 #include "BowBase.h"
+#include "BowDataAsset.h"
 #include "Components/ActorComponent.h"
 #include "BowComponent.generated.h"
 
 class AArrowBase;
 class ABowBase;
 class ACharacter;
+class UArrowDataAsset;
+class UBowDataAsset;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBowComponentArrowFiredSignature, AArrowBase*, Arrow, float, ShotStrength);
 
@@ -32,14 +34,8 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	bool HasEquippedBow() const { return IsValid(Bow); }
 
-	UFUNCTION(BlueprintCallable, Category = "Bow|Visuals")
-	void BeginDrawVisuals();
-
-	UFUNCTION(BlueprintCallable, Category = "Bow|Visuals")
-	void EndDrawVisuals();
-
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool PrepareArrow(const FArrowStats& ArrowStats);
+	bool PrepareArrow(UArrowDataAsset* ArrowData);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	bool AttachPreparedArrowToWielder(FName SocketName, const FTransform& RelativeOffset);
@@ -48,7 +44,7 @@ public:
 	bool AttachPreparedArrowToBow(FName SocketName, const FTransform& RelativeOffset);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool ReleasePreparedArrow(const FVector& Direction, float Strength);
+	bool ReleasePreparedArrow(const FVector& Direction, float Strength, bool bTargetedShot);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	void DiscardPreparedArrow();
@@ -64,6 +60,18 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowComponentArrowFiredSignature OnArrowFired;
+	
+	UFUNCTION(BlueprintCallable, Category = "Bow|Animation")
+	void BeginDrawVisuals();
+
+	UFUNCTION(BlueprintCallable, Category = "Bow|Animation")
+	void EndDrawVisuals();
+
+	UFUNCTION(BlueprintCallable, Category = "Bow|Feedback")
+	void HandleFeedbackPoint(EBowFeedbackPoint FeedbackPoint, UBowDataAsset* BowData);
+
+	UFUNCTION(BlueprintCallable, Category = "Bow|Feedback")
+	void ClearAllFeedback();
 
 protected:
 	virtual void BeginPlay() override;
