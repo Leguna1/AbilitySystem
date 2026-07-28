@@ -30,6 +30,11 @@ void UTargetingComponent::BeginPlay()
 		ReleaseRange = AcquisitionRange;
 	}
 
+	// Seed the intent stability trackers so the first refresh doesn't read a
+	// bogus swing against a default-constructed direction.
+	PreviousCameraForward = GetTargetingForwardVector().GetSafeNormal();
+	PreviousMoveDir = OwningCharacter->GetActorForwardVector();
+
 	if (bAutoRefresh)
 	{
 		GetWorld()->GetTimerManager().SetTimer(
@@ -63,6 +68,9 @@ void UTargetingComponent::RefreshTarget()
 		return;
 	}
 
+	// Retention: keep the held target while it stays legal (range + LOS).
+	// Angle is deliberately NOT re-checked here, so turning the camera or
+	// running away from the target doesn't drop the lock on its own.
 	if (IsValid(CurrentTarget))
 	{
 		const float DistanceSquared = FVector::DistSquared(
@@ -81,12 +89,29 @@ void UTargetingComponent::RefreshTarget()
 		}
 	}
 
+	// Accumulate intent every refresh (not only when we lack a target), then
+	// let a challenger take over only if its intent beats the held target plus
+	// the stickiness bonus. This is what produces a natural, deliberate swap.
+	TArray<AActor*> Candidates;
+	FindTargetCandidates(Candidates);
+
+	UpdateIntent(Candidates, RefreshInterval);
+
+	AActor* Challenger = SelectBestTarget(Candidates);
+
 	if (!IsValid(CurrentTarget))
 	{
-		TArray<AActor*> Candidates;
-		FindTargetCandidates(Candidates);
+		SetTarget(Challenger);
+	}
+	else if (IsValid(Challenger) && Challenger != CurrentTarget)
+	{
+		const float ChallengerIntent = GetAccumulatedIntent(Challenger);
+		const float HeldIntent = GetAccumulatedIntent(CurrentTarget) + TargetStickinessBonus;
 
-		SetTarget(SelectBestTarget(Candidates));
+		if (ChallengerIntent > HeldIntent)
+		{
+			SetTarget(Challenger);
+		}
 	}
 
 	if (bDrawTargetDebugSphere && IsValid(CurrentTarget))
@@ -164,10 +189,157 @@ FVector UTargetingComponent::GetDirectionToCurrentTarget(const FVector& Origin) 
 	return (GetCurrentTargetAimLocation() - Origin).GetSafeNormal();
 }
 
+void UTargetingComponent::UpdateIntent(const TArray<AActor*>& Candidates, float DeltaTime)
+{
+	if (DeltaTime <= 0.0f)
+	{
+		return;
+	}
+
+	const FVector Origin = GetTargetingOrigin();
+
+	// --- Primary axis: camera framing. Runs even while stationary. ---
+	const FVector CameraForward = GetTargetingForwardVector().GetSafeNormal();
+
+	const float CameraSwingDeg = FMath::RadiansToDegrees(FMath::Acos(
+		FMath::Clamp(FVector::DotProduct(CameraForward, PreviousCameraForward), -1.0f, 1.0f)
+	));
+	const float CameraAngularSpeed = CameraSwingDeg / DeltaTime;
+	const float CameraSettle = 1.0f - FMath::Clamp(CameraAngularSpeed / MaxCameraSweepSpeed, 0.0f, 1.0f);
+
+	PreviousCameraForward = CameraForward;
+
+	// --- Secondary axis: movement engagement. Only while actually moving. ---
+	const FVector Velocity = IsValid(OwningCharacter)
+		? OwningCharacter->GetVelocity()
+		: FVector::ZeroVector;
+
+	const FVector FlatVelocity(Velocity.X, Velocity.Y, 0.0f);
+	const float Speed = FlatVelocity.Size();
+	const bool bMoving = Speed >= MinIntentSpeed;
+
+	FVector MoveDir = FVector::ZeroVector;
+	float CommitFactor = 0.0f;
+
+	if (bMoving)
+	{
+		MoveDir = FlatVelocity / Speed;
+
+		const float HeadingSwingDeg = FMath::RadiansToDegrees(FMath::Acos(
+			FMath::Clamp(FVector::DotProduct(MoveDir, PreviousMoveDir), -1.0f, 1.0f)
+		));
+		const float HeadingAngularSpeed = HeadingSwingDeg / DeltaTime;
+		CommitFactor = 1.0f - FMath::Clamp(HeadingAngularSpeed / MaxJinkAngularSpeed, 0.0f, 1.0f);
+
+		PreviousMoveDir = MoveDir;
+	}
+
+	// --- Decay all records; drop dead or negligible ones. ---
+	const float DecayMultiplier = FMath::Pow(IntentDecayRate, DeltaTime);
+
+	for (int32 Index = IntentRecords.Num() - 1; Index >= 0; --Index)
+	{
+		IntentRecords[Index].IntentScore *= DecayMultiplier;
+
+		if (!IntentRecords[Index].Target.IsValid() ||
+			IntentRecords[Index].IntentScore < KINDA_SMALL_NUMBER)
+		{
+			IntentRecords.RemoveAtSwap(Index);
+		}
+	}
+
+	// --- Accumulate this tick's intent per candidate. ---
+	const float IntentCosine = FMath::Cos(FMath::DegreesToRadians(IntentConeAngle * 0.5f));
+
+	for (AActor* Candidate : Candidates)
+	{
+		if (!IsValid(Candidate))
+		{
+			continue;
+		}
+
+		const FVector DirToCandidate = (ResolveTargetAimLocation(Candidate) - Origin).GetSafeNormal();
+		if (DirToCandidate.IsNearlyZero())
+		{
+			continue;
+		}
+
+		float IntentGain = 0.0f;
+
+		// Framing (primary): centeredness in the camera cone, gated by settle.
+		const float CamDot = FVector::DotProduct(CameraForward, DirToCandidate);
+		if (CamDot >= IntentCosine)
+		{
+			const float Denominator = 1.0f - IntentCosine;
+			const float Centeredness = Denominator > KINDA_SMALL_NUMBER
+				? (CamDot - IntentCosine) / Denominator
+				: 1.0f;
+
+			IntentGain += Centeredness * CameraSettle;
+		}
+
+		// Engagement (secondary): closing on or strafing around this candidate.
+		if (bMoving)
+		{
+			const FVector FlatDir = FVector(DirToCandidate.X, DirToCandidate.Y, 0.0f).GetSafeNormal();
+			if (!FlatDir.IsNearlyZero())
+			{
+				const float RadialDot = FVector::DotProduct(MoveDir, FlatDir); // +closing / -retreating
+
+				const float Engagement =
+					FMath::Clamp(RadialDot, 0.0f, 1.0f) +            // moving toward it
+					(1.0f - FMath::Abs(RadialDot)) * 0.5f;           // orbiting / strafing it
+
+				IntentGain += Engagement * CommitFactor * EngagementWeight;
+			}
+		}
+
+		if (IntentGain <= 0.0f)
+		{
+			continue;
+		}
+
+		FTargetIntentRecord* Record = FindIntentRecord(Candidate);
+		if (Record == nullptr)
+		{
+			Record = &IntentRecords.AddDefaulted_GetRef();
+			Record->Target = Candidate;
+		}
+
+		Record->IntentScore = FMath::Min(Record->IntentScore + IntentGain * DeltaTime, MaxIntentScore);
+	}
+}
+
+float UTargetingComponent::GetAccumulatedIntent(const AActor* Target) const
+{
+	for (const FTargetIntentRecord& Record : IntentRecords)
+	{
+		if (Record.Target.Get() == Target)
+		{
+			return Record.IntentScore;
+		}
+	}
+
+	return 0.0f;
+}
+
+FTargetIntentRecord* UTargetingComponent::FindIntentRecord(const AActor* Target)
+{
+	for (FTargetIntentRecord& Record : IntentRecords)
+	{
+		if (Record.Target.Get() == Target)
+		{
+			return &Record;
+		}
+	}
+
+	return nullptr;
+}
+
 AActor* UTargetingComponent::SelectBestTarget_Implementation(const TArray<AActor*>& Candidates) const
 {
 	AActor* BestTarget = nullptr;
-	float BestScore = -TNumericLimits<float>::Max();
+	float BestIntent = KINDA_SMALL_NUMBER;
 
 	for (AActor* Candidate : Candidates)
 	{
@@ -176,11 +348,11 @@ AActor* UTargetingComponent::SelectBestTarget_Implementation(const TArray<AActor
 			continue;
 		}
 
-		const float Score = CalculateTargetScore(Candidate);
+		const float Intent = GetAccumulatedIntent(Candidate);
 
-		if (Score > BestScore)
+		if (Intent > BestIntent)
 		{
-			BestScore = Score;
+			BestIntent = Intent;
 			BestTarget = Candidate;
 		}
 	}
@@ -298,37 +470,6 @@ bool UTargetingComponent::HasLineOfSightTo(AActor* Candidate) const
 	return !bBlocked;
 }
 
-float UTargetingComponent::CalculateTargetScore(AActor* Candidate) const
-{
-	if (!IsValid(Candidate))
-	{
-		return -TNumericLimits<float>::Max();
-	}
-
-	const FVector Origin = GetTargetingOrigin();
-	const FVector AimLocation = ResolveTargetAimLocation(Candidate);
-	const FVector DirectionToTarget = (AimLocation - Origin).GetSafeNormal();
-	const FVector Forward = GetTargetingForwardVector().GetSafeNormal();
-
-	const float Distance = FVector::Distance(Origin, AimLocation);
-	const float NormalizedDistance = AcquisitionRange > 0.0f
-		? FMath::Clamp(Distance / AcquisitionRange, 0.0f, 1.0f)
-		: 1.0f;
-
-	const float DistanceScore = 1.0f - NormalizedDistance;
-
-	const float Alignment = FMath::Clamp(
-		FVector::DotProduct(Forward, DirectionToTarget),
-		-1.0f,
-		1.0f
-	);
-
-	const float AngleScore = (Alignment + 1.0f) * 0.5f;
-
-	return AngleScore * AngleScoreWeight +
-		DistanceScore * DistanceScoreWeight;
-}
-
 FVector UTargetingComponent::GetTargetingOrigin() const
 {
 	if (!IsValid(OwningCharacter))
@@ -356,6 +497,9 @@ FVector UTargetingComponent::GetTargetingForwardVector() const
 		return FVector::ForwardVector;
 	}
 
+	// Free-look camera direction is the primary "look intent" axis. Under
+	// orient-to-movement the control rotation is decoupled from character
+	// facing, which is exactly what we want to read here.
 	if (const AController* Controller = OwningCharacter->GetController())
 	{
 		return Controller->GetControlRotation().Vector();
