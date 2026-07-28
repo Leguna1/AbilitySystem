@@ -57,6 +57,10 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	FVector ResolveProjectileDirection() const;
 	virtual FVector ResolveProjectileDirection_Implementation() const;
+	
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
+	FVector ResolveProjectileDirectionForIndex(int32 ProjectileIndex) const;
+	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const;
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	float ResolveProjectileStrength() const;
@@ -88,6 +92,8 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Ranged")
 	void OnRangedAttackFinished(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
 	virtual void OnRangedAttackFinished_Implementation(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
+	
+	
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	TObjectPtr<UArrowDataAsset> ArrowData;
@@ -96,16 +102,11 @@ protected:
 	TObjectPtr<UBowDataAsset> BowData;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
-	FName ProjectileHandSocketName = NAME_None;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
-	FTransform ProjectileHandOffset = FTransform::Identity;
+	TArray<FName> ProjectileHandSocketNames;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow")
-	FName ProjectileBowSocketName = NAME_None;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow")
-	FTransform ProjectileBowOffset = FTransform::Identity;
+	TArray<FName> ProjectileBowSocketNames;
+	
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DefaultProjectileStrength = 1.0f;

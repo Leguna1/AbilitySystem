@@ -96,7 +96,7 @@ void UBowComponent::UnequipBow()
 	Bow->OnArrowFired.RemoveDynamic(this, &UBowComponent::HandleBowArrowFired);
 	Bow->EndDrawVisuals();
 	Bow->ClearAllFeedback();
-	Bow->DiscardPreparedArrow();
+	Bow->DiscardPreparedArrows();
 	Bow->Destroy();
 
 	Bow = nullptr;
@@ -134,49 +134,56 @@ void UBowComponent::ClearAllFeedback()
 	}
 }
 
-bool UBowComponent::PrepareArrow(UArrowDataAsset* ArrowData)
+bool UBowComponent::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 {
-	return IsValid(Bow) && Bow->PrepareArrow(ArrowData);
+	return IsValid(Bow) && Bow->PrepareArrows(ArrowData, ArrowCount);
 }
 
-bool UBowComponent::AttachPreparedArrowToWielder(const FName SocketName, const FTransform& RelativeOffset)
+bool UBowComponent::AttachPreparedArrowToWielder(const int32 ArrowIndex, const FName SocketName)
 {
-	return IsValid(Bow) && Bow->AttachPreparedArrowToWielder(SocketName, RelativeOffset);
+	return IsValid(Bow) && Bow->AttachPreparedArrowToWielder(ArrowIndex, SocketName);
 }
 
-bool UBowComponent::AttachPreparedArrowToBow(const FName SocketName, const FTransform& RelativeOffset)
+bool UBowComponent::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName SocketName)
 {
-	return IsValid(Bow) && Bow->AttachPreparedArrowToBow(SocketName, RelativeOffset);
+	return IsValid(Bow) && Bow->AttachPreparedArrowToBow(ArrowIndex, SocketName);
 }
 
-bool UBowComponent::ReleasePreparedArrow(const FVector& Direction, const float Strength, const bool bTargetedShot)
+bool UBowComponent::ReleasePreparedArrows(const TArray<FVector>& Directions, const float Strength, const bool bTargetedShot)
 {
-	return IsValid(Bow) && Bow->ReleasePreparedArrow(Direction, Strength, bTargetedShot);
+	return IsValid(Bow) && Bow->ReleasePreparedArrows(Directions, Strength, bTargetedShot);
 }
 
-void UBowComponent::DiscardPreparedArrow()
+void UBowComponent::DiscardPreparedArrows()
 {
 	if (IsValid(Bow))
 	{
-		Bow->DiscardPreparedArrow();
+		Bow->DiscardPreparedArrows();
 	}
 }
 
-AArrowBase* UBowComponent::GetPreparedArrow() const
+AArrowBase* UBowComponent::GetPreparedArrow(const int32 ArrowIndex) const
 {
-	return IsValid(Bow) ? Bow->GetPreparedArrow() : nullptr;
+	return IsValid(Bow)
+		? Bow->GetPreparedArrow(ArrowIndex)
+		: nullptr;
 }
 
+int32 UBowComponent::GetPreparedArrowCount() const
+{
+	return IsValid(Bow)
+		? Bow->GetPreparedArrowCount()
+		: 0;
+}
+
+bool UBowComponent::HasPreparedArrows() const
+{
+	return IsValid(Bow) && Bow->HasPreparedArrows();
+}
 AArrowBase* UBowComponent::GetLastFiredArrow() const
 {
 	return IsValid(Bow) ? Bow->GetLastFiredArrow() : nullptr;
 }
-
-bool UBowComponent::HasPreparedArrow() const
-{
-	return IsValid(Bow) && Bow->HasPreparedArrow();
-}
-
 void UBowComponent::HandleBowArrowFired(AArrowBase* Arrow, const float ShotStrength)
 {
 	OnArrowFired.Broadcast(Arrow, ShotStrength);

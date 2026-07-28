@@ -35,28 +35,31 @@ public:
 	bool HasEquippedBow() const { return IsValid(Bow); }
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool PrepareArrow(UArrowDataAsset* ArrowData);
+	bool PrepareArrows(UArrowDataAsset* ArrowData, int32 ArrowCount);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool AttachPreparedArrowToWielder(FName SocketName, const FTransform& RelativeOffset);
+	bool AttachPreparedArrowToWielder(int32 ArrowIndex, FName SocketName);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool AttachPreparedArrowToBow(FName SocketName, const FTransform& RelativeOffset);
+	bool AttachPreparedArrowToBow(int32 ArrowIndex, FName SocketName);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool ReleasePreparedArrow(const FVector& Direction, float Strength, bool bTargetedShot);
+	bool ReleasePreparedArrows(const TArray<FVector>& Directions, float Strength, bool bTargetedShot);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	void DiscardPreparedArrow();
+	void DiscardPreparedArrows();
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetPreparedArrow() const;
+	AArrowBase* GetPreparedArrow(int32 ArrowIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	int32 GetPreparedArrowCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	bool HasPreparedArrows() const;
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	AArrowBase* GetLastFiredArrow() const;
-
-	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	bool HasPreparedArrow() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowComponentArrowFiredSignature OnArrowFired;
@@ -72,6 +75,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Feedback")
 	void ClearAllFeedback();
+	
+	
 
 protected:
 	virtual void BeginPlay() override;

@@ -67,28 +67,31 @@ public:
 	USkeletalMeshComponent* GetWielderMesh() const { return WielderMesh; }
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool PrepareArrow(UArrowDataAsset* ArrowData);
+	bool PrepareArrows(UArrowDataAsset* ArrowData, int32 ArrowCount);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool AttachPreparedArrowToWielder(FName SocketName, const FTransform& RelativeOffset);
+	bool AttachPreparedArrowToWielder(int32 ArrowIndex, FName SocketName);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool AttachPreparedArrowToBow(FName SocketName, const FTransform& RelativeOffset);
+	bool AttachPreparedArrowToBow(int32 ArrowIndex, FName SocketName);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool ReleasePreparedArrow(const FVector& Direction, float Strength, bool bTargetedShot);
+	bool ReleasePreparedArrows(const TArray<FVector>& Directions, float Strength, bool bTargetedShot);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	void DiscardPreparedArrow();
+	void DiscardPreparedArrows();
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetPreparedArrow() const { return PreparedArrow; }
+	AArrowBase* GetPreparedArrow(int32 ArrowIndex) const;
+
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	int32 GetPreparedArrowCount() const { return PreparedArrows.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	bool HasPreparedArrows() const { return !PreparedArrows.IsEmpty(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	AArrowBase* GetLastFiredArrow() const { return LastFiredArrow; }
-
-	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	bool HasPreparedArrow() const { return IsValid(PreparedArrow); }
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowArrowFiredSignature OnArrowFired;
@@ -104,6 +107,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
 	FVector GetStringTargetLocation() const { return StringTargetLocation; }
+	
+	
 
 protected:
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
@@ -147,7 +152,7 @@ private:
 	TObjectPtr<USkeletalMeshComponent> WielderMesh;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AArrowBase> PreparedArrow;
+	TArray<TObjectPtr<AArrowBase>> PreparedArrows;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AArrowBase> LastFiredArrow;

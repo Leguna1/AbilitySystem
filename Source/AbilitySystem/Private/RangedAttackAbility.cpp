@@ -16,21 +16,30 @@ bool URangedAttackAbility::CanActivateAbility_Implementation() const
 
 	const ACharacter* Character = GetOwningCharacter();
 
-	if (!IsValid(Character))
+	if (!IsValid(Character) ||
+		!IsValid(ArrowData) ||
+		!ArrowData->ArrowClass ||
+		!IsValid(ArrowData->ArrowMesh) ||
+		ProjectileHandSocketNames.IsEmpty() ||
+		ProjectileHandSocketNames.Num() != ProjectileBowSocketNames.Num())
 	{
 		return false;
+	}
+
+	for (int32 Index = 0; Index < ProjectileHandSocketNames.Num(); ++Index)
+	{
+		if (ProjectileHandSocketNames[Index].IsNone() ||
+			ProjectileBowSocketNames[Index].IsNone())
+		{
+			return false;
+		}
 	}
 
 	const UBowComponent* CharacterBowComponent = Character->FindComponentByClass<UBowComponent>();
 
 	return IsValid(CharacterBowComponent) &&
-		CharacterBowComponent->HasEquippedBow() &&
-		IsValid(ArrowData) &&
-		ArrowData->ArrowClass &&
-		IsValid(ArrowData->ArrowMesh) &&
-		!ProjectileHandSocketName.IsNone();
+		CharacterBowComponent->HasEquippedBow();
 }
-
 void URangedAttackAbility::ActivateAbility_Implementation()
 {
 	ACharacter* Character = GetOwningCharacter();
@@ -51,7 +60,7 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 	}
 	BowComponent->HandleFeedbackPoint(EBowFeedbackPoint::AbilityStart,BowData);
 
-	BowComponent->DiscardPreparedArrow();
+	BowComponent->DiscardPreparedArrows();
 
 	Super::ActivateAbility_Implementation();
 }
@@ -75,7 +84,7 @@ void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason
 {
 	const bool bHadPreparedProjectile =
 		bProjectilePrepared ||
-		(IsValid(BowComponent) && BowComponent->HasPreparedArrow());
+		(IsValid(BowComponent) && BowComponent->HasPreparedArrows());
 
 	const bool bReleasedProjectile = bProjectileReleased;
 
@@ -83,17 +92,24 @@ void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason
 	{
 		BowComponent->EndDrawVisuals();
 
-		BowComponent->HandleFeedbackPoint(EBowFeedbackPoint::AbilityEnd,BowData);
+		BowComponent->HandleFeedbackPoint(
+			EBowFeedbackPoint::AbilityEnd,
+			BowData
+		);
 	}
-	
+
 	DiscardPreparedProjectile();
 
 	Super::OnAbilityEnded_Implementation(EndReason);
 
-	OnRangedAttackFinished(EndReason, bHadPreparedProjectile, bReleasedProjectile);
+	OnRangedAttackFinished(
+		EndReason,
+		bHadPreparedProjectile,
+		bReleasedProjectile
+	);
 
 	BowComponent = nullptr;
-	
+
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 	bProjectileReleased = false;
@@ -103,14 +119,14 @@ bool URangedAttackAbility::HasPreparedProjectile() const
 {
 	return bProjectilePrepared &&
 		IsValid(BowComponent) &&
-		BowComponent->HasPreparedArrow();
+		BowComponent->HasPreparedArrows();
 }
 
 void URangedAttackAbility::ResetProjectileCycle()
 {
-	if (IsValid(BowComponent) && BowComponent->HasPreparedArrow())
+	if (IsValid(BowComponent) && BowComponent->HasPreparedArrows())
 	{
-		BowComponent->DiscardPreparedArrow();
+		BowComponent->DiscardPreparedArrows();
 	}
 
 	bProjectilePrepared = false;
@@ -122,51 +138,59 @@ void URangedAttackAbility::DiscardPreparedProjectile()
 {
 	if (IsValid(BowComponent))
 	{
-		
+		BowComponent->EndDrawVisuals();
 
-		if (BowComponent->HasPreparedArrow())
+		if (BowComponent->HasPreparedArrows())
 		{
-			BowComponent->DiscardPreparedArrow();
+			BowComponent->DiscardPreparedArrows();
 		}
 	}
 
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 }
-
+FVector URangedAttackAbility::ResolveProjectileDirectionForIndex_Implementation(const int32 ProjectileIndex) const
+{
+	return ResolveProjectileDirection();
+}
 bool URangedAttackAbility::PrepareProjectile_Implementation()
 {
 	if (!IsValid(BowComponent) ||
 		!IsValid(ArrowData) ||
-		ProjectileHandSocketName.IsNone())
+		ProjectileHandSocketNames.IsEmpty() ||
+		ProjectileHandSocketNames.Num() != ProjectileBowSocketNames.Num())
 	{
 		return false;
 	}
 
-	if (BowComponent->HasPreparedArrow())
+	if (BowComponent->HasPreparedArrows())
 	{
-		BowComponent->DiscardPreparedArrow();
+		BowComponent->DiscardPreparedArrows();
 	}
 
-	if (!BowComponent->PrepareArrow(ArrowData))
+	if (!BowComponent->PrepareArrows(ArrowData, ProjectileHandSocketNames.Num()))
 	{
 		return false;
 	}
 
-	if (!BowComponent->AttachPreparedArrowToWielder(
-		ProjectileHandSocketName,
-		ProjectileHandOffset))
+	for (int32 Index = 0; Index < ProjectileHandSocketNames.Num(); ++Index)
 	{
-		BowComponent->DiscardPreparedArrow();
-		return false;
+		if (!BowComponent->AttachPreparedArrowToWielder(Index, ProjectileHandSocketNames[Index]))
+		{
+			BowComponent->DiscardPreparedArrows();
+			return false;
+		}
 	}
 
 	bProjectilePrepared = true;
 	bProjectileNocked = false;
 	bProjectileReleased = false;
-	BowComponent->BeginDrawVisuals();
-	
-	BowComponent->HandleFeedbackPoint(EBowFeedbackPoint::SpawnArrow,BowData);
+
+	BowComponent->HandleFeedbackPoint(
+		EBowFeedbackPoint::SpawnArrow,
+		BowData
+	);
+
 	OnProjectilePrepared();
 	return true;
 }
@@ -176,27 +200,36 @@ bool URangedAttackAbility::NockProjectile_Implementation()
 	if (!IsValid(BowComponent) ||
 		!bProjectilePrepared ||
 		bProjectileReleased ||
-		ProjectileBowSocketName.IsNone() ||
-		!BowComponent->HasPreparedArrow())
+		ProjectileBowSocketNames.IsEmpty() ||
+		ProjectileBowSocketNames.Num() != BowComponent->GetPreparedArrowCount())
 	{
 		return false;
 	}
 
-	if (!BowComponent->AttachPreparedArrowToBow(ProjectileBowSocketName, ProjectileBowOffset))
+	for (int32 Index = 0; Index < ProjectileBowSocketNames.Num(); ++Index)
 	{
-		return false;
+		if (!BowComponent->AttachPreparedArrowToBow(Index, ProjectileBowSocketNames[Index]))
+		{
+			return false;
+		}
 	}
 
 	bProjectileNocked = true;
-	
-	BowComponent->HandleFeedbackPoint(EBowFeedbackPoint::NockArrow,BowData);
-	
-	if (AArrowBase* PreparedArrow = BowComponent->GetPreparedArrow())
+
+	BowComponent->BeginDrawVisuals();
+
+	BowComponent->HandleFeedbackPoint(
+		EBowFeedbackPoint::NockArrow,
+		BowData
+	);
+
+	for (int32 Index = 0; Index < BowComponent->GetPreparedArrowCount(); ++Index)
 	{
-		PreparedArrow->PlayStartFeedback();
+		if (AArrowBase* PreparedArrow = BowComponent->GetPreparedArrow(Index))
+		{
+			PreparedArrow->PlayStartFeedback();
+		}
 	}
-	
-	
 
 	OnProjectileNocked();
 	return true;
@@ -207,51 +240,63 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	if (!IsValid(BowComponent) ||
 		!bProjectilePrepared ||
 		bProjectileReleased ||
-		!BowComponent->HasPreparedArrow())
-	{
-		return false;
-	}
-
-	AArrowBase* PreparedArrow = BowComponent->GetPreparedArrow();
-
-	if (!IsValid(PreparedArrow))
+		!BowComponent->HasPreparedArrows())
 	{
 		return false;
 	}
 
 	const bool bHasTarget =
-	ShouldUseCurrentTarget() &&
-	IsValid(GetTargetingComponent()) &&
-	GetTargetingComponent()->HasTarget();
+		ShouldUseCurrentTarget() &&
+		IsValid(GetTargetingComponent()) &&
+		GetTargetingComponent()->HasTarget();
 
-	FVector Direction = FVector::ZeroVector;
+	TArray<FVector> Directions;
+	Directions.Reserve(BowComponent->GetPreparedArrowCount());
 
-	if (bHasTarget)
+	for (int32 Index = 0; Index < BowComponent->GetPreparedArrowCount(); ++Index)
 	{
-		const FVector ProjectileLocation = PreparedArrow->GetActorLocation();
-		const FVector TargetLocation = GetTargetingComponent()->GetCurrentTargetAimLocation();
+		FVector Direction = FVector::ZeroVector;
 
-		Direction = (TargetLocation - ProjectileLocation).GetSafeNormal();
-	}
-	else
-	{
-		Direction = ResolveProjectileDirection().GetSafeNormal();
-	}
+		if (bHasTarget)
+		{
+			const AArrowBase* PreparedArrow = BowComponent->GetPreparedArrow(Index);
 
-	if (Direction.IsNearlyZero())
-	{
-		return false;
+			if (!IsValid(PreparedArrow))
+			{
+				return false;
+			}
+
+			Direction = (
+				GetTargetingComponent()->GetCurrentTargetAimLocation() -
+				PreparedArrow->GetActorLocation()
+			).GetSafeNormal();
+		}
+		else
+		{
+			Direction = ResolveProjectileDirectionForIndex(Index).GetSafeNormal();
+		}
+
+		if (Direction.IsNearlyZero())
+		{
+			return false;
+		}
+
+		Directions.Add(Direction);
 	}
 
 	const float Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
 
-	if (!BowComponent->ReleasePreparedArrow(Direction, Strength, bHasTarget))
+	if (!BowComponent->ReleasePreparedArrows(Directions, Strength, bHasTarget))
 	{
 		return false;
 	}
-	
+
 	BowComponent->EndDrawVisuals();
-	BowComponent->HandleFeedbackPoint(EBowFeedbackPoint::ReleaseArrow,BowData);
+
+	BowComponent->HandleFeedbackPoint(
+		EBowFeedbackPoint::ReleaseArrow,
+		BowData
+	);
 
 	bProjectilePrepared = false;
 	bProjectileNocked = false;

@@ -107,35 +107,43 @@ void ABowBase::SetWielderMesh(USkeletalMeshComponent* InWielderMesh)
 	WielderMesh = InWielderMesh;
 }
 
-bool ABowBase::PrepareArrow(UArrowDataAsset* ArrowData)
+bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 {
-	if (IsValid(PreparedArrow) ||
+	if (HasPreparedArrows() ||
 		!IsValid(ArrowData) ||
-		!ArrowData->ArrowClass)
+		!ArrowData->ArrowClass ||
+		ArrowCount <= 0)
 	{
 		return false;
 	}
 
-	PreparedArrow = AcquireAvailableArrow(ArrowData->ArrowClass);
+	PreparedArrows.Reserve(ArrowCount);
 
-	if (!IsValid(PreparedArrow))
+	for (int32 Index = 0; Index < ArrowCount; ++Index)
 	{
-		return false;
+		AArrowBase* Arrow = AcquireAvailableArrow(ArrowData->ArrowClass);
+
+		if (!IsValid(Arrow) || !Arrow->ActivateFromPool(ArrowData))
+		{
+			if (IsValid(Arrow))
+			{
+				Arrow->ReturnToPool();
+			}
+
+			DiscardPreparedArrows();
+			return false;
+		}
+
+		PreparedArrows.Add(Arrow);
 	}
 
-	if (!PreparedArrow->ActivateFromPool(ArrowData))
-	{
-		AvailableArrows.AddUnique(PreparedArrow);
-		PreparedArrow = nullptr;
-		return false;
-	}
-
-	return true;
+	return PreparedArrows.Num() == ArrowCount;
 }
 
-bool ABowBase::AttachPreparedArrowToWielder(const FName SocketName, const FTransform& RelativeOffset)
+bool ABowBase::AttachPreparedArrowToWielder(const int32 ArrowIndex, const FName SocketName)
 {
-	if (!IsValid(PreparedArrow) ||
+	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||
+		!IsValid(PreparedArrows[ArrowIndex]) ||
 		!IsValid(WielderMesh) ||
 		SocketName.IsNone() ||
 		!WielderMesh->DoesSocketExist(SocketName))
@@ -143,18 +151,17 @@ bool ABowBase::AttachPreparedArrowToWielder(const FName SocketName, const FTrans
 		return false;
 	}
 
-	if (!PreparedArrow->AttachToComponent(WielderMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName))
-	{
-		return false;
-	}
-
-	PreparedArrow->SetActorRelativeTransform(RelativeOffset);
-	return true;
+	return PreparedArrows[ArrowIndex]->AttachToComponent(
+		WielderMesh,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		SocketName
+	);
 }
 
-bool ABowBase::AttachPreparedArrowToBow(const FName SocketName, const FTransform& RelativeOffset)
+bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName SocketName)
 {
-	if (!IsValid(PreparedArrow) ||
+	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||
+		!IsValid(PreparedArrows[ArrowIndex]) ||
 		!IsValid(BowMesh) ||
 		SocketName.IsNone() ||
 		!BowMesh->DoesSocketExist(SocketName))
@@ -162,59 +169,79 @@ bool ABowBase::AttachPreparedArrowToBow(const FName SocketName, const FTransform
 		return false;
 	}
 
-	if (!PreparedArrow->AttachToComponent(BowMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName))
-	{
-		return false;
-	}
-
-	PreparedArrow->SetActorRelativeTransform(RelativeOffset);
-	return true;
+	return PreparedArrows[ArrowIndex]->AttachToComponent(
+		BowMesh,
+		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+		SocketName
+	);
 }
 
-bool ABowBase::ReleasePreparedArrow(const FVector& Direction, const float Strength, const bool bTargetedShot)
+bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const float Strength, const bool bTargetedShot)
 {
-	if (!IsValid(PreparedArrow))
+	if (PreparedArrows.IsEmpty() ||
+		Directions.Num() != PreparedArrows.Num())
 	{
 		return false;
 	}
 
-	const FVector NormalizedDirection = Direction.GetSafeNormal();
-
-	if (NormalizedDirection.IsNearlyZero())
+	for (int32 Index = 0; Index < PreparedArrows.Num(); ++Index)
 	{
-		return false;
+		if (!IsValid(PreparedArrows[Index]) ||
+			Directions[Index].GetSafeNormal().IsNearlyZero())
+		{
+			return false;
+		}
 	}
 
-	AArrowBase* ArrowToFire = PreparedArrow;
+	TArray<TObjectPtr<AArrowBase>> ArrowsToFire = PreparedArrows;
+	PreparedArrows.Reset();
+
 	const float ClampedStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
+	bool bReleasedAnyArrow = false;
 
-	ArrowToFire->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-
-	if (!ArrowToFire->Fire(NormalizedDirection, ClampedStrength, bTargetedShot))
+	for (int32 Index = 0; Index < ArrowsToFire.Num(); ++Index)
 	{
-		return false;
+		AArrowBase* Arrow = ArrowsToFire[Index];
+
+		if (!IsValid(Arrow))
+		{
+			continue;
+		}
+
+		Arrow->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+
+		if (!Arrow->Fire(Directions[Index].GetSafeNormal(), ClampedStrength, bTargetedShot))
+		{
+			Arrow->ReturnToPool();
+			continue;
+		}
+
+		LastFiredArrow = Arrow;
+		OnArrowFired.Broadcast(Arrow, ClampedStrength);
+		bReleasedAnyArrow = true;
 	}
 
-	PreparedArrow = nullptr;
-	LastFiredArrow = ArrowToFire;
-
-	OnArrowFired.Broadcast(ArrowToFire, ClampedStrength);
-	return true;
+	return bReleasedAnyArrow;
 }
 
-void ABowBase::DiscardPreparedArrow()
+void ABowBase::DiscardPreparedArrows()
 {
-	if (!IsValid(PreparedArrow))
+	for (AArrowBase* Arrow : PreparedArrows)
 	{
-		return;
+		if (IsValid(Arrow))
+		{
+			Arrow->ReturnToPool();
+		}
 	}
 
-	AArrowBase* ArrowToDiscard = PreparedArrow;
-	PreparedArrow = nullptr;
-
-	ArrowToDiscard->ReturnToPool();
+	PreparedArrows.Reset();
 }
-
+AArrowBase* ABowBase::GetPreparedArrow(const int32 ArrowIndex) const
+{
+	return PreparedArrows.IsValidIndex(ArrowIndex)
+		? PreparedArrows[ArrowIndex].Get()
+		: nullptr;
+}
 void ABowBase::ProcessFeedbackSet(const EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet, const EBowFeedbackPoint FeedbackPoint)
 {
 	if (FeedbackSet.ClearAt == FeedbackPoint)
@@ -347,7 +374,7 @@ AArrowBase* ABowBase::AcquireAvailableArrow(const TSubclassOf<AArrowBase> ArrowC
 
 void ABowBase::DestroyArrowPool()
 {
-	PreparedArrow = nullptr;
+	PreparedArrows.Reset();
 	LastFiredArrow = nullptr;
 
 	for (const TObjectPtr<AArrowBase>& Arrow : AllSpawnedArrows)
@@ -372,10 +399,7 @@ void ABowBase::HandleArrowReadyToRecycle(AArrowBase* Arrow)
 		return;
 	}
 
-	if (Arrow == PreparedArrow)
-	{
-		PreparedArrow = nullptr;
-	}
+	PreparedArrows.Remove(Arrow);
 
 	if (Arrow == LastFiredArrow)
 	{
