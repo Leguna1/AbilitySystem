@@ -315,6 +315,43 @@ void AArrowBase::ReturnToPool()
 	OnReadyToRecycle.Broadcast(this);
 }
 
+bool AArrowBase::Redirect(const FVector& NewDirection)
+{
+	if (!IsInFlight() || !IsValid(ProjectileMovement))
+	{
+		return false;
+	}
+
+	const FVector NormalizedDirection = NewDirection.GetSafeNormal();
+
+	if (NormalizedDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const float CurrentSpeed = ProjectileMovement->Velocity.Size();
+
+	if (CurrentSpeed <= UE_KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	Velocity = NormalizedDirection * CurrentSpeed;
+
+	ProjectileMovement->Velocity = Velocity;
+	SetActorRotation(Velocity.Rotation());
+
+	return true;
+}
+
+bool AArrowBase::IsInFlight() const
+{
+	return bIsInFlight &&
+		!bHasImpacted &&
+		IsValid(ProjectileMovement) &&
+		ProjectileMovement->IsActive();
+}
+
 void AArrowBase::HandleHitBoxBeginOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,

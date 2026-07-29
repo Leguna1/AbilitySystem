@@ -93,7 +93,11 @@ protected:
 	void OnRangedAttackFinished(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
 	virtual void OnRangedAttackFinished_Implementation(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
 	
-	
+	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
+	int32 GetReleasedProjectileCount() const { return ReleasedProjectiles.Num(); }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
+	AArrowBase* GetReleasedProjectile(int32 ProjectileIndex) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	TObjectPtr<UArrowDataAsset> ArrowData;
@@ -127,6 +131,9 @@ private:
 	TObjectPtr<UBowComponent> BowComponent;
 	
 	UPROPERTY(Transient)
+	TArray<TObjectPtr<AArrowBase>> ReleasedProjectiles;
+	
+	UPROPERTY(Transient)
 	bool bProjectilePrepared = false;
 
 	UPROPERTY(Transient)
@@ -134,4 +141,6 @@ private:
 
 	UPROPERTY(Transient)
 	bool bProjectileReleased = false;
+	
+	
 };

@@ -180,11 +180,20 @@ bool UBowComponent::HasPreparedArrows() const
 {
 	return IsValid(Bow) && Bow->HasPreparedArrows();
 }
-AArrowBase* UBowComponent::GetLastFiredArrow() const
-{
-	return IsValid(Bow) ? Bow->GetLastFiredArrow() : nullptr;
-}
 void UBowComponent::HandleBowArrowFired(AArrowBase* Arrow, const float ShotStrength)
 {
 	OnArrowFired.Broadcast(Arrow, ShotStrength);
+}
+int32 UBowComponent::GetReleasedArrowCount() const
+{
+	return IsValid(Bow)
+		? Bow->GetReleasedArrowCount()
+		: 0;
+}
+
+AArrowBase* UBowComponent::GetReleasedArrow(const int32 ArrowIndex) const
+{
+	return IsValid(Bow)
+		? Bow->GetReleasedArrow(ArrowIndex)
+		: nullptr;
 }

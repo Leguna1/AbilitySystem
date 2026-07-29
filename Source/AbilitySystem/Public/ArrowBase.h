@@ -41,9 +41,6 @@ public:
 	float GetCalculatedDamage() const;
 
 	UFUNCTION(BlueprintPure, Category = "Arrow")
-	bool IsInFlight() const { return bIsInFlight; }
-
-	UFUNCTION(BlueprintPure, Category = "Arrow")
 	bool HasImpacted() const { return bHasImpacted; }
 
 	UFUNCTION(BlueprintPure, Category = "Arrow")
@@ -65,6 +62,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow|Pooling")
 	void ReturnToPool();
+	
+	UFUNCTION(BlueprintCallable, Category = "Arrow|Movement")
+	bool Redirect(const FVector& NewDirection);
+
+	UFUNCTION(BlueprintPure, Category = "Arrow|Movement")
+	bool IsInFlight() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Arrow|Pooling")
 	FOnArrowReadyToRecycleSignature OnReadyToRecycle;

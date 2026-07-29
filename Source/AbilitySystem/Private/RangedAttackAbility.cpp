@@ -82,6 +82,8 @@ void URangedAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Ev
 
 void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
+	ReleasedProjectiles.Reset();
+	
 	const bool bHadPreparedProjectile =
 		bProjectilePrepared ||
 		(IsValid(BowComponent) && BowComponent->HasPreparedArrows());
@@ -290,7 +292,16 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	{
 		return false;
 	}
+	
+	ReleasedProjectiles.Reset();
 
+	for (int32 Index = 0; Index < BowComponent->GetReleasedArrowCount(); ++Index)
+	{
+		if (AArrowBase* Arrow = BowComponent->GetReleasedArrow(Index))
+		{
+			ReleasedProjectiles.Add(Arrow);
+		}
+	}
 	BowComponent->EndDrawVisuals();
 
 	BowComponent->HandleFeedbackPoint(
@@ -339,6 +350,13 @@ void URangedAttackAbility::OnProjectileReleased_Implementation(float Strength)
 
 void URangedAttackAbility::OnRangedAttackFinished_Implementation(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile)
 {
+}
+
+AArrowBase* URangedAttackAbility::GetReleasedProjectile(const int32 ProjectileIndex) const
+{
+	return ReleasedProjectiles.IsValidIndex(ProjectileIndex)
+		? ReleasedProjectiles[ProjectileIndex].Get()
+		: nullptr;
 }
 
 bool URangedAttackAbility::HandleProjectileAnimationEvent(const FGameplayTag EventTag)

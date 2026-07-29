@@ -195,6 +195,7 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const fl
 
 	TArray<TObjectPtr<AArrowBase>> ArrowsToFire = PreparedArrows;
 	PreparedArrows.Reset();
+	ReleasedArrows.Reset();
 
 	const float ClampedStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
 	bool bReleasedAnyArrow = false;
@@ -216,7 +217,7 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const fl
 			continue;
 		}
 
-		LastFiredArrow = Arrow;
+		ReleasedArrows.Add(Arrow);
 		OnArrowFired.Broadcast(Arrow, ClampedStrength);
 		bReleasedAnyArrow = true;
 	}
@@ -242,6 +243,14 @@ AArrowBase* ABowBase::GetPreparedArrow(const int32 ArrowIndex) const
 		? PreparedArrows[ArrowIndex].Get()
 		: nullptr;
 }
+
+AArrowBase* ABowBase::GetReleasedArrow(const int32 ArrowIndex) const
+{
+	return ReleasedArrows.IsValidIndex(ArrowIndex)
+		? ReleasedArrows[ArrowIndex].Get()
+		: nullptr;
+}
+
 void ABowBase::ProcessFeedbackSet(const EBowFeedbackSetType SetType, const FBowFeedbackSet& FeedbackSet, const EBowFeedbackPoint FeedbackPoint)
 {
 	if (FeedbackSet.ClearAt == FeedbackPoint)
@@ -375,7 +384,7 @@ AArrowBase* ABowBase::AcquireAvailableArrow(const TSubclassOf<AArrowBase> ArrowC
 void ABowBase::DestroyArrowPool()
 {
 	PreparedArrows.Reset();
-	LastFiredArrow = nullptr;
+	ReleasedArrows.Reset();
 
 	for (const TObjectPtr<AArrowBase>& Arrow : AllSpawnedArrows)
 	{
@@ -400,11 +409,7 @@ void ABowBase::HandleArrowReadyToRecycle(AArrowBase* Arrow)
 	}
 
 	PreparedArrows.Remove(Arrow);
-
-	if (Arrow == LastFiredArrow)
-	{
-		LastFiredArrow = nullptr;
-	}
+	ReleasedArrows.Remove(Arrow);
 
 	AvailableArrows.AddUnique(Arrow);
 }

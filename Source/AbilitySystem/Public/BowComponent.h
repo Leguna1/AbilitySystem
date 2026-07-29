@@ -57,9 +57,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	bool HasPreparedArrows() const;
+	
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	int32 GetReleasedArrowCount() const;
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetLastFiredArrow() const;
+	AArrowBase* GetReleasedArrow(int32 ArrowIndex) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowComponentArrowFiredSignature OnArrowFired;

@@ -89,9 +89,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	bool HasPreparedArrows() const { return !PreparedArrows.IsEmpty(); }
+	
+	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
+	int32 GetReleasedArrowCount() const { return ReleasedArrows.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetLastFiredArrow() const { return LastFiredArrow; }
+	AArrowBase* GetReleasedArrow(const int32 ArrowIndex) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowArrowFiredSignature OnArrowFired;
@@ -155,7 +158,7 @@ private:
 	TArray<TObjectPtr<AArrowBase>> PreparedArrows;
 
 	UPROPERTY(Transient)
-	TObjectPtr<AArrowBase> LastFiredArrow;
+	TArray<TObjectPtr<AArrowBase>> ReleasedArrows;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AArrowBase>> AllSpawnedArrows;
