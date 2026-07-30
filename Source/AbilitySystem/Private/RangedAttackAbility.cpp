@@ -82,7 +82,7 @@ void URangedAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Ev
 
 void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
-	ReleasedProjectiles.Reset();
+	
 	
 	const bool bHadPreparedProjectile =
 		bProjectilePrepared ||
@@ -115,6 +115,7 @@ void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 	bProjectileReleased = false;
+	ReleasedProjectiles.Reset();
 }
 
 bool URangedAttackAbility::HasPreparedProjectile() const

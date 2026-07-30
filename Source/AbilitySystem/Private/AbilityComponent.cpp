@@ -304,6 +304,7 @@ void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
 		InputAbility->OnMovementInputReceived(MovementInput);
 	});
 }
+
 FVector2D UAbilityComponent::GetMovementInput() const
 {
 	return IsValid(InputBufferComponent)
@@ -621,7 +622,7 @@ bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, cons
 	return Ability->CanActivateAbility();
 }
 
-bool UAbilityComponent::CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason) const
+bool UAbilityComponent::CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason)
 {
 	OutReplacementReason = EAbilityEndReason::Interrupted;
 
@@ -740,6 +741,7 @@ void UAbilityComponent::EndActiveAbilityInternal(const EAbilityEndReason EndReas
 	SetComponentTickEnabled(false);
 
 	RemoveActiveAbilityTags();
+	
 
 	DispatchAbilityCallback([this, EndingAbility, EndingAbilityId, EndReason]()
 	{
@@ -757,7 +759,7 @@ void UAbilityComponent::EndActiveAbilityInternal(const EAbilityEndReason EndReas
 		ResolveBufferedAbilityInput();
 	}
 }
-void UAbilityComponent::SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, const bool bClosed)
+void UAbilityComponent::SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, const bool bClosed) const
 {
 	if (!IsValid(RequestingAbility) ||
 		RequestingAbility != ActiveAbility ||
@@ -839,12 +841,12 @@ void UAbilityComponent::RemoveActiveAbilityTags()
 	BroadcastOwnedTagsChanged();
 }
 
-void UAbilityComponent::BroadcastOwnedTagsChanged()
+void UAbilityComponent::BroadcastOwnedTagsChanged() const
 {
 	OwnedTagsChangedEvent.Broadcast(GetOwnedGameplayTags());
 }
 
-const UAbility* UAbilityComponent::GetAbilityCDO(TSubclassOf<UAbility> AbilityClass) const
+const UAbility* UAbilityComponent::GetAbilityCDO(const TSubclassOf<UAbility> AbilityClass)
 {
 	return AbilityClass ? AbilityClass.GetDefaultObject() : nullptr;
 }

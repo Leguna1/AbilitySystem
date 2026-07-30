@@ -141,7 +141,7 @@ private:
 	void EndAbility(UAbility* RequestingAbility, EAbilityEndReason EndReason);
 	void SetAbilityTickEnabled(UAbility* RequestingAbility, bool bEnabled);
 	void SetAbilityTransitionOpen(UAbility* RequestingAbility, bool bOpen);
-	void SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, bool bClosed);
+	void SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, bool bClosed) const;
 
 	void BuildAbilityInputCandidates(TArray<FAbilityInputCandidate>& OutCandidates);
 	bool ExecuteAbilityInputCandidate(const FAbilityInputCandidate& Candidate);
@@ -149,21 +149,23 @@ private:
 	bool ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbilityClass);
 
 	bool CanActivateAbilityInstance(const UAbility* Ability, bool bReplacingActiveAbility) const;
-	bool CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason) const;
+	static bool CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason);
 	UAbility* CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass);
 	bool ActivateAbilityInstance(UAbility* Ability);
 	void EndActiveAbilityInternal(EAbilityEndReason EndReason);
 
 	void DispatchAbilityCallback(const TFunctionRef<void()>& Callback);
+	
+	
 
 	FGameplayTagContainer BuildLooseOwnerTags() const;
 	FGameplayTagContainer BuildOwnedTagsWithoutActiveAbility() const;
 
 	void ApplyActiveAbilityTags();
 	void RemoveActiveAbilityTags();
-	void BroadcastOwnedTagsChanged();
+	void BroadcastOwnedTagsChanged() const;
 
-	const UAbility* GetAbilityCDO(TSubclassOf<UAbility> AbilityClass) const;
+	static const UAbility* GetAbilityCDO(TSubclassOf<UAbility> AbilityClass);
 	float GetLongestBufferDurationForInput(FGameplayTag InputTag) const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Ability|Granted")

@@ -21,7 +21,12 @@ AArrowBase::AArrowBase()
 	HitBox = CreateDefaultSubobject<UBoxComponent>(TEXT("HitBox"));
 	SetRootComponent(HitBox);
 
-	HitBox->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+	HitBox->SetCollisionObjectType(ECC_WorldDynamic);
+	HitBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HitBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+	HitBox->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+	HitBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
+	HitBox->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 	HitBox->SetGenerateOverlapEvents(true);
 
 	KillCam = CreateDefaultSubobject<UCameraComponent>(TEXT("KillCam"));
@@ -42,6 +47,7 @@ AArrowBase::AArrowBase()
 	ProjectileMovement->ProjectileGravityScale = 0.0f;
 	ProjectileMovement->bRotationFollowsVelocity = true;
 	ProjectileMovement->bShouldBounce = false;
+	ProjectileMovement->bSweepCollision = true;
 	ProjectileMovement->bAutoActivate = false;
 }
 
@@ -352,6 +358,17 @@ bool AArrowBase::IsInFlight() const
 		ProjectileMovement->IsActive();
 }
 
+bool AArrowBase::SetRemainingFlightTime(const float Duration)
+{
+	if (!IsInFlight())
+	{
+		return false;
+	}
+
+	ScheduleFlightExpiry(Duration);
+	return true;
+}
+
 void AArrowBase::HandleHitBoxBeginOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -370,11 +387,21 @@ void AArrowBase::HandleHitBoxBeginOverlap(
 		return;
 	}
 
+	if (OtherActor->IsA<AArrowBase>())
+	{
+		return;
+	}
+
 	UPrimitiveComponent* HitComponent = SweepResult.GetComponent();
 
-	if (!IsValid(HitComponent))
+	if (!IsValid(HitComponent) || HitComponent->GetOwner() == this)
 	{
 		HitComponent = OtherComponent;
+	}
+
+	if (!IsValid(HitComponent) || HitComponent->GetOwner() == this)
+	{
+		return;
 	}
 
 	HandleImpact(

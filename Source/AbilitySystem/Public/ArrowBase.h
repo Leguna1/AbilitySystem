@@ -68,6 +68,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Arrow|Movement")
 	bool IsInFlight() const;
+	
+	UFUNCTION(BlueprintCallable, Category = "Arrow|Movement")
+	bool SetRemainingFlightTime(float Duration);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arrow|Pooling")
 	FOnArrowReadyToRecycleSignature OnReadyToRecycle;
