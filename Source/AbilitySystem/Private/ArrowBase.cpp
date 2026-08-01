@@ -586,10 +586,19 @@ void AArrowBase::PlayEndFeedback(const FVector& FeedbackLocation)
 
 	if (IsValid(ArrowData->EndSound))
 	{
+		// Per-impact pitch variation so clustered volley landings read as distinct
+		// hits instead of one voice-stealing stutter. VolumeMultiplier stays 1.
+		const float Pitch = FMath::FRandRange(
+			FMath::Min(ArrowData->EndSoundPitchMin, ArrowData->EndSoundPitchMax),
+			FMath::Max(ArrowData->EndSoundPitchMin, ArrowData->EndSoundPitchMax)
+		);
+
 		UGameplayStatics::PlaySoundAtLocation(
 			this,
 			ArrowData->EndSound,
-			FeedbackLocation
+			FeedbackLocation,
+			1.0f,
+			Pitch
 		);
 	}
 

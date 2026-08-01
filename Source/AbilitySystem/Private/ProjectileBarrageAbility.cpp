@@ -70,6 +70,12 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 {
 	Super::OnProjectileReleased_Implementation(Strength);
 
+	// Single-burst ability: the volley leaving the bow is the commit point.
+	if (!IsCommitted())
+	{
+		RequestCommit();
+	}
+
 	ClearBarrageTimer();
 	BarrageImpactPoints.Reset();
 
@@ -90,7 +96,14 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 
 		if (IsValid(Arrow) && BarrageFlightLifespan > 0.0f)
 		{
-			Arrow->SetRemainingFlightTime(BarrageFlightLifespan);
+			// Per-arrow random stagger so impacts land sequentially rather than
+			// all on one frame, preventing the identical EndSound from stacking
+			// and phase-cancelling into a mushy artifact.
+			const float Stagger = BarrageImpactStagger > 0.0f
+				? FMath::FRandRange(0.0f, BarrageImpactStagger)
+				: 0.0f;
+
+			Arrow->SetRemainingFlightTime(BarrageFlightLifespan + Stagger);
 		}
 
 		BarrageImpactPoints.Add(

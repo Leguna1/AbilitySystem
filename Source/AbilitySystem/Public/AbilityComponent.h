@@ -12,12 +12,27 @@ class ACharacter;
 class UAbility;
 class UInputBufferComponent;
 class UMotionWarpingComponent;
+class UResourceComponent;
 class UTargetingComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityEndedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability, EAbilityEndReason, EndReason);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOwnedTagsChangedEventSignature, FGameplayTagContainer, OwnedTags);
+
+/** Parallel-array cooldown store keyed by ability id (no TMap by project convention). */
+USTRUCT()
+struct FAbilityCooldownState
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FGameplayTag> AbilityIds;
+
+	/** World time (seconds) at which the matching ability leaves cooldown. */
+	UPROPERTY()
+	TArray<double> EndTimes;
+};
 
 UCLASS(ClassGroup = (Ability), meta = (BlueprintSpawnableComponent))
 class ABILITYSYSTEM_API UAbilityComponent : public UActorComponent
@@ -44,6 +59,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
 	TSubclassOf<UAbility> FindAbilityClassById(FGameplayTag AbilityId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
+	const TArray<TSubclassOf<UAbility>>& GetGrantedAbilityClasses() const { return GrantedAbilityClasses; }
+
+	/** Returns the class default object for an ability class, for reading display/definition data without instancing. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
+	const UAbility* GetAbilityDefaults(TSubclassOf<UAbility> AbilityClass) const;
 
 	UFUNCTION(BlueprintCallable, Category = "Ability")
 	bool TryActivateAbility(FGameplayTag AbilityId);
@@ -99,6 +121,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	bool IsActiveAbilityCommitted() const;
 
+	/* -------------------- Cooldown / Cost -------------------- */
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	bool IsAbilityOnCooldown(FGameplayTag AbilityId) const;
+
+	/** Seconds remaining on cooldown, 0 if ready. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	float GetAbilityCooldownRemaining(FGameplayTag AbilityId) const;
+
+	/** 0..1 fraction of cooldown elapsed (1 = ready), for a radial sweep. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	float GetAbilityCooldownProgress(FGameplayTag AbilityId) const;
+
+	/** True if the owner currently has enough Focus for this ability's cost. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	bool CanAffordAbility(FGameplayTag AbilityId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|References")
+	UResourceComponent* GetResourceComponent() const { return ResourceComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	UInputBufferComponent* GetInputBufferComponent() const { return InputBufferComponent; }
 	
@@ -108,12 +150,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UMotionWarpingComponent* GetMotionWarpingComponent() const { return MotionWarpingComponent; }
 	
-	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
-	const TArray<TSubclassOf<UAbility>>& GetGrantedAbilityClasses() const { return GrantedAbilityClasses; }
-
-	/** Returns the class default object for an ability class, for reading display/definition data without instancing. */
-	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
-	const UAbility* GetAbilityDefaults(TSubclassOf<UAbility> AbilityClass) const;
+	
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	FVector2D GetMovementInput() const;
@@ -173,6 +210,11 @@ private:
 	static const UAbility* GetAbilityCDO(TSubclassOf<UAbility> AbilityClass);
 	float GetLongestBufferDurationForInput(FGameplayTag InputTag) const;
 
+	int32 FindCooldownIndex(FGameplayTag AbilityId) const;
+	void StartCooldown(FGameplayTag AbilityId, float Duration);
+	void CommitAbilityCostAndCooldown(const UAbility* Ability);
+	float GetCurrentFocus() const;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Ability|Granted")
 	TArray<TSubclassOf<UAbility>> StartingAbilityClasses;
 
@@ -187,6 +229,12 @@ private:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UMotionWarpingComponent> MotionWarpingComponent;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UResourceComponent> ResourceComponent;
+
+	UPROPERTY(Transient)
+	FAbilityCooldownState CooldownState;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Granted", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<UAbility>> GrantedAbilityClasses;

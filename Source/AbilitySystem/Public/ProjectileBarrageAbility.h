@@ -37,6 +37,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Flight", meta = (ClampMin = "0.0"))
 	float BarrageFlightLifespan = 5.0f;
 
+	/**
+	 * Max random flight-time added per arrow (seconds), spreading landings over
+	 * time so their impact sounds don't stack and phase-cancel. Each arrow gets a
+	 * random offset in [0, this]. ~0.3-0.5 turns a mushy simultaneous hit into a
+	 * distinct patter. 0 = all land together (original behaviour).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Flight", meta = (ClampMin = "0.0"))
+	float BarrageImpactStagger = 0.35f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Launch", meta = (ClampMin = "0.0", ClampMax = "89.0"))
 	float LaunchSpreadAngle = 8.0f;
 

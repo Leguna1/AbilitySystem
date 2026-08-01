@@ -177,6 +177,21 @@ bool UChargedShotAbility::CanReplaceActiveAbility_Implementation(const UAbility*
 	return true;
 }
 
+FAbilityProgress UChargedShotAbility::GetAbilityProgress_Implementation() const
+{
+	FAbilityProgress Progress;
+
+	// Only show while actually charging; otherwise hide the bar.
+	if (ChargedShotStage != EChargedShotStage::Charging)
+	{
+		return Progress; // Kind == None
+	}
+
+	Progress.Kind = EAbilityProgressKind::Charge;
+	Progress.Normalized = GetNormalizedCharge(); // fills 0 -> 1
+	return Progress;
+}
+
 float UChargedShotAbility::GetNormalizedCharge() const
 {
 	if (MaximumChargeTime <= 0.0f)

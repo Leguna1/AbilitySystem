@@ -87,6 +87,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|End")
 	TObjectPtr<USoundBase> EndSound;
 
+	/**
+	 * Min/max random pitch multiplier applied to EndSound per impact. Keeping the
+	 * two values apart (e.g. 0.92 / 1.08) makes clustered volley impacts sound
+	 * distinct rather than one stuttering source. Set both to 1.0 to disable.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|End", meta = (ClampMin = "0.1", ClampMax = "3.0"))
+	float EndSoundPitchMin = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|End", meta = (ClampMin = "0.1", ClampMax = "3.0"))
+	float EndSoundPitchMax = 1.0f;
+
 	/* -------------------- Pool-return feedback -------------------- */
 
 	/**

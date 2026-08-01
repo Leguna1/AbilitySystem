@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilityTypes.h"
+#include "ResourceComponent.h"
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
 #include "AbilitySlotWidget.generated.h"
@@ -50,6 +51,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	FText GetKeybindLabel() const { return KeybindLabel; }
 
+	/** Focus cost read from the ability's defaults. Static; set once at init. */
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	float GetFocusCost() const { return FocusCost; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	bool IsOnCooldown() const { return bOnCooldown; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	bool CanAfford() const { return bCanAfford; }
+
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	bool IsAbilityActive() const { return bIsActive; }
 
@@ -72,6 +83,21 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnActiveStateChanged(bool bActive);
 
+	/** Called when the ability enters or leaves cooldown. Toggle your sweep overlay here. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnCooldownStateChanged(bool bOnCooldownNow);
+
+	/**
+	 * Called each poll tick while on cooldown. Drive your radial/linear sweep from
+	 * Progress (1 = just started, 0 = ready) and show Remaining seconds if desired.
+	 */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnCooldownUpdated(float Remaining, float Progress);
+
+	/** Called when affordability changes. Grey out / restore the slot here. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnAffordabilityChanged(bool bCanAffordNow);
+
 private:
 	UFUNCTION()
 	UWidget* GetTooltipWidget();
@@ -82,7 +108,20 @@ private:
 	UFUNCTION()
 	void HandleAbilityEnded(FGameplayTag AbilityId, UAbility* Ability, EAbilityEndReason EndReason);
 
+	UFUNCTION()
+	void HandleAbilityCommitted(FGameplayTag AbilityId, UAbility* Ability);
+
+	UFUNCTION()
+	void HandleResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
+
 	void SetActive(bool bNewActive);
+
+	void BeginCooldownPoll();
+	void TickCooldown();
+	void RefreshAffordability();
+
+	void SetCooldownState(bool bNewOnCooldown);
+	void SetAffordable(bool bNewCanAfford);
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityComponent> AbilityComponent;
@@ -107,6 +146,21 @@ private:
 
 	UPROPERTY(Transient)
 	FText KeybindLabel;
+
+	UPROPERTY(Transient)
+	float FocusCost = 0.0f;
+
+	UPROPERTY(Transient)
+	bool bOnCooldown = false;
+
+	UPROPERTY(Transient)
+	bool bCanAfford = true;
+
+	/** Cooldown sweep poll rate in seconds. Runs only while on cooldown. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|UI", meta = (AllowPrivateAccess = "true"))
+	float CooldownPollInterval = 0.1f;
+
+	FTimerHandle CooldownTimerHandle;
 
 	UPROPERTY(Transient)
 	bool bIsActive = false;

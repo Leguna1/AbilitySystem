@@ -168,6 +168,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	FGameplayTag GetActivationInputTag() const { return ActivationInputTag; }
 
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	float GetFocusCost() const { return FocusCost; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	float GetCooldownDuration() const { return CooldownDuration; }
+
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	float GetInputBufferDuration() const { return InputBufferDuration; }
 
@@ -276,6 +282,14 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Input")
 	FGameplayTag ActivationInputTag;
+
+	/** Focus spent when this ability commits. Checked at activation, spent at commit. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (ClampMin = "0.0"))
+	float FocusCost = 0.0f;
+
+	/** Seconds this ability is unavailable after it commits. 0 = no cooldown. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (ClampMin = "0.0"))
+	float CooldownDuration = 0.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Input", meta = (ClampMin = "0.0"))
 	float InputBufferDuration = 0.25f;

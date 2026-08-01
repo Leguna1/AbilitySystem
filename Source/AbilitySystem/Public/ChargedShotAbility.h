@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RangedAttackAbility.h"
+#include "AbilityProgressProvider.h"
 #include "ChargedShotAbility.generated.h"
 
 class UAnimMontage;
@@ -38,12 +39,14 @@ enum class EChargeInterruptionResponse : uint8
  * - Movement Interruption Response = Ignore
  */
 UCLASS(Abstract, Blueprintable, BlueprintType)
-class ABILITYSYSTEM_API UChargedShotAbility : public URangedAttackAbility
+class ABILITYSYSTEM_API UChargedShotAbility : public URangedAttackAbility, public IAbilityProgressProvider
 {
 	GENERATED_BODY()
 
 public:
 	UChargedShotAbility();
+
+	virtual FAbilityProgress GetAbilityProgress_Implementation() const override;
 
 	virtual bool CanActivateAbility_Implementation() const override;
 	virtual void ActivateAbility_Implementation() override;

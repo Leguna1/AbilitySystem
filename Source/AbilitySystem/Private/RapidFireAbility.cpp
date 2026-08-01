@@ -166,6 +166,24 @@ bool URapidFireAbility::CanReplaceActiveAbility_Implementation(const UAbility* C
 	return true;
 }
 
+FAbilityProgress URapidFireAbility::GetAbilityProgress_Implementation() const
+{
+	FAbilityProgress Progress;
+
+	// Only show once actually firing; hide during windup/recovery/inactive.
+	if (RapidFireStage != ERapidFireStage::Firing)
+	{
+		return Progress; // Kind == None
+	}
+
+	Progress.Kind = EAbilityProgressKind::Count;
+	Progress.Current = GetRemainingShots();
+	Progress.Max = MaximumShots;
+	// Deplete 1 -> 0 as shots are spent.
+	Progress.Normalized = 1.0f - GetRapidFireProgress();
+	return Progress;
+}
+
 float URapidFireAbility::GetRapidFireProgress() const
 {
 	if (MaximumShots <= 0)

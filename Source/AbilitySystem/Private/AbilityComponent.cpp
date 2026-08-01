@@ -4,6 +4,7 @@
 #include "GameFramework/Character.h"
 #include "InputBufferComponent.h"
 #include "MotionWarpingComponent.h"
+#include "ResourceComponent.h"
 #include "TargetingComponent.h"
 
 UAbilityComponent::UAbilityComponent()
@@ -20,6 +21,7 @@ void UAbilityComponent::BeginPlay()
 	InputBufferComponent = GetOwner()->FindComponentByClass<UInputBufferComponent>();
 	TargetingComponent = GetOwner()->FindComponentByClass<UTargetingComponent>();
 	MotionWarpingComponent = GetOwner()->FindComponentByClass<UMotionWarpingComponent>();
+	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
 
 	if (!IsValid(OwningCharacter))
 	{
@@ -135,6 +137,11 @@ TSubclassOf<UAbility> UAbilityComponent::FindAbilityClassById(const FGameplayTag
 	}
 
 	return nullptr;
+}
+
+const UAbility* UAbilityComponent::GetAbilityDefaults(const TSubclassOf<UAbility> AbilityClass) const
+{
+	return GetAbilityCDO(AbilityClass);
 }
 
 bool UAbilityComponent::TryActivateAbility(FGameplayTag AbilityId)
@@ -305,11 +312,6 @@ void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
 	});
 }
 
-const UAbility* UAbilityComponent::GetAbilityDefaults(const TSubclassOf<UAbility> AbilityClass) const
-{
-	return GetAbilityCDO(AbilityClass);
-}
-
 FVector2D UAbilityComponent::GetMovementInput() const
 {
 	return IsValid(InputBufferComponent)
@@ -429,6 +431,8 @@ bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
 
 	RequestingAbility->SetCommitted(true);
 	RequestingAbility->SetEarlyCancellationClosed(true);
+
+	CommitAbilityCostAndCooldown(RequestingAbility);
 
 	DispatchAbilityCallback([this, RequestingAbility]()
 	{
@@ -620,6 +624,16 @@ bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, cons
 	}
 
 	if (OwnerTags.HasAny(Ability->GetBlockedOwnerTags()))
+	{
+		return false;
+	}
+
+	if (IsAbilityOnCooldown(Ability->GetAbilityId()))
+	{
+		return false;
+	}
+
+	if (!CanAffordAbility(Ability->GetAbilityId()))
 	{
 		return false;
 	}
@@ -854,6 +868,141 @@ void UAbilityComponent::BroadcastOwnedTagsChanged() const
 const UAbility* UAbilityComponent::GetAbilityCDO(const TSubclassOf<UAbility> AbilityClass)
 {
 	return AbilityClass ? AbilityClass.GetDefaultObject() : nullptr;
+}
+
+int32 UAbilityComponent::FindCooldownIndex(const FGameplayTag AbilityId) const
+{
+	for (int32 Index = 0; Index < CooldownState.AbilityIds.Num(); ++Index)
+	{
+		if (CooldownState.AbilityIds[Index].MatchesTagExact(AbilityId))
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+void UAbilityComponent::StartCooldown(const FGameplayTag AbilityId, const float Duration)
+{
+	if (!AbilityId.IsValid() || Duration <= 0.0f)
+	{
+		return;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const double EndTime = World->GetTimeSeconds() + Duration;
+	const int32 Index = FindCooldownIndex(AbilityId);
+
+	if (Index != INDEX_NONE)
+	{
+		CooldownState.EndTimes[Index] = EndTime;
+	}
+	else
+	{
+		CooldownState.AbilityIds.Add(AbilityId);
+		CooldownState.EndTimes.Add(EndTime);
+	}
+}
+
+float UAbilityComponent::GetAbilityCooldownRemaining(const FGameplayTag AbilityId) const
+{
+	const int32 Index = FindCooldownIndex(AbilityId);
+	if (Index == INDEX_NONE)
+	{
+		return 0.0f;
+	}
+
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 0.0f;
+	}
+
+	const double Remaining = CooldownState.EndTimes[Index] - World->GetTimeSeconds();
+	return Remaining > 0.0 ? static_cast<float>(Remaining) : 0.0f;
+}
+
+bool UAbilityComponent::IsAbilityOnCooldown(const FGameplayTag AbilityId) const
+{
+	return GetAbilityCooldownRemaining(AbilityId) > 0.0f;
+}
+
+float UAbilityComponent::GetAbilityCooldownProgress(const FGameplayTag AbilityId) const
+{
+	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
+	const UAbility* Defaults = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(Defaults) || Defaults->GetCooldownDuration() <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	const float Remaining = GetAbilityCooldownRemaining(AbilityId);
+	if (Remaining <= 0.0f)
+	{
+		return 0.0f;
+	}
+
+	// Remaining fraction: 1 at start of cooldown, 0 when ready.
+	return FMath::Clamp(Remaining / Defaults->GetCooldownDuration(), 0.0f, 1.0f);
+}
+
+float UAbilityComponent::GetCurrentFocus() const
+{
+	return IsValid(ResourceComponent)
+		? ResourceComponent->GetResourceValue(EResourceType::Focus, EResourceValueType::Current)
+		: 0.0f;
+}
+
+bool UAbilityComponent::CanAffordAbility(const FGameplayTag AbilityId) const
+{
+	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
+	const UAbility* Defaults = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(Defaults))
+	{
+		return false;
+	}
+
+	const float Cost = Defaults->GetFocusCost();
+	if (Cost <= 0.0f)
+	{
+		return true;
+	}
+
+	// No resource component means nothing can pay a non-zero cost.
+	if (!IsValid(ResourceComponent))
+	{
+		return false;
+	}
+
+	return GetCurrentFocus() >= Cost;
+}
+
+void UAbilityComponent::CommitAbilityCostAndCooldown(const UAbility* Ability)
+{
+	if (!IsValid(Ability))
+	{
+		return;
+	}
+
+	const float Cost = Ability->GetFocusCost();
+	if (Cost > 0.0f && IsValid(ResourceComponent))
+	{
+		ResourceComponent->ModifyResource(
+			EResourceType::Focus,
+			EResourceValueType::Current,
+			-Cost
+		);
+	}
+
+	StartCooldown(Ability->GetAbilityId(), Ability->GetCooldownDuration());
 }
 
 float UAbilityComponent::GetLongestBufferDurationForInput(FGameplayTag InputTag) const

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "RangedAttackAbility.h"
+#include "AbilityProgressProvider.h"
 #include "RapidFireAbility.generated.h"
 
 class UAnimMontage;
@@ -44,12 +45,14 @@ enum class ERapidFireMovementResponse : uint8
  * - ends the ability naturally.
  */
 UCLASS(Abstract, Blueprintable, BlueprintType)
-class ABILITYSYSTEM_API URapidFireAbility : public URangedAttackAbility
+class ABILITYSYSTEM_API URapidFireAbility : public URangedAttackAbility, public IAbilityProgressProvider
 {
 	GENERATED_BODY()
 
 public:
 	URapidFireAbility();
+
+	virtual FAbilityProgress GetAbilityProgress_Implementation() const override;
 
 	virtual bool CanActivateAbility_Implementation() const override;
 	virtual void ActivateAbility_Implementation() override;
