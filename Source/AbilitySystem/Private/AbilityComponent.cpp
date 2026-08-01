@@ -305,6 +305,11 @@ void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
 	});
 }
 
+const UAbility* UAbilityComponent::GetAbilityDefaults(const TSubclassOf<UAbility> AbilityClass) const
+{
+	return GetAbilityCDO(AbilityClass);
+}
+
 FVector2D UAbilityComponent::GetMovementInput() const
 {
 	return IsValid(InputBufferComponent)

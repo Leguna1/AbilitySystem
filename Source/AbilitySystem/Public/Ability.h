@@ -10,6 +10,7 @@ class ACharacter;
 class UAbilityComponent;
 class UMotionWarpingComponent;
 class UTargetingComponent;
+class UTexture2D;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UAbility : public UObject
@@ -128,6 +129,21 @@ public:
 
 	/* -------------------- Getters -------------------- */
 
+	/* -------------------- Display -------------------- */
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Display")
+	FText GetDisplayName() const { return DisplayName; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Display")
+	FText GetDescription() const { return Description; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Display")
+	UTexture2D* GetIcon() const { return Icon; }
+
+	/** Short glyph shown on the hotbar slot, e.g. "1", "LMB", "RT". Purely cosmetic. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Display")
+	FText GetKeybindLabel() const { return KeybindLabel; }
+
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	FGameplayTag GetAbilityId() const { return AbilityId; }
 
@@ -242,6 +258,18 @@ protected:
 	bool OwnerHasAnyTags(const FGameplayTagContainer& Tags) const;
 
 	/* -------------------- Definition -------------------- */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display")
+	FText DisplayName;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display", meta = (MultiLine = "true"))
+	FText Description;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display")
+	TObjectPtr<UTexture2D> Icon;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display")
+	FText KeybindLabel;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability")
 	FGameplayTag AbilityId;

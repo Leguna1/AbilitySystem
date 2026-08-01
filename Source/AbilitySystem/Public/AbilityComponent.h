@@ -108,7 +108,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UMotionWarpingComponent* GetMotionWarpingComponent() const { return MotionWarpingComponent; }
 	
-	
+	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
+	const TArray<TSubclassOf<UAbility>>& GetGrantedAbilityClasses() const { return GrantedAbilityClasses; }
+
+	/** Returns the class default object for an ability class, for reading display/definition data without instancing. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
+	const UAbility* GetAbilityDefaults(TSubclassOf<UAbility> AbilityClass) const;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	FVector2D GetMovementInput() const;
