@@ -4,6 +4,7 @@
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
+#include "MotionWarpingComponent.h"
 
 void UMontageAbility::ActivateAbility_Implementation()
 {
@@ -56,6 +57,9 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 	}
 
 	ActiveMontage = Montage;
+
+	// Install the root-motion distance warp target before the warp window hits.
+	ApplyRootMotionDistanceWarp();
 
 	FOnMontageBlendingOutStarted BlendingOutDelegate;
 	BlendingOutDelegate.BindUObject(this, &UMontageAbility::HandleMontageBlendingOut);
@@ -165,4 +169,53 @@ void UMontageAbility::HandleMontageEnded(UAnimMontage* Montage, const bool bInte
 
 	ActiveMontage = nullptr;
 	OnAbilityMontageEnded(Montage, bInterrupted);
+}
+FVector UMontageAbility::GetRootMotionWarpDirection_Implementation() const
+{
+	const ACharacter* Character = GetOwningCharacter();
+	if (!IsValid(Character))
+	{
+		return FVector::ZeroVector;
+	}
+
+	return Character->GetActorForwardVector().GetSafeNormal2D();
+}
+
+void UMontageAbility::ApplyRootMotionDistanceWarp()
+{
+	UMotionWarpingComponent* Warping = GetMotionWarpingComponent();
+	if (!IsValid(Warping) || RootMotionWarpName.IsNone())
+	{
+		return;
+	}
+
+	const ACharacter* Character = GetOwningCharacter();
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	// Not overriding: make sure no stale distance target lingers from a prior play.
+	if (!bOverrideRootMotionDistance)
+	{
+		Warping->RemoveWarpTarget(RootMotionWarpName);
+		return;
+	}
+
+	const FVector Direction = GetRootMotionWarpDirection().GetSafeNormal2D();
+
+	// Zero direction (or zero distance) collapses the target onto the character,
+	// which warps the montage to translate in place.
+	const FVector StartLocation = Character->GetActorLocation();
+	const FVector TargetLocation = Direction.IsNearlyZero()
+		? StartLocation
+		: StartLocation + Direction * RootMotionDistance;
+
+	// Keep the character's current facing for the warp target rotation; distance
+	// warping only needs the translation goal.
+	Warping->AddOrUpdateWarpTargetFromLocationAndRotation(
+		RootMotionWarpName,
+		TargetLocation,
+		Character->GetActorRotation()
+	);
 }

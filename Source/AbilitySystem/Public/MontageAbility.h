@@ -87,6 +87,40 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage")
 	bool bEndAbilityWhenMontageEnds = true;
 
+	/* -------------------- Root motion distance override -------------------- */
+
+	/**
+	 * When true, the montage's root-motion translation is warped to travel exactly
+	 * RootMotionDistance centimeters, regardless of the distance the animation
+	 * authored. Requires a Motion Warping window on the montage using
+	 * RootMotionWarpName. When false, the animation's own root motion is used.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion")
+	bool bOverrideRootMotionDistance = false;
+
+	/**
+	 * Absolute travel distance in centimeters when bOverrideRootMotionDistance is
+	 * true. 0 = in-place. 300 = 3m. 1000 = 10m. Independent of the animation.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (ClampMin = "0.0", EditCondition = "bOverrideRootMotionDistance"))
+	float RootMotionDistance = 300.0f;
+
+	/** Motion Warping window name on the montage that this override drives. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (EditCondition = "bOverrideRootMotionDistance"))
+	FName RootMotionWarpName = FName("RootMotionDistance");
+
+	/**
+	 * World-space direction the warped translation travels. Defaults to the
+	 * character's forward at montage start; override for directional abilities
+	 * (e.g. dodge returns its dodge direction).
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Root Motion")
+	FVector GetRootMotionWarpDirection() const;
+	virtual FVector GetRootMotionWarpDirection_Implementation() const;
+
+	/** Installs (or clears) the distance warp target for the given montage. Called on play. */
+	void ApplyRootMotionDistanceWarp();
+
 private:
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);

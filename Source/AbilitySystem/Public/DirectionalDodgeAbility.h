@@ -5,6 +5,32 @@
 #include "MontageAbility.h"
 #include "DirectionalDodgeAbility.generated.h"
 
+class UAudioComponent;
+class UNiagaraComponent;
+class UNiagaraSystem;
+class USoundBase;
+
+/** One dodge feedback set: an effect + sound, optionally attached to the character. */
+USTRUCT(BlueprintType)
+struct FDodgeFeedbackSet
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	TObjectPtr<UNiagaraSystem> Effect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	TObjectPtr<USoundBase> Sound = nullptr;
+
+	/**
+	 * When true, effect and sound attach to the character and move with the roll
+	 * (use for the ongoing trail). When false, they spawn at the dodge start
+	 * location in world (use for start burst / landing burst).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Feedback")
+	bool bAttachToCharacter = false;
+};
+
 /**
  * Plays one forward-roll montage toward the player's current movement-input
  * direction.
@@ -24,10 +50,14 @@ public:
 
 	virtual bool CanActivateAbility_Implementation() const override;
 	virtual void ActivateAbility_Implementation() override;
+	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 	virtual bool CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Dodge")
 	FVector GetDodgeDirection() const { return DodgeDirection; }
+
+	/** Dodge warps along its computed dodge direction, not actor-forward. */
+	virtual FVector GetRootMotionWarpDirection_Implementation() const override;
 
 protected:
 	/**
@@ -101,4 +131,48 @@ protected:
 private:
 	UPROPERTY(Transient)
 	FVector DodgeDirection = FVector::ZeroVector;
+
+	/* -------------------- Feedback -------------------- */
+
+protected:
+	/** Fired at dodge start (burst). Spawns Start set; world or attached per its flag. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Dodge|Feedback")
+	FDodgeFeedbackSet StartFeedback;
+
+	/** Ongoing trail during the roll (usually attached). Stopped when the dodge ends. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Dodge|Feedback")
+	FDodgeFeedbackSet OngoingFeedback;
+
+	/** Fired when the dodge ends (landing burst). Spawns End set. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Dodge|Feedback")
+	FDodgeFeedbackSet EndFeedback;
+
+	/** Extra start feedback in Blueprint (on top of the Start set). */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|Dodge|Feedback")
+	void OnDodgeStartFeedback(FVector Direction, FVector StartLocation);
+
+	/** Extra ongoing feedback in Blueprint. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|Dodge|Feedback")
+	void OnDodgeOngoingFeedback(FVector Direction);
+
+	/** Extra end feedback in Blueprint. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|Dodge|Feedback")
+	void OnDodgeEndFeedback(FVector EndLocation);
+
+private:
+	/** Spawns a feedback set; attached to the character or at WorldLocation per its flag. */
+	void PlayDodgeFeedbackSet(const FDodgeFeedbackSet& Set, const FVector& WorldLocation, bool bTrackOngoing);
+
+	/** Stops and clears the tracked ongoing (attached) feedback, if any. */
+	void StopOngoingDodgeFeedback();
+
+	/** Tracked ongoing components so they can be stopped when the dodge ends. */
+	UPROPERTY(Transient)
+	TObjectPtr<UNiagaraComponent> OngoingEffectComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAudioComponent> OngoingSoundComponent;
+
+	UPROPERTY(Transient)
+	FVector DodgeStartLocation = FVector::ZeroVector;
 };

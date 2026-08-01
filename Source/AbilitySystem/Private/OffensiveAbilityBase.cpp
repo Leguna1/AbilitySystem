@@ -59,6 +59,7 @@ bool UOffensiveAbilityBase::ConfigureTargetFacingWarp()
 		return false;
 	}
 
+	
 	GetMotionWarpingComponent()->AddOrUpdateWarpTargetFromLocationAndRotation(
 		TargetFacingWarpName,
 		CharacterLocation,

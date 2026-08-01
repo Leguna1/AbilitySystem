@@ -1,9 +1,13 @@
 #include "DirectionalDodgeAbility.h"
 
+#include "Components/AudioComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
 
 UDirectionalDodgeAbility::UDirectionalDodgeAbility()
 {
@@ -124,6 +128,17 @@ void UDirectionalDodgeAbility::ActivateAbility_Implementation()
 
 	OnDodgePrepared(DodgeDirection);
 
+	// Feedback: start burst (world or attached) + ongoing trail (tracked so we
+	// can stop it when the dodge ends). Captured start location anchors both the
+	// start burst and, later, comparison for the landing burst.
+	DodgeStartLocation = Character->GetActorLocation();
+
+	PlayDodgeFeedbackSet(StartFeedback, DodgeStartLocation, /*bTrackOngoing*/ false);
+	OnDodgeStartFeedback(DodgeDirection, DodgeStartLocation);
+
+	PlayDodgeFeedbackSet(OngoingFeedback, DodgeStartLocation, /*bTrackOngoing*/ true);
+	OnDodgeOngoingFeedback(DodgeDirection);
+
 	UAnimMontage* Montage = SelectAbilityMontage();
 
 	if (!PlayAbilityMontage(Montage, MontagePlayRate))
@@ -230,4 +245,118 @@ bool UDirectionalDodgeAbility::IsDodgePathClear(const FVector& Direction, FHitRe
 
 void UDirectionalDodgeAbility::OnDodgePrepared_Implementation(FVector Direction)
 {
+}
+FVector UDirectionalDodgeAbility::GetRootMotionWarpDirection_Implementation() const
+{
+	// Dodge already resolved its direction (including backward) before the montage
+	// plays, so warp translation follows it rather than actor forward.
+	if (!DodgeDirection.IsNearlyZero())
+	{
+		return DodgeDirection.GetSafeNormal2D();
+	}
+
+	return Super::GetRootMotionWarpDirection_Implementation();
+}
+
+void UDirectionalDodgeAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
+{
+	// Stop the attached trail, then fire the landing burst at the current location.
+	StopOngoingDodgeFeedback();
+
+	const ACharacter* Character = GetOwningCharacter();
+	const FVector EndLocation = IsValid(Character)
+		? Character->GetActorLocation()
+		: DodgeStartLocation;
+
+	PlayDodgeFeedbackSet(EndFeedback, EndLocation, /*bTrackOngoing*/ false);
+	OnDodgeEndFeedback(EndLocation);
+
+	Super::OnAbilityEnded_Implementation(EndReason);
+}
+
+void UDirectionalDodgeAbility::PlayDodgeFeedbackSet(
+	const FDodgeFeedbackSet& Set,
+	const FVector& WorldLocation,
+	const bool bTrackOngoing)
+{
+	ACharacter* Character = GetOwningCharacter();
+	if (!IsValid(Character))
+	{
+		return;
+	}
+
+	USceneComponent* AttachRoot = Character->GetRootComponent();
+
+	// --- Effect ---
+	if (IsValid(Set.Effect))
+	{
+		UNiagaraComponent* SpawnedEffect = nullptr;
+
+		if (Set.bAttachToCharacter && IsValid(AttachRoot))
+		{
+			SpawnedEffect = UNiagaraFunctionLibrary::SpawnSystemAttached(
+				Set.Effect,
+				AttachRoot,
+				NAME_None,
+				FVector::ZeroVector,
+				FRotator::ZeroRotator,
+				EAttachLocation::SnapToTarget,
+				/*bAutoDestroy*/ !bTrackOngoing
+			);
+		}
+		else
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				Character,
+				Set.Effect,
+				WorldLocation,
+				Character->GetActorRotation()
+			);
+		}
+
+		if (bTrackOngoing && IsValid(SpawnedEffect))
+		{
+			OngoingEffectComponent = SpawnedEffect;
+		}
+	}
+
+	// --- Sound ---
+	if (IsValid(Set.Sound))
+	{
+		if (Set.bAttachToCharacter && IsValid(AttachRoot))
+		{
+			UAudioComponent* SpawnedSound = UGameplayStatics::SpawnSoundAttached(
+				Set.Sound,
+				AttachRoot
+			);
+
+			if (bTrackOngoing && IsValid(SpawnedSound))
+			{
+				OngoingSoundComponent = SpawnedSound;
+			}
+		}
+		else
+		{
+			UGameplayStatics::PlaySoundAtLocation(
+				Character,
+				Set.Sound,
+				WorldLocation
+			);
+		}
+	}
+}
+
+void UDirectionalDodgeAbility::StopOngoingDodgeFeedback()
+{
+	if (IsValid(OngoingEffectComponent))
+	{
+		OngoingEffectComponent->Deactivate();
+		OngoingEffectComponent = nullptr;
+	}
+
+	if (IsValid(OngoingSoundComponent))
+	{
+		OngoingSoundComponent->Stop();
+		OngoingSoundComponent = nullptr;
+	}
 }
