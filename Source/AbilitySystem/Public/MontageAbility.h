@@ -119,7 +119,7 @@ protected:
 	virtual FVector GetRootMotionWarpDirection_Implementation() const;
 
 	/** Installs (or clears) the distance warp target for the given montage. Called on play. */
-	void ApplyRootMotionDistanceWarp();
+	void ApplyRootMotionDistanceWarp() const;
 
 private:
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);

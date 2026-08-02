@@ -181,7 +181,7 @@ FVector UMontageAbility::GetRootMotionWarpDirection_Implementation() const
 	return Character->GetActorForwardVector().GetSafeNormal2D();
 }
 
-void UMontageAbility::ApplyRootMotionDistanceWarp()
+void UMontageAbility::ApplyRootMotionDistanceWarp() const
 {
 	UMotionWarpingComponent* Warping = GetMotionWarpingComponent();
 	if (!IsValid(Warping) || RootMotionWarpName.IsNone())
