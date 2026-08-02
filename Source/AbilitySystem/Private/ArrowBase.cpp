@@ -9,6 +9,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "PayloadReceiver.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
@@ -479,10 +480,28 @@ void AArrowBase::HandleImpact(
 		);
 	}
 
+	const float ImpactDamage = GetCalculatedDamage();
+
+	// Direct delivery: if the hit actor accepts payloads, hand it one. This is
+	// the "actually apply damage" path the OnArrowHit broadcast never had.
+	if (IsValid(HitActor) &&
+		HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
+	{
+		FAbilityPayload Payload;
+		Payload.Damage = ImpactDamage;
+		Payload.Instigator = GetInstigator();
+		Payload.Causer = this;
+		Payload.Hit = SweepResult;
+
+		IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
+	}
+
+	// Broadcast for observers (abilities tracking their own hits, VFX, combo
+	// systems), independent of whether the target accepted a payload.
 	OnArrowHit.Broadcast(
 		this,
 		HitActor,
-		GetCalculatedDamage(),
+		ImpactDamage,
 		SweepResult
 	);
 
