@@ -4,7 +4,8 @@
 #include "OffensiveAbilityBase.h"
 #include "RangedAttackAbility.generated.h"
 
-class UBowComponent;
+class AArrowBase;
+class ABowBase;
 class UArrowDataAsset;
 class UBowDataAsset;
 
@@ -20,7 +21,7 @@ public:
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
-	UBowComponent* GetBowComponent() const { return BowComponent; }
+	ABowBase* GetBow() const { return Bow; }
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	bool HasPreparedProjectile() const;
@@ -126,9 +127,6 @@ protected:
 
 private:
 	bool HandleProjectileAnimationEvent(FGameplayTag EventTag);
-
-	UPROPERTY(Transient)
-	TObjectPtr<UBowComponent> BowComponent;
 	
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AArrowBase>> ReleasedProjectiles;
@@ -142,5 +140,6 @@ private:
 	UPROPERTY(Transient)
 	bool bProjectileReleased = false;
 	
-	
+	UPROPERTY(Transient)
+	TObjectPtr<ABowBase> Bow;
 };

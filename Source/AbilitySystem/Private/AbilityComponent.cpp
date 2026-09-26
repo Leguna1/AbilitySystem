@@ -11,6 +11,7 @@ UAbilityComponent::UAbilityComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.bStartWithTickEnabled = false;
+	bWantsInitializeComponent = true;
 }
 
 void UAbilityComponent::BeginPlay()
@@ -44,18 +45,21 @@ void UAbilityComponent::BeginPlay()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UAbilityComponent could not find UTargetingComponent on %s."), *GetNameSafe(GetOwner()));
 	}
-
-	for (const TSubclassOf<UAbility> AbilityClass : StartingAbilityClasses)
-	{
-		GrantAbility(AbilityClass);
-	}
+	
 }
+void UAbilityComponent::InitializeComponent()
+{
+	Super::InitializeComponent();
 
+	// Runs for every component on the actor before any BeginPlay, so base
+	// abilities always precede weapon kits in GrantedAbilityClasses.
+	GrantAbilities(StartingAbilityClasses, this);
+}
 void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 {
 	if (IsValid(ActiveAbility))
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -78,40 +82,104 @@ void UAbilityComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 	});
 }
 
-bool UAbilityComponent::GrantAbility(TSubclassOf<UAbility> AbilityClass)
+bool UAbilityComponent::GrantAbility(const TSubclassOf<UAbility> AbilityClass, const UObject* Source)
 {
-	const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+	bool bClassAdded = false;
+	const bool bGranted = AddGrantInternal(AbilityClass, Source, bClassAdded);
 
-	if (!IsValid(AbilityCDO) || !AbilityCDO->GetAbilityId().IsValid())
+	if (bClassAdded)
+	{
+		GrantedAbilitiesChangedEvent.Broadcast();
+	}
+
+	return bGranted;
+}
+
+int32 UAbilityComponent::GrantAbilities(const TArray<TSubclassOf<UAbility>>& AbilityClasses, const UObject* Source)
+{
+	int32 GrantedCount = 0;
+	bool bAnyClassAdded = false;
+
+	for (const TSubclassOf<UAbility>& AbilityClass : AbilityClasses)
+	{
+		bool bClassAdded = false;
+
+		if (AddGrantInternal(AbilityClass, Source, bClassAdded))
+		{
+			++GrantedCount;
+		}
+
+		bAnyClassAdded |= bClassAdded;
+	}
+
+	if (bAnyClassAdded)
+	{
+		GrantedAbilitiesChangedEvent.Broadcast();
+	}
+
+	return GrantedCount;
+}
+
+bool UAbilityComponent::RemoveAbility(const FGameplayTag AbilityId, const UObject* Source)
+{
+	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
+	const int32 GrantIndex = FindGrantIndex(AbilityClass);
+
+	if (GrantIndex == INDEX_NONE)
 	{
 		return false;
 	}
 
-	if (HasAbility(AbilityCDO->GetAbilityId()))
+	const FObjectKey SourceKey(ResolveGrantSource(Source));
+	TArray<FObjectKey>& Sources = GrantedAbilitySources[GrantIndex].Sources;
+
+	if (Sources.Remove(SourceKey) == 0)
 	{
-		return true;
+		return false;
 	}
 
-	GrantedAbilityClasses.Add(AbilityClass);
+	if (Sources.IsEmpty())
+	{
+		EraseEmptyGrants({ AbilityClass });
+	}
+
 	return true;
 }
 
-bool UAbilityComponent::RemoveAbility(FGameplayTag AbilityId)
+int32 UAbilityComponent::RevokeAbilitiesFromSource(const UObject* Source)
 {
-	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
+	const FObjectKey SourceKey(ResolveGrantSource(Source));
 
-	if (!AbilityClass)
+	TArray<TSubclassOf<UAbility>> Emptied;
+	int32 RevokedCount = 0;
+
+	for (int32 GrantIndex = 0; GrantIndex < GrantedAbilitySources.Num(); ++GrantIndex)
 	{
-		return false;
+		TArray<FObjectKey>& Sources = GrantedAbilitySources[GrantIndex].Sources;
+
+		if (Sources.Remove(SourceKey) == 0)
+		{
+			continue;
+		}
+
+		++RevokedCount;
+
+		if (Sources.IsEmpty())
+		{
+			Emptied.Add(GrantedAbilityClasses[GrantIndex]);
+		}
 	}
 
-	if (IsValid(ActiveAbility) && ActiveAbility->GetAbilityId().MatchesTagExact(AbilityId))
-	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled);
-	}
+	EraseEmptyGrants(Emptied);
+	return RevokedCount;
+}
 
-	GrantedAbilityClasses.Remove(AbilityClass);
-	return true;
+bool UAbilityComponent::IsAbilityGrantedBySource(const FGameplayTag AbilityId, const UObject* Source) const
+{
+	const int32 GrantIndex = FindGrantIndex(FindAbilityClassById(AbilityId));
+
+	return GrantIndex != INDEX_NONE &&
+		GrantedAbilitySources[GrantIndex].Sources.Contains(FObjectKey(ResolveGrantSource(Source)));
 }
 
 bool UAbilityComponent::HasAbility(FGameplayTag AbilityId) const
@@ -207,7 +275,7 @@ void UAbilityComponent::CancelActiveAbility()
 {
 	if (IsValid(ActiveAbility))
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
 	}
 }
 
@@ -447,7 +515,7 @@ void UAbilityComponent::EndAbility(UAbility* RequestingAbility, EAbilityEndReaso
 {
 	if (IsValid(RequestingAbility) && RequestingAbility == ActiveAbility)
 	{
-		EndActiveAbilityInternal(EndReason);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
 	}
 }
 
@@ -483,6 +551,10 @@ void UAbilityComponent::BuildAbilityInputCandidates(TArray<FAbilityInputCandidat
 			if (!IsValid(AbilityCDO) ||
 				!AbilityCDO->GetActivationInputTag().IsValid() ||
 				!AbilityCDO->GetActivationInputTag().MatchesTagExact(BufferedInput.InputTag))
+			{
+				continue;
+			}
+			if (GetAbilityRank(AbilityClass) <= 0)
 			{
 				continue;
 			}
@@ -597,7 +669,7 @@ bool UAbilityComponent::ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbili
 		return false;
 	}
 
-	EndActiveAbilityInternal(ReplacementReason);
+	EndActiveAbilityInternal(ReplacementReason, false);
 
 	if (IsValid(ActiveAbility))
 	{
@@ -628,6 +700,11 @@ bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, cons
 		return false;
 	}
 
+	if (Ability->GetAbilityRank() <= 0)
+	{
+		return false;
+	}
+	
 	if (IsAbilityOnCooldown(Ability->GetAbilityId()))
 	{
 		return false;
@@ -739,7 +816,7 @@ bool UAbilityComponent::ActivateAbilityInstance(UAbility* Ability)
 	return ActiveAbility == ActivatedAbility;
 }
 
-void UAbilityComponent::EndActiveAbilityInternal(const EAbilityEndReason EndReason)
+void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bResolveBufferedInput)
 {
 	if (!IsValid(ActiveAbility) || bEndingAbility)
 	{
@@ -773,7 +850,7 @@ void UAbilityComponent::EndActiveAbilityInternal(const EAbilityEndReason EndReas
 	ActiveAbility = nullptr;
 	bEndingAbility = false;
 
-	if (!bResolvingBufferedInput && IsValid(InputBufferComponent))
+	if (bResolveBufferedInput && !bResolvingBufferedInput && IsValid(InputBufferComponent))
 	{
 		ResolveBufferedAbilityInput();
 	}
@@ -881,6 +958,89 @@ int32 UAbilityComponent::FindCooldownIndex(const FGameplayTag AbilityId) const
 	}
 
 	return INDEX_NONE;
+}
+const UObject* UAbilityComponent::ResolveGrantSource(const UObject* Source) const
+{
+	return IsValid(Source) ? Source : this;
+}
+
+int32 UAbilityComponent::FindGrantIndex(const TSubclassOf<UAbility> AbilityClass) const
+{
+	return AbilityClass ? GrantedAbilityClasses.IndexOfByKey(AbilityClass) : INDEX_NONE;
+}
+
+bool UAbilityComponent::AddGrantInternal(const TSubclassOf<UAbility> AbilityClass, const UObject* Source, bool& bOutClassAdded)
+{
+	bOutClassAdded = false;
+
+	const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(AbilityCDO) ||
+		AbilityClass->HasAnyClassFlags(CLASS_Abstract) ||
+		!AbilityCDO->GetAbilityId().IsValid())
+	{
+		return false;
+	}
+
+	const FObjectKey SourceKey(ResolveGrantSource(Source));
+	const int32 ExistingIndex = FindGrantIndex(AbilityClass);
+
+	if (ExistingIndex != INDEX_NONE)
+	{
+		GrantedAbilitySources[ExistingIndex].Sources.AddUnique(SourceKey);
+		return true;
+	}
+
+	// Ability ids must stay unique across classes: cooldowns, ranks and UI key on them.
+	if (HasAbility(AbilityCDO->GetAbilityId()))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("GrantAbility: %s shares AbilityId %s with an already granted class."),
+			*GetNameSafe(AbilityClass), *AbilityCDO->GetAbilityId().ToString());
+		return false;
+	}
+
+	GrantedAbilityClasses.Add(AbilityClass);
+	GrantedAbilitySources.AddDefaulted_GetRef().Sources.Add(SourceKey);
+
+	bOutClassAdded = true;
+	return true;
+}
+
+void UAbilityComponent::EraseEmptyGrants(const TArray<TSubclassOf<UAbility>>& Candidates)
+{
+	if (Candidates.IsEmpty())
+	{
+		return;
+	}
+
+	// Cancel while the class is still granted, and without resolving the buffer:
+	// a resolution here could start a sibling that is about to be removed.
+	if (IsValid(ActiveAbility) && Candidates.Contains(ActiveAbility->GetClass()))
+	{
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
+	}
+
+	bool bAnyErased = false;
+
+	for (const TSubclassOf<UAbility>& AbilityClass : Candidates)
+	{
+		const int32 GrantIndex = FindGrantIndex(AbilityClass);
+
+		// Re-check: an end callback may have re-granted it during the cancel.
+		if (GrantIndex == INDEX_NONE || !GrantedAbilitySources[GrantIndex].Sources.IsEmpty())
+		{
+			continue;
+		}
+
+		GrantedAbilityClasses.RemoveAt(GrantIndex);
+		GrantedAbilitySources.RemoveAt(GrantIndex);
+		bAnyErased = true;
+	}
+
+	if (bAnyErased)
+	{
+		GrantedAbilitiesChangedEvent.Broadcast();
+	}
 }
 
 void UAbilityComponent::StartCooldown(const FGameplayTag AbilityId, const float Duration)
@@ -1064,4 +1224,90 @@ void UAbilityComponent::SetAbilityTransitionOpen(UAbility* RequestingAbility, bo
 		const bool bResolved = ResolveBufferedAbilityInput();
 		UE_LOG(LogTemp, Warning, TEXT("[Transition] Immediate resolution result=%d"), bResolved);
 	}
+}
+int32 UAbilityComponent::FindRankIndex(const FGameplayTag AbilityId) const
+{
+	for (int32 Index = 0; Index < RankState.AbilityIds.Num(); ++Index)
+	{
+		if (RankState.AbilityIds[Index].MatchesTagExact(AbilityId))
+		{
+			return Index;
+		}
+	}
+
+	return INDEX_NONE;
+}
+
+int32 UAbilityComponent::GetLearnedRank(const TSubclassOf<UAbility> AbilityClass) const
+{
+	const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(AbilityCDO))
+	{
+		return 0;
+	}
+
+	const int32 Index = FindRankIndex(AbilityCDO->GetAbilityId());
+	return Index != INDEX_NONE ? RankState.LearnedRanks[Index] : 0;
+}
+
+int32 UAbilityComponent::GetAbilityRank(const TSubclassOf<UAbility> AbilityClass) const
+{
+	const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(AbilityCDO))
+	{
+		return 0;
+	}
+
+	return FMath::Clamp(
+		AbilityCDO->GetStartingRank() + GetLearnedRank(AbilityClass),
+		0,
+		AbilityCDO->GetMaxRank()
+	);
+}
+
+int32 UAbilityComponent::SetLearnedRank(const TSubclassOf<UAbility> AbilityClass, const int32 LearnedRank)
+{
+	const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+
+	if (!IsValid(AbilityCDO) || !AbilityCDO->GetAbilityId().IsValid())
+	{
+		return 0;
+	}
+
+	const FGameplayTag AbilityId = AbilityCDO->GetAbilityId();
+	const int32 MaxLearned = FMath::Max(AbilityCDO->GetMaxRank() - AbilityCDO->GetStartingRank(), 0);
+	const int32 NewLearned = FMath::Clamp(LearnedRank, 0, MaxLearned);
+
+	const int32 OldRank = GetAbilityRank(AbilityClass);
+	const int32 Index = FindRankIndex(AbilityId);
+
+	if (Index != INDEX_NONE)
+	{
+		RankState.LearnedRanks[Index] = NewLearned;
+	}
+	else if (NewLearned > 0)
+	{
+		RankState.AbilityIds.Add(AbilityId);
+		RankState.LearnedRanks.Add(NewLearned);
+	}
+
+	const int32 NewRank = GetAbilityRank(AbilityClass);
+
+	if (NewRank == OldRank)
+	{
+		return NewRank;
+	}
+
+	// Losing the last rank mid-use ends the execution; upgrades wait for the next activation.
+	if (NewRank <= 0 &&
+		IsValid(ActiveAbility) &&
+		ActiveAbility->GetAbilityId().MatchesTagExact(AbilityId))
+	{
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
+	}
+
+	AbilityRankChangedEvent.Broadcast(AbilityId, OldRank, NewRank);
+	return NewRank;
 }

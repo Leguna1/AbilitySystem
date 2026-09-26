@@ -26,12 +26,14 @@ void ABowBase::Tick(const float DeltaTime)
 
 	DrawAlpha = FMath::FInterpTo(DrawAlpha, TargetAlpha, DeltaTime, InterpSpeed);
 
+	const USkeletalMeshComponent* Mesh = GetWielderMesh();
+
 	if (bDrawVisualsActive &&
-		IsValid(WielderMesh) &&
+		IsValid(Mesh) &&
 		!DrawHandSocketName.IsNone() &&
-		WielderMesh->DoesSocketExist(DrawHandSocketName))
+		Mesh->DoesSocketExist(DrawHandSocketName))
 	{
-		StringTargetLocation = WielderMesh->GetSocketLocation(DrawHandSocketName);
+		StringTargetLocation = Mesh->GetSocketLocation(DrawHandSocketName);
 	}
 
 	if (!bDrawVisualsActive && FMath::IsNearlyZero(DrawAlpha, 0.001f))
@@ -102,11 +104,6 @@ void ABowBase::ClearAllFeedback()
 	ActiveBowData = nullptr;
 }
 
-void ABowBase::SetWielderMesh(USkeletalMeshComponent* InWielderMesh)
-{
-	WielderMesh = InWielderMesh;
-}
-
 bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 {
 	if (HasPreparedArrows() ||
@@ -142,22 +139,30 @@ bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 
 bool ABowBase::AttachPreparedArrowToWielder(const int32 ArrowIndex, const FName SocketName)
 {
+	USkeletalMeshComponent* Mesh = GetWielderMesh();
 	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||
 		!IsValid(PreparedArrows[ArrowIndex]) ||
-		!IsValid(WielderMesh) ||
+		!IsValid(Mesh) ||
 		SocketName.IsNone() ||
-		!WielderMesh->DoesSocketExist(SocketName))
+		!Mesh->DoesSocketExist(SocketName))
 	{
 		return false;
 	}
 
 	return PreparedArrows[ArrowIndex]->AttachToComponent(
-		WielderMesh,
+		Mesh,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
 		SocketName
 	);
 }
+void ABowBase::OnHolstered_Implementation()
+{
+	Super::OnHolstered_Implementation();
 
+	EndDrawVisuals();
+	ClearAllFeedback();
+	DiscardPreparedArrows();
+}
 bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName SocketName)
 {
 	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||

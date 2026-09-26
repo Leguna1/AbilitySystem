@@ -13,14 +13,33 @@ void USkillTreeComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
+	TotalSkillPoints = FMath::Max(0, StartingSkillPoints);
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
-	AvailableSkillPoints = FMath::Max(0, StartingSkillPoints);
+
+	if (!IsValid(AbilityComponent))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("USkillTreeComponent on %s found no UAbilityComponent."), *GetNameSafe(GetOwner()));
+		return;
+	}
+
+	// Every rank change (purchase, refund, save load, debug) refreshes the tree through one path.
+	AbilityComponent->AbilityRankChangedEvent.AddDynamic(this, &USkillTreeComponent::HandleAbilityRankChanged);
+}
+
+void USkillTreeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &USkillTreeComponent::HandleAbilityRankChanged);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void USkillTreeComponent::SetTreeAsset(USkillTreeAsset* InTreeAsset)
 {
 	TreeAsset = InTreeAsset;
-	OnSkillTreeChanged.Broadcast();
+	BroadcastTreeChanged();
 }
 
 void USkillTreeComponent::AddSkillPoints(const int32 Amount)
@@ -30,45 +49,105 @@ void USkillTreeComponent::AddSkillPoints(const int32 Amount)
 		return;
 	}
 
-	AvailableSkillPoints = FMath::Max(0, AvailableSkillPoints + Amount);
-	OnSkillPointsChanged.Broadcast(AvailableSkillPoints);
-	OnSkillTreeChanged.Broadcast();
+	TotalSkillPoints = FMath::Max(0, TotalSkillPoints + Amount);
+	BroadcastTreeChanged();
 }
 
-int32 USkillTreeComponent::FindUnlockedIndex(const FGameplayTag NodeId) const
+int32 USkillTreeComponent::GetSpentSkillPoints() const
 {
-	for (int32 Index = 0; Index < UnlockedNodeIds.Num(); ++Index)
+	if (!IsValid(TreeAsset) || !IsValid(AbilityComponent))
 	{
-		if (UnlockedNodeIds[Index].MatchesTagExact(NodeId))
+		return 0;
+	}
+
+	int32 Spent = 0;
+
+	for (const FSkillTreeNode& Node : TreeAsset->Nodes)
+	{
+		if (Node.AbilityClass)
 		{
-			return Index;
+			Spent += AbilityComponent->GetLearnedRank(Node.AbilityClass) * Node.Cost;
 		}
 	}
 
-	return INDEX_NONE;
+	return Spent;
+}
+
+int32 USkillTreeComponent::GetAvailableSkillPoints() const
+{
+	return FMath::Max(0, TotalSkillPoints - GetSpentSkillPoints());
+}
+
+const FSkillTreeNode* USkillTreeComponent::FindValidNode(const FGameplayTag NodeId) const
+{
+	if (!IsValid(TreeAsset))
+	{
+		return nullptr;
+	}
+
+	const FSkillTreeNode* Node = TreeAsset->FindNode(NodeId);
+	return Node && Node->AbilityClass ? Node : nullptr;
+}
+
+int32 USkillTreeComponent::GetNodeRank(const FGameplayTag NodeId) const
+{
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
+
+	return Node && IsValid(AbilityComponent)
+		? AbilityComponent->GetAbilityRank(Node->AbilityClass)
+		: 0;
+}
+
+int32 USkillTreeComponent::GetNodeLearnedRank(const FGameplayTag NodeId) const
+{
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
+
+	return Node && IsValid(AbilityComponent)
+		? AbilityComponent->GetLearnedRank(Node->AbilityClass)
+		: 0;
+}
+
+int32 USkillTreeComponent::GetNodeMaxRank(const FGameplayTag NodeId) const
+{
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
+	const UAbility* Defaults = Node ? Node->AbilityClass.GetDefaultObject() : nullptr;
+
+	return IsValid(Defaults) ? Defaults->GetMaxRank() : 0;
 }
 
 bool USkillTreeComponent::IsNodeUnlocked(const FGameplayTag NodeId) const
 {
-	return FindUnlockedIndex(NodeId) != INDEX_NONE;
+	return GetNodeRank(NodeId) > 0;
+}
+
+ESkillNodeState USkillTreeComponent::GetNodeState(const FGameplayTag NodeId) const
+{
+	const int32 Rank = GetNodeRank(NodeId);
+
+	if (Rank > 0)
+	{
+		return Rank >= GetNodeMaxRank(NodeId)
+			? ESkillNodeState::Maxed
+			: ESkillNodeState::Unlocked;
+	}
+
+	return ArePrerequisitesMet(NodeId)
+		? ESkillNodeState::Available
+		: ESkillNodeState::Locked;
 }
 
 bool USkillTreeComponent::ArePrerequisitesMet(const FGameplayTag NodeId) const
 {
-	if (!IsValid(TreeAsset))
-	{
-		return false;
-	}
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
 
-	const FSkillTreeNode* Node = TreeAsset->FindNode(NodeId);
 	if (!Node)
 	{
 		return false;
 	}
 
-	for (const FGameplayTag& Prereq : Node->Prerequisites)
+	for (const FGameplayTag& Prerequisite : Node->Prerequisites)
 	{
-		if (!IsNodeUnlocked(Prereq))
+		if (!IsNodeUnlocked(Prerequisite))
 		{
 			return false;
 		}
@@ -77,63 +156,36 @@ bool USkillTreeComponent::ArePrerequisitesMet(const FGameplayTag NodeId) const
 	return true;
 }
 
-ESkillNodeState USkillTreeComponent::GetNodeState(const FGameplayTag NodeId) const
-{
-	if (IsNodeUnlocked(NodeId))
-	{
-		return ESkillNodeState::Unlocked;
-	}
-
-	return ArePrerequisitesMet(NodeId)
-		? ESkillNodeState::Available
-		: ESkillNodeState::Locked;
-}
-
 bool USkillTreeComponent::CanUnlockNode(const FGameplayTag NodeId) const
 {
-	if (!IsValid(TreeAsset))
-	{
-		return false;
-	}
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
 
-	const FSkillTreeNode* Node = TreeAsset->FindNode(NodeId);
-	if (!Node)
-	{
-		return false;
-	}
-
-	if (IsNodeUnlocked(NodeId))
-	{
-		return false;
-	}
-
-	if (!ArePrerequisitesMet(NodeId))
-	{
-		return false;
-	}
-
-	return AvailableSkillPoints >= Node->Cost;
+	return Node &&
+		IsValid(AbilityComponent) &&
+		ArePrerequisitesMet(NodeId) &&
+		GetNodeRank(NodeId) < GetNodeMaxRank(NodeId) &&
+		GetAvailableSkillPoints() >= Node->Cost;
 }
 
 bool USkillTreeComponent::CanRefundNode(const FGameplayTag NodeId) const
 {
-	if (!IsValid(TreeAsset))
+	if (!FindValidNode(NodeId) || !IsValid(AbilityComponent) || GetNodeLearnedRank(NodeId) <= 0)
 	{
 		return false;
 	}
 
-	if (!IsNodeUnlocked(NodeId))
+	// Only the rank that returns the ability to 0 can strand dependents.
+	if (GetNodeRank(NodeId) > 1)
 	{
-		return false;
+		return true;
 	}
 
-	// Block refund while any dependent node is still unlocked (refund children first).
 	TArray<FGameplayTag> Dependents;
 	TreeAsset->GetDependentNodes(NodeId, Dependents);
 
 	for (const FGameplayTag& Dependent : Dependents)
 	{
-		if (IsNodeUnlocked(Dependent))
+		if (GetNodeLearnedRank(Dependent) > 0)
 		{
 			return false;
 		}
@@ -149,23 +201,10 @@ bool USkillTreeComponent::UnlockNode(const FGameplayTag NodeId)
 		return false;
 	}
 
-	const FSkillTreeNode* Node = TreeAsset->FindNode(NodeId);
-	if (!Node || !IsValid(Node->AbilityClass))
-	{
-		return false;
-	}
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
 
-	if (!IsValid(AbilityComponent) || !AbilityComponent->GrantAbility(Node->AbilityClass))
-	{
-		return false;
-	}
-
-	UnlockedNodeIds.Add(NodeId);
-	AvailableSkillPoints -= Node->Cost;
-	SpentSkillPoints += Node->Cost;
-
-	OnSkillPointsChanged.Broadcast(AvailableSkillPoints);
-	OnSkillTreeChanged.Broadcast();
+	// Tree and points events follow from AbilityRankChangedEvent.
+	AbilityComponent->SetLearnedRank(Node->AbilityClass, AbilityComponent->GetLearnedRank(Node->AbilityClass) + 1);
 	return true;
 }
 
@@ -176,28 +215,19 @@ bool USkillTreeComponent::RefundNode(const FGameplayTag NodeId)
 		return false;
 	}
 
-	const FSkillTreeNode* Node = TreeAsset->FindNode(NodeId);
-	if (!Node || !IsValid(Node->AbilityClass))
-	{
-		return false;
-	}
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
 
-	const UAbility* Defaults = Node->AbilityClass.GetDefaultObject();
-	if (!IsValid(Defaults))
-	{
-		return false;
-	}
-
-	if (!IsValid(AbilityComponent) || !AbilityComponent->RemoveAbility(Defaults->GetAbilityId()))
-	{
-		return false;
-	}
-
-	UnlockedNodeIds.RemoveAt(FindUnlockedIndex(NodeId));
-	AvailableSkillPoints += Node->Cost;
-	SpentSkillPoints = FMath::Max(0, SpentSkillPoints - Node->Cost);
-
-	OnSkillPointsChanged.Broadcast(AvailableSkillPoints);
-	OnSkillTreeChanged.Broadcast();
+	AbilityComponent->SetLearnedRank(Node->AbilityClass, AbilityComponent->GetLearnedRank(Node->AbilityClass) - 1);
 	return true;
+}
+
+void USkillTreeComponent::HandleAbilityRankChanged(const FGameplayTag AbilityId, const int32 OldRank, const int32 NewRank)
+{
+	BroadcastTreeChanged();
+}
+
+void USkillTreeComponent::BroadcastTreeChanged()
+{
+	OnSkillPointsChanged.Broadcast(GetAvailableSkillPoints());
+	OnSkillTreeChanged.Broadcast();
 }

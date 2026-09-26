@@ -6,6 +6,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "InputBufferTypes.h"
+#include "UObject/ObjectKey.h"
 #include "AbilityComponent.generated.h"
 
 class ACharacter;
@@ -19,6 +20,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FG
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityEndedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability, EAbilityEndReason, EndReason);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOwnedTagsChangedEventSignature, FGameplayTagContainer, OwnedTags);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGrantedAbilitiesChangedEventSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityRankChangedEventSignature, FGameplayTag, AbilityId, int32, OldRank, int32, NewRank);
 
 /** Parallel-array cooldown store keyed by ability id (no TMap by project convention). */
 USTRUCT()
@@ -32,6 +35,18 @@ struct FAbilityCooldownState
 	/** World time (seconds) at which the matching ability leaves cooldown. */
 	UPROPERTY()
 	TArray<double> EndTimes;
+};
+/** Learned ranks keyed by ability id. Effective rank = StartingRank + learned, clamped to MaxRank. */
+USTRUCT()
+struct FAbilityRankState
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TArray<FGameplayTag> AbilityIds;
+
+	UPROPERTY()
+	TArray<int32> LearnedRanks;
 };
 
 UCLASS(ClassGroup = (Ability), meta = (BlueprintSpawnableComponent))
@@ -48,11 +63,25 @@ public:
 	
 	
 
+	/** Grants AbilityClass on behalf of Source (null = this component). A class stays granted while any source holds it. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
-	bool GrantAbility(TSubclassOf<UAbility> AbilityClass);
+	bool GrantAbility(TSubclassOf<UAbility> AbilityClass, const UObject* Source = nullptr);
 
+	/** Batch grant; broadcasts GrantedAbilitiesChangedEvent at most once. Returns how many were granted. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
-	bool RemoveAbility(FGameplayTag AbilityId);
+	int32 GrantAbilities(const TArray<TSubclassOf<UAbility>>& AbilityClasses, const UObject* Source = nullptr);
+
+	/** Drops Source's hold on the ability. The class is removed when no source holds it. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
+	bool RemoveAbility(FGameplayTag AbilityId, const UObject* Source = nullptr);
+
+	/** Drops every hold Source has. Cancels the active ability if it loses its last source, without resolving buffered input. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
+	int32 RevokeAbilitiesFromSource(const UObject* Source);
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
+	bool IsAbilityGrantedBySource(FGameplayTag AbilityId, const UObject* Source) const;
+	
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
 	bool HasAbility(FGameplayTag AbilityId) const;
@@ -137,6 +166,25 @@ public:
 	/** True if the owner currently has enough Focus for this ability's cost. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
 	bool CanAffordAbility(FGameplayTag AbilityId) const;
+	
+	/* -------------------- Rank -------------------- */
+
+	/** Effective rank. Works for classes that are not currently granted (e.g. another weapon's kit). */
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetAbilityRank(TSubclassOf<UAbility> AbilityClass) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetLearnedRank(TSubclassOf<UAbility> AbilityClass) const;
+
+	/** Sets learned ranks, clamped so the effective rank stays within MaxRank. Returns the new effective rank. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Rank")
+	int32 SetLearnedRank(TSubclassOf<UAbility> AbilityClass, int32 LearnedRank);
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	bool IsAbilityUnlocked(TSubclassOf<UAbility> AbilityClass) const { return GetAbilityRank(AbilityClass) > 0; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
+	FAbilityRankChangedEventSignature AbilityRankChangedEvent;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UResourceComponent* GetResourceComponent() const { return ResourceComponent; }
@@ -166,9 +214,14 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FOwnedTagsChangedEventSignature OwnedTagsChangedEvent;
+	
+	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
+	FGrantedAbilitiesChangedEventSignature GrantedAbilitiesChangedEvent;
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void InitializeComponent() override;
+	
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
 private:
@@ -194,8 +247,21 @@ private:
 	static bool CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason);
 	UAbility* CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass);
 	bool ActivateAbilityInstance(UAbility* Ability);
-	void EndActiveAbilityInternal(EAbilityEndReason EndReason);
+	void EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bResolveBufferedInput = true);
 
+	struct FAbilityGrantSources
+	{
+		TArray<FObjectKey> Sources;
+	};
+
+	const UObject* ResolveGrantSource(const UObject* Source) const;
+	int32 FindGrantIndex(TSubclassOf<UAbility> AbilityClass) const;
+	bool AddGrantInternal(TSubclassOf<UAbility> AbilityClass, const UObject* Source, bool& bOutClassAdded);
+	void EraseEmptyGrants(const TArray<TSubclassOf<UAbility>>& Candidates);
+
+	/** Parallel to GrantedAbilityClasses: everything currently granting each entry. */
+	TArray<FAbilityGrantSources> GrantedAbilitySources;
+	
 	void DispatchAbilityCallback(const TFunctionRef<void()>& Callback);
 	
 	
@@ -235,6 +301,11 @@ private:
 
 	UPROPERTY(Transient)
 	FAbilityCooldownState CooldownState;
+	
+	int32 FindRankIndex(FGameplayTag AbilityId) const;
+
+	UPROPERTY(Transient)
+	FAbilityRankState RankState;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Granted", meta = (AllowPrivateAccess = "true"))
 	TArray<TSubclassOf<UAbility>> GrantedAbilityClasses;

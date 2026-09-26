@@ -20,6 +20,10 @@ void UAbility::InitializeAbility(UAbilityComponent* InAbilityComponent, ACharact
 	bCommitted = false;
 	bTransitionOpen = false;
 	bEarlyCancellationClosed = false;
+	
+	AbilityRank = IsValid(AbilityComponent)
+	? AbilityComponent->GetAbilityRank(GetClass())
+	: 0;
 }
 
 UWorld* UAbility::GetWorld() const

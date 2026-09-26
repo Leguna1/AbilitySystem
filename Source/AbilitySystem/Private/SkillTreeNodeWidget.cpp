@@ -49,9 +49,16 @@ void USkillTreeNodeWidget::RefreshNode()
 	{
 		return;
 	}
-
 	State = TreeComponent->GetNodeState(NodeId);
+	Rank = TreeComponent->GetNodeRank(NodeId);
+	MaxRank = TreeComponent->GetNodeMaxRank(NodeId);
 
+	OnNodeStateChanged(
+		State,
+		TreeComponent->CanUnlockNode(NodeId),
+		TreeComponent->CanRefundNode(NodeId)
+	);
+	
 	OnNodeStateChanged(
 		State,
 		TreeComponent->CanUnlockNode(NodeId),

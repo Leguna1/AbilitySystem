@@ -60,6 +60,12 @@ public:
 	/** Canvas position authored on the node, for the tree to place this widget. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
 	FVector2D GetCanvasPosition() const { return CanvasPosition; }
+	
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	int32 GetRank() const { return Rank; }
+
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	int32 GetMaxRank() const { return MaxRank; }
 
 protected:
 	/** Populate static visuals (icon, name, cost) here. Called once after init. */
@@ -94,4 +100,10 @@ private:
 
 	UPROPERTY(Transient)
 	ESkillNodeState State = ESkillNodeState::Locked;
+	
+	UPROPERTY(Transient)
+	int32 Rank = 0;
+
+	UPROPERTY(Transient)
+	int32 MaxRank = 0;
 };

@@ -49,7 +49,7 @@ void ASwordBase::BeginHitDetection()
 	HitBox->GetOverlappingActors(Overlapping);
 	for (AActor* Actor : Overlapping)
 	{
-		if (IsValid(Actor) && Actor != GetOwner() && !HitActorsThisSwing.Contains(Actor))
+		if (IsValid(Actor) && !IsWielderOwned(Actor) && !HitActorsThisSwing.Contains(Actor))
 		{
 			HitActorsThisSwing.Add(Actor);
 			OnSwordHit.Broadcast(Actor, FHitResult());
@@ -80,7 +80,7 @@ void ASwordBase::HandleHitBoxOverlap(
 	}
 
 	// Never hit the wielder.
-	if (OtherActor == GetOwner())
+	if (IsWielderOwned(OtherActor))
 	{
 		return;
 	}
@@ -93,4 +93,13 @@ void ASwordBase::HandleHitBoxOverlap(
 
 	HitActorsThisSwing.Add(OtherActor);
 	OnSwordHit.Broadcast(OtherActor, SweepResult);
+}
+void ASwordBase::OnHolstered_Implementation()
+{
+	Super::OnHolstered_Implementation();
+
+	if (bHitDetectionActive)
+	{
+		EndHitDetection();
+	}
 }

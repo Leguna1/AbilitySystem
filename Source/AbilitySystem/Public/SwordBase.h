@@ -3,6 +3,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "WeaponBase.h"
 #include "SwordBase.generated.h"
 
 class UPrimitiveComponent;
@@ -22,7 +23,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnSwordHitSignature, AActor*, HitA
  * means, keeping the framework decoupled.
  */
 UCLASS()
-class ABILITYSYSTEM_API ASwordBase : public AActor
+class ABILITYSYSTEM_API ASwordBase : public AWeaponBase
 {
 	GENERATED_BODY()
 
@@ -63,6 +64,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Sword")
 	TObjectPtr<UBoxComponent> HitBox;
 
+	virtual void OnHolstered_Implementation() override;
 private:
 	bool bHitDetectionActive = false;
 

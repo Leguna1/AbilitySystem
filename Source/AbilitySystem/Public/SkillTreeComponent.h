@@ -7,31 +7,36 @@
 
 class UAbilityComponent;
 class USkillTreeAsset;
+struct FSkillTreeNode;
 
-/** Derived display state of a node, computed from the tree data + what is unlocked. */
+/** Derived display state of a node, computed from tree data + ability ranks. */
 UENUM(BlueprintType)
 enum class ESkillNodeState : uint8
 {
-	/** Prerequisites not all met. Cannot be unlocked yet. */
+	/** Rank 0 and prerequisites not all met. */
 	Locked UMETA(DisplayName = "Locked"),
 
-	/** Prerequisites met but not yet unlocked. Buyable if points allow. */
+	/** Rank 0, prerequisites met. Buyable if points allow. */
 	Available UMETA(DisplayName = "Available"),
 
-	/** Already unlocked. */
-	Unlocked UMETA(DisplayName = "Unlocked")
+	/** Rank 1+ and below max. Upgradable if points allow. */
+	Unlocked UMETA(DisplayName = "Unlocked"),
+
+	/** At max rank. */
+	Maxed UMETA(DisplayName = "Maxed")
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSkillTreeChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSkillPointsChangedSignature, int32, AvailablePoints);
 
 /**
- * Runtime state and rules for a skill tree: how many points the player has,
- * which nodes are unlocked, and the unlock/refund operations. Reads its shape
- * from a USkillTreeAsset and drives grants through the UAbilityComponent.
+ * Progression rules for a skill tree. Owns only the points earned; learned
+ * ranks live on UAbilityComponent (single source of truth), and spent points
+ * are derived from them.
  *
- * Refund policy: a node cannot be refunded while any node depending on it is
- * still unlocked (refund children first). See CanRefundNode.
+ * Each node advances one ability by one rank per purchase. Refund policy: the
+ * rank that would return an ability to 0 cannot be refunded while any
+ * dependent node has purchased ranks.
  */
 UCLASS(ClassGroup = (Ability), meta = (BlueprintSpawnableComponent))
 class ABILITYSYSTEM_API USkillTreeComponent : public UActorComponent
@@ -55,36 +60,54 @@ public:
 	void AddSkillPoints(int32 Amount);
 
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Points")
-	int32 GetAvailableSkillPoints() const { return AvailableSkillPoints; }
+	int32 GetTotalSkillPoints() const { return TotalSkillPoints; }
+
+	/** Sum of learned ranks x node cost across the tree. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Points")
+	int32 GetSpentSkillPoints() const;
 
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|Points")
-	int32 GetSpentSkillPoints() const { return SpentSkillPoints; }
+	int32 GetAvailableSkillPoints() const;
 
 	/* -------------------- Queries -------------------- */
 
+	/** Effective rank of the node's ability (starting + learned). */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree")
+	int32 GetNodeRank(FGameplayTag NodeId) const;
+
+	/** Ranks bought through the tree (excludes free starting ranks). */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree")
+	int32 GetNodeLearnedRank(FGameplayTag NodeId) const;
+
+	UFUNCTION(BlueprintPure, Category = "Skill Tree")
+	int32 GetNodeMaxRank(FGameplayTag NodeId) const;
+
+	/** True when the node's ability is usable (rank 1+). */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	bool IsNodeUnlocked(FGameplayTag NodeId) const;
 
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	ESkillNodeState GetNodeState(FGameplayTag NodeId) const;
 
-	/** True if prerequisites are all met (regardless of points). */
+	/** True if every prerequisite's ability is rank 1+ (regardless of points). */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	bool ArePrerequisitesMet(FGameplayTag NodeId) const;
 
+	/** Whether one more rank can be bought right now. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	bool CanUnlockNode(FGameplayTag NodeId) const;
 
+	/** Whether one rank can be refunded right now. */
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	bool CanRefundNode(FGameplayTag NodeId) const;
 
 	/* -------------------- Operations -------------------- */
 
-	/** Spends points and grants the ability. Returns false if not currently unlockable. */
+	/** Buys one rank. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree")
 	bool UnlockNode(FGameplayTag NodeId);
 
-	/** Refunds points and removes the ability. Returns false if not currently refundable. */
+	/** Refunds one rank. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree")
 	bool RefundNode(FGameplayTag NodeId);
 
@@ -98,9 +121,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** Ability component grants/removes are routed through. Found on the owner at BeginPlay. */
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Skill Tree", meta = (AllowPrivateAccess = "true"))
+	/** Ranks are read from and written to this component. Found on the owner at BeginPlay. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Skill Tree")
 	TObjectPtr<UAbilityComponent> AbilityComponent;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree")
@@ -110,14 +134,15 @@ protected:
 	int32 StartingSkillPoints = 0;
 
 private:
-	int32 FindUnlockedIndex(FGameplayTag NodeId) const;
+	/** The node, if it exists and has an ability class. */
+	const FSkillTreeNode* FindValidNode(FGameplayTag NodeId) const;
 
-	UPROPERTY(Transient)
-	TArray<FGameplayTag> UnlockedNodeIds;
+	UFUNCTION()
+	void HandleAbilityRankChanged(FGameplayTag AbilityId, int32 OldRank, int32 NewRank);
 
-	UPROPERTY(Transient)
-	int32 AvailableSkillPoints = 0;
+	void BroadcastTreeChanged();
 
+	/** Points earned over the whole game. Available = Total - Spent. */
 	UPROPERTY(Transient)
-	int32 SpentSkillPoints = 0;
+	int32 TotalSkillPoints = 0;
 };

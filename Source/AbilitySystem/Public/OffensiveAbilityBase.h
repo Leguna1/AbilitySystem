@@ -46,4 +46,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|Targeting", meta = (EditCondition = "bUseTargetFacingWarp"))
 	bool bRemoveTargetFacingWarpWhenFinished = true;
+	
+	UFUNCTION(BlueprintPure, Category = "Ability|Offensive|Weapon")
+	UWeaponManagerComponent* GetWeaponManager() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Offensive|Weapon")
+	AWeaponBase* GetEquippedWeapon() const;
+
+	template <typename T>
+	T* GetEquippedWeaponAs() const { return Cast<T>(GetEquippedWeapon()); }
 };

@@ -1,6 +1,6 @@
 #include "FanShotAbility.h"
 
-#include "BowComponent.h"
+#include "BowBase.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 
@@ -74,10 +74,8 @@ FVector UFanShotAbility::ResolveProjectileDirectionForIndex_Implementation(const
 		return FVector::ZeroVector;
 	}
 
-	const int32 Count = IsValid(GetBowComponent())
-		? GetBowComponent()->GetPreparedArrowCount()
-		: 0;
-
+	const int32 Count = IsValid(GetBow()) ? GetBow()->GetPreparedArrowCount() : 0;
+	
 	if (Count <= 1)
 	{
 		return Center;

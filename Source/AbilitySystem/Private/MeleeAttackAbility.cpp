@@ -3,71 +3,75 @@
 
 #include "PayloadReceiver.h"
 #include "SwordBase.h"
-#include "WeaponComponent.h"
 #include "GameFramework/Character.h"
 
+bool UMeleeAttackAbility::CanActivateAbility_Implementation() const
+{
+	if (!Super::CanActivateAbility_Implementation())
+	{
+		return false;
+	}
+
+	const ASwordBase* Sword = GetEquippedWeaponAs<ASwordBase>();
+	return IsValid(Sword) && Sword->IsDrawn();
+}
 void UMeleeAttackAbility::ActivateAbility_Implementation()
 {
 	// OffensiveAbilityBase handles target-facing warp + montage play.
 	Super::ActivateAbility_Implementation();
 }
-
 void UMeleeAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
-	// Safety: if the ability ends mid-swing (cancel/interrupt), make sure the
-	// sword's hit detection is turned off and we unbind.
-	if (UWeaponComponent* Weapon = GetWeaponComponent())
-	{
-		Weapon->EndWeaponHitDetection();
-	}
-
-	if (IsValid(BoundSword))
-	{
-		BoundSword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
-		BoundSword = nullptr;
-	}
+	// Ending mid-swing (cancel/interrupt) must not leave the hit box live.
+	ReleaseBoundSword();
 
 	Super::OnAbilityEnded_Implementation(EndReason);
 }
-
 void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag EventTag)
 {
 	Super::OnAnimationEvent_Implementation(EventTag);
 
-	UWeaponComponent* Weapon = GetWeaponComponent();
-	if (!Weapon)
+	if (BeginHitWindowEventTag.IsValid() && EventTag.MatchesTagExact(BeginHitWindowEventTag))
+	{
+		ASwordBase* Sword = GetEquippedWeaponAs<ASwordBase>();
+
+		if (!IsValid(Sword))
+		{
+			RequestCancelAbility();
+			return;
+		}
+
+		// The swing becoming active is the commit point; a failed commit swings nothing.
+		if (!IsCommitted() && !RequestCommit())
+		{
+			RequestCancelAbility();
+			return;
+		}
+
+		ReleaseBoundSword();
+
+		BoundSword = Sword;
+		BoundSword->OnSwordHit.AddDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
+		BoundSword->BeginHitDetection();
+		return;
+	}
+
+	if (EndHitWindowEventTag.IsValid() && EventTag.MatchesTagExact(EndHitWindowEventTag))
+	{
+		ReleaseBoundSword();
+	}
+}
+
+void UMeleeAttackAbility::ReleaseBoundSword()
+{
+	if (!IsValid(BoundSword))
 	{
 		return;
 	}
 
-	if (BeginHitWindowEventTag.IsValid() && EventTag.MatchesTagExact(BeginHitWindowEventTag))
-	{
-		// The swing becoming active is the commit point: spend cost, start cooldown.
-		if (!IsCommitted())
-		{
-			RequestCommit();
-		}
-
-		// Bind to the sword's hit reports for this swing, then open the window.
-		if (ASwordBase* Sword = Weapon->GetWeapon())
-		{
-			BoundSword = Sword;
-			Sword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
-			Sword->OnSwordHit.AddDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
-		}
-
-		Weapon->BeginWeaponHitDetection();
-	}
-	else if (EndHitWindowEventTag.IsValid() && EventTag.MatchesTagExact(EndHitWindowEventTag))
-	{
-		Weapon->EndWeaponHitDetection();
-
-		if (IsValid(BoundSword))
-		{
-			BoundSword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
-			BoundSword = nullptr;
-		}
-	}
+	BoundSword->EndHitDetection();
+	BoundSword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
+	BoundSword = nullptr;
 }
 
 void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit)
@@ -82,17 +86,8 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
 	{
 		FAbilityPayload Payload;
-		Payload.Damage = Damage;
-		Payload.Instigator = GetOwningCharacter();
-		Payload.Causer = IsValid(BoundSword) ? Cast<AActor>(BoundSword) : nullptr;
-		Payload.Hit = Hit;
+		Payload.Causer = BoundSword.Get();
 
 		IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
 	}
-}
-
-UWeaponComponent* UMeleeAttackAbility::GetWeaponComponent() const
-{
-	const ACharacter* Character = GetOwningCharacter();
-	return IsValid(Character) ? Character->FindComponentByClass<UWeaponComponent>() : nullptr;
 }

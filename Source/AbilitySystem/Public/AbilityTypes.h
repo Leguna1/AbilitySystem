@@ -33,3 +33,36 @@ enum class EAbilityEndReason : uint8
 
 	Failed UMETA(DisplayName = "Failed")
 };
+/** A float that scales with ability rank. Rank 1 reads Values[0]; ranks past the end reuse the last entry. */
+USTRUCT(BlueprintType)
+struct FAbilityRankedFloat
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|Rank")
+	TArray<float> Values;
+
+	float Get(const int32 Rank) const
+	{
+		return Values.IsEmpty()
+			? 0.0f
+			: Values[FMath::Clamp(Rank - 1, 0, Values.Num() - 1)];
+	}
+};
+
+/** Integer counterpart of FAbilityRankedFloat (shot counts, arrow counts, charges). */
+USTRUCT(BlueprintType)
+struct FAbilityRankedInt
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|Rank")
+	TArray<int32> Values;
+
+	int32 Get(const int32 Rank) const
+	{
+		return Values.IsEmpty()
+			? 0
+			: Values[FMath::Clamp(Rank - 1, 0, Values.Num() - 1)];
+	}
+};

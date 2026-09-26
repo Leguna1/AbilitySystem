@@ -3,6 +3,7 @@
 #include "GameFramework/Character.h"
 #include "MotionWarpingComponent.h"
 #include "TargetingComponent.h"
+#include "WeaponManagerComponent.h"
 
 void UOffensiveAbilityBase::ActivateAbility_Implementation()
 {
@@ -75,4 +76,19 @@ void UOffensiveAbilityBase::OnAttackStarted_Implementation()
 
 void UOffensiveAbilityBase::OnAttackFinished_Implementation(EAbilityEndReason EndReason)
 {
+}
+UWeaponManagerComponent* UOffensiveAbilityBase::GetWeaponManager() const
+{
+	const ACharacter* Character = GetOwningCharacter();
+
+	return IsValid(Character)
+		? Character->FindComponentByClass<UWeaponManagerComponent>()
+		: nullptr;
+}
+
+AWeaponBase* UOffensiveAbilityBase::GetEquippedWeapon() const
+{
+	const UWeaponManagerComponent* WeaponManager = GetWeaponManager();
+
+	return IsValid(WeaponManager) ? WeaponManager->GetEquippedWeapon() : nullptr;
 }

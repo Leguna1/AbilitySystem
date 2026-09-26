@@ -63,6 +63,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	bool IsAbilityActive() const { return bIsActive; }
+	
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	bool IsLocked() const { return AbilityRank <= 0; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	int32 GetAbilityRank() const { return AbilityRank; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	int32 GetMaxRank() const { return MaxRank; }
 
 protected:
 	virtual void NativeDestruct() override;
@@ -97,6 +106,10 @@ protected:
 	/** Called when affordability changes. Grey out / restore the slot here. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnAffordabilityChanged(bool bCanAffordNow);
+	
+	/** Called after OnSlotInitialized and whenever the rank changes. bLocked = rank 0: grey out / show a lock. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnRankChanged(int32 NewRank, int32 NewMaxRank, bool bLocked);
 
 private:
 	UFUNCTION()
@@ -114,6 +127,17 @@ private:
 	UFUNCTION()
 	void HandleResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
 
+	UFUNCTION()
+	void HandleAbilityRankChanged(FGameplayTag AbilityId, int32 OldRank, int32 NewRank);
+
+	void RefreshRank();
+
+	UPROPERTY(Transient)
+	int32 AbilityRank = 0;
+
+	UPROPERTY(Transient)
+	int32 MaxRank = 0;
+	
 	void SetActive(bool bNewActive);
 
 	void BeginCooldownPoll();

@@ -13,7 +13,8 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 		AbilityComponent->AbilityActivatedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 		AbilityComponent->AbilityEndedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 		AbilityComponent->AbilityCommittedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
-
+		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
+		
 		if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 		{
 			Resources->OnResourceChanged.RemoveDynamic(this, &UAbilitySlotWidget::HandleResourceChanged);
@@ -45,7 +46,7 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 	AbilityComponent->AbilityActivatedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 	AbilityComponent->AbilityEndedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 	AbilityComponent->AbilityCommittedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
-
+	AbilityComponent->AbilityRankChangedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
 	if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 	{
 		Resources->OnResourceChanged.AddDynamic(this, &UAbilitySlotWidget::HandleResourceChanged);
@@ -63,6 +64,7 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 	}
 
 	OnSlotInitialized();
+	RefreshRank();
 
 	// Defer tooltip creation to hover so we don't build a widget per slot up-front.
 	ToolTipWidgetDelegate.BindDynamic(this, &UAbilitySlotWidget::GetTooltipWidget);
@@ -80,7 +82,8 @@ void UAbilitySlotWidget::NativeDestruct()
 		AbilityComponent->AbilityActivatedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 		AbilityComponent->AbilityEndedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 		AbilityComponent->AbilityCommittedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
-
+		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
+		
 		if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 		{
 			Resources->OnResourceChanged.RemoveDynamic(this, &UAbilitySlotWidget::HandleResourceChanged);
@@ -215,4 +218,23 @@ void UAbilitySlotWidget::SetAffordable(bool bNewCanAfford)
 
 	bCanAfford = bNewCanAfford;
 	OnAffordabilityChanged(bCanAfford);
+}
+void UAbilitySlotWidget::HandleAbilityRankChanged(const FGameplayTag AbilityId, const int32 OldRank, const int32 NewRank)
+{
+	if (AbilityId.MatchesTagExact(SlotAbilityId))
+	{
+		RefreshRank();
+	}
+}
+
+void UAbilitySlotWidget::RefreshRank()
+{
+	const UAbility* Defaults = IsValid(AbilityComponent)
+		? AbilityComponent->GetAbilityDefaults(AbilityClass)
+		: nullptr;
+
+	AbilityRank = IsValid(AbilityComponent) ? AbilityComponent->GetAbilityRank(AbilityClass) : 0;
+	MaxRank = IsValid(Defaults) ? Defaults->GetMaxRank() : 0;
+
+	OnRankChanged(AbilityRank, MaxRank, AbilityRank <= 0);
 }

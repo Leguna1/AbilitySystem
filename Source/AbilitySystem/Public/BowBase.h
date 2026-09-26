@@ -4,6 +4,7 @@
 #include "ArrowBase.h"
 #include "BowDataAsset.h"
 #include "GameFramework/Actor.h"
+#include "WeaponBase.h"
 #include "BowBase.generated.h"
 
 class AArrowBase;
@@ -33,7 +34,7 @@ struct FBowFeedbackRuntime
 	TObjectPtr<UNiagaraComponent> Effect;
 };
 UCLASS()
-class ABILITYSYSTEM_API ABowBase : public AActor
+class ABILITYSYSTEM_API ABowBase : public AWeaponBase
 {
 	GENERATED_BODY()
 
@@ -59,12 +60,6 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Bow")
 	USkeletalMeshComponent* GetBowMesh() const { return BowMesh; }
-
-	UFUNCTION(BlueprintCallable, Category = "Bow|Setup")
-	void SetWielderMesh(USkeletalMeshComponent* InWielderMesh);
-
-	UFUNCTION(BlueprintPure, Category = "Bow|Setup")
-	USkeletalMeshComponent* GetWielderMesh() const { return WielderMesh; }
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	bool PrepareArrows(UArrowDataAsset* ArrowData, int32 ArrowCount);
@@ -136,6 +131,8 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
 	FName DrawHandSocketName = TEXT("BowString");
+	
+	virtual void OnHolstered_Implementation() override;
 
 private:
 	AArrowBase* CreateArrow(TSubclassOf<AArrowBase> ArrowClass);
@@ -150,9 +147,6 @@ private:
 
 	UFUNCTION()
 	void HandleArrowReadyToRecycle(AArrowBase* Arrow);
-
-	UPROPERTY(Transient)
-	TObjectPtr<USkeletalMeshComponent> WielderMesh;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<AArrowBase>> PreparedArrows;

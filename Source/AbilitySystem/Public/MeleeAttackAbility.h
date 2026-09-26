@@ -7,7 +7,6 @@
 #include "MeleeAttackAbility.generated.h"
 
 class ASwordBase;
-class UWeaponComponent;
 
 /**
  * A montage-driven melee attack. Sibling of URangedAttackAbility under
@@ -26,6 +25,7 @@ public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 	virtual void OnAnimationEvent_Implementation(FGameplayTag EventTag) override;
+	virtual bool CanActivateAbility_Implementation() const override;
 
 protected:
 	/** Damage delivered per hit this swing. */
@@ -44,9 +44,11 @@ protected:
 	void HandleSwordHit(AActor* HitActor, const FHitResult& Hit);
 
 private:
-	UWeaponComponent* GetWeaponComponent() const;
 
 	/** Bound to the sword during the active window so we can unbind cleanly. */
 	UPROPERTY(Transient)
 	TObjectPtr<ASwordBase> BoundSword;
+	
+	/** Ends detection on the bound sword and unbinds from its hits. */
+	void ReleaseBoundSword();
 };

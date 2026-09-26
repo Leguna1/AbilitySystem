@@ -52,4 +52,7 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UAbilitySlotWidget>> SlotWidgets;
+	
+	UFUNCTION()
+	void HandleGrantedAbilitiesChanged();
 };

@@ -7,7 +7,23 @@
 
 void UAbilityBarWidget::InitializeBar(UAbilityComponent* InAbilityComponent)
 {
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->GrantedAbilitiesChangedEvent.RemoveDynamic(this, &UAbilityBarWidget::HandleGrantedAbilitiesChanged);
+	}
+
 	AbilityComponent = InAbilityComponent;
+
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->GrantedAbilitiesChangedEvent.AddDynamic(this, &UAbilityBarWidget::HandleGrantedAbilitiesChanged);
+	}
+
+	RebuildSlots();
+}
+
+void UAbilityBarWidget::HandleGrantedAbilitiesChanged()
+{
 	RebuildSlots();
 }
 
@@ -28,7 +44,7 @@ void UAbilityBarWidget::RebuildSlots()
 		}
 
 		UAbilitySlotWidget* AbilitySlot = CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass);
-		if (!IsValid(Slot))
+		if (!IsValid(AbilitySlot))
 		{
 			continue;
 		}
@@ -41,6 +57,10 @@ void UAbilityBarWidget::RebuildSlots()
 
 void UAbilityBarWidget::NativeDestruct()
 {
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->GrantedAbilitiesChangedEvent.RemoveDynamic(this, &UAbilityBarWidget::HandleGrantedAbilitiesChanged);
+	}
 	ClearSlots();
 	Super::NativeDestruct();
 }
@@ -49,7 +69,7 @@ void UAbilityBarWidget::ClearSlots()
 {
 	for (UAbilitySlotWidget* AbilitySlot : SlotWidgets)
 	{
-		if (IsValid(Slot))
+		if (IsValid(AbilitySlot))
 		{
 			AbilitySlot->RemoveFromParent();
 		}

@@ -204,6 +204,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Tags")
 	const FGameplayTagContainer& GetCancelAbilitiesWithTags() const { return CancelAbilitiesWithTags; }
 
+	/** Rank this execution was created at. 0 = locked. Snapshotted, so upgrades apply from the next activation. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetAbilityRank() const { return AbilityRank; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetStartingRank() const { return StartingRank; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetMaxRank() const { return FMath::Max(MaxRank, StartingRank); }
+	
 protected:
 	/* -------------------- Ability requests -------------------- */
 
@@ -290,6 +300,14 @@ protected:
 	/** Seconds this ability is unavailable after it commits. 0 = no cooldown. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (ClampMin = "0.0"))
 	float CooldownDuration = 0.0f;
+	
+	/** Rank before any learning. 0 = must be learned before use; 1 = usable from the start. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rank", meta = (ClampMin = "0"))
+	int32 StartingRank = 1;
+
+	/** Highest reachable rank. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rank", meta = (ClampMin = "1"))
+	int32 MaxRank = 1;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Input", meta = (ClampMin = "0.0"))
 	float InputBufferDuration = 0.25f;
@@ -333,6 +351,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Early Cancellation")
 	FGameplayTagContainer AllowedEarlyCancellationAbilityTags;
 	
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	float GetRankedFloat(const FAbilityRankedFloat& Value) const { return Value.Get(AbilityRank); }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
+	int32 GetRankedInt(const FAbilityRankedInt& Value) const { return Value.Get(AbilityRank); }
 	
 
 private:
@@ -343,6 +366,9 @@ private:
 	void SetTransitionOpen(bool bNewTransitionOpen) { bTransitionOpen = bNewTransitionOpen; }
 	void SetEarlyCancellationClosed(bool bNewClosed) { bEarlyCancellationClosed = bNewClosed; }
 
+	UPROPERTY(Transient)
+	int32 AbilityRank = 0;
+	
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityComponent> AbilityComponent;
 
