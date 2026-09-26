@@ -279,7 +279,7 @@ void UAbilityComponent::CancelActiveAbility()
 	}
 }
 
-void UAbilityComponent::InputPressed(const FGameplayTag InputTag)
+void UAbilityComponent::HandleInputPressed(const FGameplayTag InputTag)
 {
 	if (!IsValid(InputBufferComponent) || !InputTag.IsValid())
 	{
@@ -335,7 +335,7 @@ void UAbilityComponent::InputPressed(const FGameplayTag InputTag)
 	}
 }
 
-void UAbilityComponent::InputReleased(FGameplayTag InputTag)
+void UAbilityComponent::HandleInputReleased(FGameplayTag InputTag)
 {
 	if (!IsValid(InputBufferComponent) || !InputTag.IsValid())
 	{
@@ -1310,4 +1310,15 @@ int32 UAbilityComponent::SetLearnedRank(const TSubclassOf<UAbility> AbilityClass
 
 	AbilityRankChangedEvent.Broadcast(AbilityId, OldRank, NewRank);
 	return NewRank;
+}
+void UAbilityComponent::HandleInput(const FGameplayTag InputTag, const bool bPressed)
+{
+	if (bPressed)
+	{
+		HandleInputPressed(InputTag);
+	}
+	else
+	{
+		HandleInputReleased(InputTag);
+	}
 }

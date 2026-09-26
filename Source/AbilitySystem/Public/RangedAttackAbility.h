@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "OffensiveAbilityBase.h"
+#include "ImpactGroupTypes.h"
 #include "RangedAttackAbility.generated.h"
 
 class AArrowBase;
@@ -124,6 +125,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events")
 	FGameplayTag ReleaseProjectileEventTag;
+	
+	/** Merge this ability's impact sounds: e.g. one hit and one miss sound per fan volley instead of one per arrow. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio")
+	bool bGroupProjectileImpacts = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio", meta = (EditCondition = "bGroupProjectileImpacts"))
+	FImpactGroupSettings ProjectileImpactGroup;
 
 private:
 	bool HandleProjectileAnimationEvent(FGameplayTag EventTag);

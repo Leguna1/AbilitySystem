@@ -71,7 +71,7 @@ public:
 	bool AttachPreparedArrowToBow(int32 ArrowIndex, FName SocketName);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool ReleasePreparedArrows(const TArray<FVector>& Directions, float Strength, bool bTargetedShot);
+	bool ReleasePreparedArrows(const TArray<FVector>& Directions, float Strength, bool bTargetedShot, const FImpactGroupHandle& ImpactGroup);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	void DiscardPreparedArrows();

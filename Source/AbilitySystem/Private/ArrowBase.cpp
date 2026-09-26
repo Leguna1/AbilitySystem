@@ -13,6 +13,8 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
+#include "ImpactGroupSubsystem.h"
+#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 
 AArrowBase::AArrowBase()
 {
@@ -272,6 +274,7 @@ bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 
 void AArrowBase::ResetForPool()
 {
+	LeaveImpactGroup();
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
 
 	StopOngoingFeedback();
@@ -412,7 +415,6 @@ void AArrowBase::HandleHitBoxBeginOverlap(
 		SweepResult
 	);
 }
-
 void AArrowBase::HandleImpact(
 	AActor* HitActor,
 	UPrimitiveComponent* HitComponent,
@@ -456,10 +458,7 @@ void AArrowBase::HandleImpact(
 			true
 		);
 
-		AttachToComponent(
-			HitComponent,
-			AttachmentRules
-		);
+		AttachToComponent(HitComponent, AttachmentRules);
 	}
 
 	FVector ImpactLocation = GetActorLocation();
@@ -469,7 +468,23 @@ void AArrowBase::HandleImpact(
 		ImpactLocation = FVector(SweepResult.ImpactPoint);
 	}
 
-	PlayEndFeedback(ImpactLocation);
+	const float ImpactDamage = GetCalculatedDamage();
+	bool bPayloadAccepted = false;
+
+	// Deliver first: whether the target accepted the payload decides hit vs miss feedback.
+	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
+	{
+		FAbilityPayload Payload;
+		Payload.Damage = ImpactDamage;
+		Payload.Instigator = GetInstigator();
+		Payload.Causer = this;
+		Payload.Hit = SweepResult;
+
+		bPayloadAccepted = IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
+	}
+
+	PlayImpactFeedback(bPayloadAccepted, ImpactLocation, HitComponent, SweepResult);
+	LeaveImpactGroup();
 
 	if (IsValid(HitComponent) &&
 		HitComponent->IsSimulatingPhysics())
@@ -480,24 +495,7 @@ void AArrowBase::HandleImpact(
 		);
 	}
 
-	const float ImpactDamage = GetCalculatedDamage();
-
-	// Direct delivery: if the hit actor accepts payloads, hand it one. This is
-	// the "actually apply damage" path the OnArrowHit broadcast never had.
-	if (IsValid(HitActor) &&
-		HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
-	{
-		FAbilityPayload Payload;
-		Payload.Damage = ImpactDamage;
-		Payload.Instigator = GetInstigator();
-		Payload.Causer = this;
-		Payload.Hit = SweepResult;
-
-		IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
-	}
-
-	// Broadcast for observers (abilities tracking their own hits, VFX, combo
-	// systems), independent of whether the target accepted a payload.
+	// Observers (abilities tracking hits, combo systems) hear about every impact.
 	OnArrowHit.Broadcast(
 		this,
 		HitActor,
@@ -507,7 +505,6 @@ void AArrowBase::HandleImpact(
 
 	ScheduleRecycle(ArrowData->ImpactLifespan);
 }
-
 void AArrowBase::PlayStartFeedback()
 {
 	if (!IsValid(ArrowData))
@@ -596,41 +593,6 @@ void AArrowBase::StopOngoingFeedback()
 	}
 }
 
-void AArrowBase::PlayEndFeedback(const FVector& FeedbackLocation)
-{
-	if (!IsValid(ArrowData))
-	{
-		return;
-	}
-
-	if (IsValid(ArrowData->EndSound))
-	{
-		// Per-impact pitch variation so clustered volley landings read as distinct
-		// hits instead of one voice-stealing stutter. VolumeMultiplier stays 1.
-		const float Pitch = FMath::FRandRange(
-			FMath::Min(ArrowData->EndSoundPitchMin, ArrowData->EndSoundPitchMax),
-			FMath::Max(ArrowData->EndSoundPitchMin, ArrowData->EndSoundPitchMax)
-		);
-
-		UGameplayStatics::PlaySoundAtLocation(
-			this,
-			ArrowData->EndSound,
-			FeedbackLocation,
-			1.0f,
-			Pitch
-		);
-	}
-
-	if (IsValid(ArrowData->EndEffect))
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
-			ArrowData->EndEffect,
-			FeedbackLocation,
-			GetActorRotation()
-		);
-	}
-}
 
 void AArrowBase::HandleFlightExpired()
 {
@@ -696,4 +658,59 @@ void AArrowBase::ScheduleRecycle(const float Delay)
 		Delay,
 		false
 	);
+}
+void AArrowBase::JoinImpactGroup(const FImpactGroupHandle& InImpactGroup)
+{
+	LeaveImpactGroup();
+
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
+
+	if (InImpactGroup.IsValid() &&
+		IsValid(ImpactGroups) &&
+		ImpactGroups->AddMember(InImpactGroup))
+	{
+		ImpactGroup = InImpactGroup;
+	}
+}
+
+void AArrowBase::LeaveImpactGroup()
+{
+	if (!ImpactGroup.IsValid())
+	{
+		return;
+	}
+
+	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+	{
+		ImpactGroups->ResolveMember(ImpactGroup);
+	}
+
+	ImpactGroup = FImpactGroupHandle();
+}
+
+
+void AArrowBase::PlayImpactFeedback(const bool bHitTarget, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const
+{
+	UImpactGroupSubsystem* ImpactFeedback = UImpactGroupSubsystem::Get(this);
+
+	if (!IsValid(ImpactFeedback) || !IsValid(ArrowData))
+	{
+		return;
+	}
+
+	FImpactReport Report;
+	Report.Group = ImpactGroup;
+	Report.Result = bHitTarget ? EImpactResult::Hit : EImpactResult::Miss;
+	Report.Location = ImpactLocation;
+	Report.Rotation = GetActorRotation();
+
+	Report.OwnHitFeedback.Sound = ArrowData->EndSound;
+	Report.OwnHitFeedback.Effect = ArrowData->EndEffect;
+	Report.OwnHitFeedback.PitchMin = ArrowData->EndSoundPitchMin;
+	Report.OwnHitFeedback.PitchMax = ArrowData->EndSoundPitchMax;
+
+	Report.Hit = Hit;
+	Report.HitComponent = HitComponent;
+
+	ImpactFeedback->PlayImpact(Report);
 }

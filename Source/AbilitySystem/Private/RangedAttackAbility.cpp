@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "TargetingComponent.h"
 #include "BowDataAsset.h"
+#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 
 bool URangedAttackAbility::CanActivateAbility_Implementation() const
 {
@@ -285,7 +286,24 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 
 	const float Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
 
-	if (!Bow->ReleasePreparedArrows(Directions, Strength, bHasTarget))
+	// Open before release so every arrow can join; seal right after so the
+	// group closes once the last arrow resolves.
+	UImpactGroupSubsystem* ImpactGroups = bGroupProjectileImpacts
+		? UImpactGroupSubsystem::Get(this)
+		: nullptr;
+
+	const FImpactGroupHandle ImpactGroup = IsValid(ImpactGroups)
+		? ImpactGroups->OpenGroup(ProjectileImpactGroup)
+		: FImpactGroupHandle();
+
+	const bool bReleased = Bow->ReleasePreparedArrows(Directions, Strength, bHasTarget, ImpactGroup);
+
+	if (IsValid(ImpactGroups))
+	{
+		ImpactGroups->SealGroup(ImpactGroup);
+	}
+
+	if (!bReleased)
 	{
 		return false;
 	}

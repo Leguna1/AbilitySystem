@@ -106,12 +106,6 @@ public:
 	void CancelActiveAbility();
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	void InputPressed(FGameplayTag InputTag);
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	void InputReleased(FGameplayTag InputTag);
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void MovementInputReceived(FVector2D MovementInput);
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
@@ -217,6 +211,10 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FGrantedAbilitiesChangedEventSignature GrantedAbilitiesChangedEvent;
+	
+	/** Single entry point for ability input: true on press, false on release. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
+	void HandleInput(FGameplayTag InputTag, bool bPressed);
 
 protected:
 	virtual void BeginPlay() override;
@@ -324,4 +322,7 @@ private:
 	bool bResolvingBufferedInput = false;
 	bool bEndingAbility = false;
 	bool bResolveBufferedInputAfterCallback = false;
+	
+	void HandleInputPressed(FGameplayTag InputTag);
+	void HandleInputReleased(FGameplayTag InputTag);
 };

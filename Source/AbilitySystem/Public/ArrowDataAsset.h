@@ -81,6 +81,8 @@ public:
 
 	/* -------------------- End feedback -------------------- */
 
+	/** Hit feedback: played when the arrow strikes a target that accepts its payload. Misses use the environment impact from Project Settings. */
+	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|End")
 	TObjectPtr<UNiagaraSystem> EndEffect;
 

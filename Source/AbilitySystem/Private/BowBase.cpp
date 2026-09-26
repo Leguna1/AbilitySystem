@@ -181,7 +181,7 @@ bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName Sock
 	);
 }
 
-bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const float Strength, const bool bTargetedShot)
+bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, float Strength, bool bTargetedShot, const FImpactGroupHandle& ImpactGroup)
 {
 	if (PreparedArrows.IsEmpty() ||
 		Directions.Num() != PreparedArrows.Num())
@@ -223,6 +223,7 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const fl
 		}
 
 		ReleasedArrows.Add(Arrow);
+		Arrow->JoinImpactGroup(ImpactGroup);
 		OnArrowFired.Broadcast(Arrow, ClampedStrength);
 		bReleasedAnyArrow = true;
 	}

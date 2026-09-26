@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ImpactGroupTypes.h"
 #include "ArrowBase.generated.h"
 
 class AArrowBase;
@@ -77,6 +78,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arrow|Combat")
 	FOnArrowHitSignature OnArrowHit;
+	
+	/** Joins a volley's impact group; the group then decides this arrow's impact sound. */
+	void JoinImpactGroup(const FImpactGroupHandle& InImpactGroup);
 
 protected:
 	virtual void BeginPlay() override;
@@ -119,7 +123,6 @@ private:
 	
 	void StartOngoingFeedback();
 	void StopOngoingFeedback();
-	void PlayEndFeedback(const FVector& FeedbackLocation);
 	void HandleFlightExpired();
 	void SpawnPoolReturnEffect();
 	void ScheduleFlightExpiry(float Delay);
@@ -138,4 +141,12 @@ private:
 	FRotator DefaultArrowMeshRotation = FRotator::ZeroRotator;
 
 	FTimerHandle RecycleTimerHandle;
+	
+	
+
+	void LeaveImpactGroup();
+
+	FImpactGroupHandle ImpactGroup;
+	
+	void PlayImpactFeedback(bool bHitTarget, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const;
 };

@@ -1,8 +1,8 @@
-// MeleeAttackAbility.cpp
 #include "MeleeAttackAbility.h"
 
 #include "PayloadReceiver.h"
 #include "SwordBase.h"
+#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 #include "GameFramework/Character.h"
 
 bool UMeleeAttackAbility::CanActivateAbility_Implementation() const
@@ -53,6 +53,12 @@ void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Eve
 		BoundSword = Sword;
 		BoundSword->OnSwordHit.AddDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
 		BoundSword->BeginHitDetection();
+		
+		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+		{
+			SwingGroup = ImpactGroups->OpenGroup(SwingImpactGroup);
+		}
+		
 		return;
 	}
 
@@ -69,11 +75,19 @@ void UMeleeAttackAbility::ReleaseBoundSword()
 		return;
 	}
 
+	if (SwingGroup.IsValid())
+	{
+		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+		{
+			ImpactGroups->SealGroup(SwingGroup);
+		}
+
+		SwingGroup = FImpactGroupHandle();
+	}
 	BoundSword->EndHitDetection();
 	BoundSword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
 	BoundSword = nullptr;
 }
-
 void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit)
 {
 	if (!IsValid(HitActor))
@@ -81,13 +95,36 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 		return;
 	}
 
-	// Deliver a payload if the target accepts one -- same interface arrows use,
-	// so melee and ranged share the damage-delivery contract.
+	// Resolved before delivery: a lethal payload may start destroying the target.
+	const FVector ImpactLocation = !Hit.ImpactPoint.IsNearlyZero()
+		? FVector(Hit.ImpactPoint)
+		: HitActor->GetActorLocation();
+
+	bool bPayloadAccepted = false;
+
+	// Same interface arrows use, so melee and ranged share the damage-delivery contract.
 	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
 	{
 		FAbilityPayload Payload;
+		Payload.Damage = Damage;
+		Payload.Instigator = GetOwningCharacter();
 		Payload.Causer = BoundSword.Get();
+		Payload.Hit = Hit;
 
-		IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
+		bPayloadAccepted = IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
+	}
+
+	if (UImpactGroupSubsystem* ImpactFeedback = UImpactGroupSubsystem::Get(this))
+	{
+		FImpactReport Report;
+		Report.Group = SwingGroup;
+		Report.Result = bPayloadAccepted ? EImpactResult::Hit : EImpactResult::Miss;
+		Report.Location = ImpactLocation;
+		Report.Rotation = IsValid(BoundSword) ? BoundSword->GetActorRotation() : FRotator::ZeroRotator;
+		Report.OwnHitFeedback = SwingHitFeedback;
+		Report.Hit = Hit;
+		Report.HitComponent = Hit.GetComponent();
+
+		ImpactFeedback->PlayImpact(Report);
 	}
 }
