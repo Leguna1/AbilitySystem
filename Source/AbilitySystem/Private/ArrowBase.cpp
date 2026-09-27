@@ -107,7 +107,6 @@ void AArrowBase::Tick(const float DeltaTime)
 		SetActorTickEnabled(false);
 	}
 }
-
 float AArrowBase::GetCalculatedDamage() const
 {
 	if (!IsValid(ArrowData))
@@ -118,10 +117,10 @@ float AArrowBase::GetCalculatedDamage() const
 	const float StrengthMultiplier = FMath::Lerp(
 		1.0f,
 		ArrowData->MaximumDamageMultiplier,
-		FiredStrength
+		ShotParams.Strength
 	);
 
-	return ArrowData->BaseDamage * StrengthMultiplier;
+	return ArrowData->BaseDamage * StrengthMultiplier * ShotParams.DamageMultiplier;
 }
 
 void AArrowBase::SpinBegin_Implementation()
@@ -138,7 +137,7 @@ void AArrowBase::SpinBegin_Implementation()
 	SetActorTickEnabled(true);
 }
 
-bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Strength, const bool bTargetedShot)
+bool AArrowBase::Fire_Implementation(const FVector& Direction, const FArrowShotParams& InShotParams)
 {
 	if (!IsValid(ArrowData) ||
 		!IsValid(ProjectileMovement) ||
@@ -158,21 +157,25 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Stren
 
 	StopOngoingFeedback();
 
-	FiredStrength = FMath::Clamp(Strength, 0.0f, 1.0f);
-	bWasTargetedShot = bTargetedShot;
+	ShotParams = InShotParams;
+	ShotParams.Strength = FMath::Clamp(InShotParams.Strength, 0.0f, 1.0f);
+
+	// Join before the arrow goes live, so even a point-blank impact counts toward the group.
+	JoinImpactGroup(ShotParams.ImpactGroup);
+	
 	bIsInFlight = true;
 	bHasImpacted = false;
 
 	const float Speed = FMath::Lerp(
 		ArrowData->MinimumSpeed,
 		ArrowData->MaximumSpeed,
-		FiredStrength
+		ShotParams.Strength
 	);
 
 	const float GravityScale = FMath::Lerp(
 		ArrowData->MaximumGravityScale,
 		ArrowData->MinimumGravityScale,
-		FiredStrength
+		ShotParams.Strength
 	);
 
 	if (Speed <= KINDA_SMALL_NUMBER)
@@ -199,8 +202,7 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const float Stren
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
 
-	if (!bWasTargetedShot &&
-		ArrowData->MaximumUntargetedTravelDistance > 0.0f)
+	if (ArrowData->MaximumUntargetedTravelDistance > 0.0f)
 	{
 		ScheduleFlightExpiry(
 			ArrowData->MaximumUntargetedTravelDistance / Speed
@@ -237,14 +239,16 @@ bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 	}
 
 	ArrowData = NewArrowData;
-	FiredStrength = 0.0f;
+	
 	Velocity = FVector::ZeroVector;
 
 	bIsInFlight = false;
 	bHasImpacted = false;
-	bWasTargetedShot = false;
+	
 	bIsSpinning = false;
 	SpinElapsedTime = 0.0f;
+	
+	ShotParams = FArrowShotParams();
 
 	if (IsValid(ProjectileMovement))
 	{
@@ -277,6 +281,8 @@ void AArrowBase::ResetForPool()
 	LeaveImpactGroup();
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
 
+	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
+	
 	StopOngoingFeedback();
 
 	if (GetAttachParentActor() != nullptr ||
@@ -305,15 +311,17 @@ void AArrowBase::ResetForPool()
 	}
 
 	ArrowData = nullptr;
-	FiredStrength = 0.0f;
+	
 	Velocity = FVector::ZeroVector;
 
 	bIsInFlight = false;
 	bHasImpacted = false;
-	bWasTargetedShot = false;
+	
 	bIsSpinning = false;
 	SpinElapsedTime = 0.0f;
-
+	ShotParams = FArrowShotParams();
+	
+	
 	SetActorTickEnabled(false);
 	SetActorHiddenInGame(true);
 	SetActorEnableCollision(false);
@@ -505,36 +513,6 @@ void AArrowBase::HandleImpact(
 
 	ScheduleRecycle(ArrowData->ImpactLifespan);
 }
-void AArrowBase::PlayStartFeedback()
-{
-	if (!IsValid(ArrowData))
-	{
-		return;
-	}
-
-	const FVector FeedbackLocation = IsValid(TipLocation)
-		? TipLocation->GetComponentLocation()
-		: GetActorLocation();
-
-	if (IsValid(ArrowData->StartSound))
-	{
-		UGameplayStatics::PlaySoundAtLocation(
-			this,
-			ArrowData->StartSound,
-			FeedbackLocation
-		);
-	}
-
-	if (IsValid(ArrowData->StartEffect))
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-			this,
-			ArrowData->StartEffect,
-			FeedbackLocation,
-			GetActorRotation()
-		);
-	}
-}
 
 void AArrowBase::StartOngoingFeedback()
 {
@@ -713,4 +691,40 @@ void AArrowBase::PlayImpactFeedback(const bool bHitTarget, const FVector& Impact
 	Report.HitComponent = HitComponent;
 
 	ImpactFeedback->PlayImpact(Report);
+}
+void AArrowBase::ScheduleRedirect(const FVector& TargetPoint, const float Delay, const bool bDisableGravity)
+{
+	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
+
+	RedirectTargetPoint = TargetPoint;
+	bRedirectDisablesGravity = bDisableGravity;
+
+	if (Delay <= 0.0f)
+	{
+		HandleScheduledRedirect();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		RedirectTimerHandle,
+		this,
+		&AArrowBase::HandleScheduledRedirect,
+		Delay,
+		false
+	);
+}
+
+void AArrowBase::HandleScheduledRedirect()
+{
+	if (!IsInFlight())
+	{
+		return;
+	}
+
+	if (bRedirectDisablesGravity && IsValid(ProjectileMovement))
+	{
+		ProjectileMovement->ProjectileGravityScale = 0.0f;
+	}
+
+	Redirect((RedirectTargetPoint - GetActorLocation()).GetSafeNormal());
 }

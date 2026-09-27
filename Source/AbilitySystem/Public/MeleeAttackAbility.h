@@ -21,9 +21,11 @@ UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UMeleeAttackAbility : public UOffensiveAbilityBase
 {
 	GENERATED_BODY()
-	UMeleeAttackAbility();
+	
 
 public:
+	UMeleeAttackAbility();
+	
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 	virtual void OnAnimationEvent_Implementation(FGameplayTag EventTag) override;
@@ -32,9 +34,9 @@ public:
 	virtual FGameplayTag GetCostEventTag() const override;
 
 protected:
-	/** Damage delivered per hit this swing. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Melee", meta = (ClampMin = "0.0"))
-	float Damage = 25.0f;
+	/** Damage per hit, by rank. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Melee")
+	FAbilityRankedFloat DamageByRank = FAbilityRankedFloat(25.0f);
 
 	/** Anim event tag that starts the active (hit-detecting) window. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Melee")

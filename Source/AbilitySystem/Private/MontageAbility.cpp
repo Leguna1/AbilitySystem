@@ -97,6 +97,40 @@ bool UMontageAbility::IsAbilityMontagePlaying() const
 		AnimInstance->Montage_IsPlaying(ActiveMontage);
 }
 
+bool UMontageAbility::AcceptsAnimationEvent(const UAnimSequenceBase* SourceAnimation) const
+{
+	if (!IsValid(SourceAnimation))
+	{
+		return true;
+	}
+
+	const UAnimMontage* Montage = ActiveMontage.Get();
+
+	if (!IsValid(Montage))
+	{
+		return false;
+	}
+
+	if (SourceAnimation == Montage)
+	{
+		return true;
+	}
+
+	// Notifies authored inside a sequence report that sequence, not the montage.
+	for (const FSlotAnimationTrack& Track : Montage->SlotAnimTracks)
+	{
+		for (const FAnimSegment& Segment : Track.AnimTrack.AnimSegments)
+		{
+			if (Segment.GetAnimReference() == SourceAnimation)
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
 void UMontageAbility::OnAbilityMontageStarted_Implementation(UAnimMontage* Montage)
 {
 }

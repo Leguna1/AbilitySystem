@@ -11,14 +11,6 @@ UProjectileBarrageAbility::UProjectileBarrageAbility()
 	CostTrigger = EAbilityCostTrigger::OnAnimationEvent;
 }
 
-void UProjectileBarrageAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
-{
-	ClearBarrageTimer();
-	BarrageImpactPoints.Reset();
-
-	Super::OnAbilityEnded_Implementation(EndReason);
-}
-
 FVector UProjectileBarrageAbility::ResolveProjectileDirectionForIndex_Implementation(const int32 ProjectileIndex) const
 {
 	const ACharacter* Character = GetOwningCharacter();
@@ -47,7 +39,7 @@ FVector UProjectileBarrageAbility::ResolveProjectileDirectionForIndex_Implementa
 		return BaseLaunchDirection;
 	}
 
-	const int32 ProjectileCount = FMath::Max(ProjectileHandSocketNames.Num(), 1);
+	const int32 ProjectileCount = FMath::Max(GetProjectileCount(), 1);
 
 	if (ProjectileCount <= 1)
 	{
@@ -75,9 +67,6 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 {
 	Super::OnProjectileReleased_Implementation(Strength);
 
-	ClearBarrageTimer();
-	BarrageImpactPoints.Reset();
-
 	const int32 ProjectileCount = GetReleasedProjectileCount();
 
 	if (ProjectileCount <= 0)
@@ -87,53 +76,31 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 
 	const FVector TargetCenter = ResolveBarrageTargetCenter();
 
-	BarrageImpactPoints.Reserve(ProjectileCount);
-
 	for (int32 Index = 0; Index < ProjectileCount; ++Index)
 	{
 		AArrowBase* Arrow = GetReleasedProjectile(Index);
 
-		if (IsValid(Arrow) && BarrageFlightLifespan > 0.0f)
+		if (!IsValid(Arrow))
 		{
-			// Per-arrow random stagger so impacts land sequentially rather than
-			// all on one frame, preventing the identical EndSound from stacking
-			// and phase-cancelling into a mushy artifact.
-			const float Stagger = BarrageImpactStagger > 0.0f
-				? FMath::FRandRange(0.0f, BarrageImpactStagger)
-				: 0.0f;
-
-			Arrow->SetRemainingFlightTime(BarrageFlightLifespan + Stagger);
+			continue;
 		}
 
-		BarrageImpactPoints.Add(
-			ResolveBarrageImpactPoint(
-				Index,
-				ProjectileCount,
-				TargetCenter
-			)
+		// Safety net for arrows that never reach their point.
+		if (BarrageFlightLifespan > 0.0f)
+		{
+			Arrow->SetRemainingFlightTime(BarrageFlightLifespan);
+		}
+
+		const float Stagger = BarrageImpactStagger > 0.0f
+			? FMath::FRandRange(0.0f, BarrageImpactStagger)
+			: 0.0f;
+
+		Arrow->ScheduleRedirect(
+			ResolveBarrageImpactPoint(Index, ProjectileCount, TargetCenter),
+			RedirectDelay + Stagger,
+			true
 		);
 	}
-
-	UWorld* World = GetWorld();
-
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	if (RedirectDelay <= 0.0f)
-	{
-		RedirectReleasedProjectiles();
-		return;
-	}
-
-	World->GetTimerManager().SetTimer(
-		RedirectTimerHandle,
-		this,
-		&UProjectileBarrageAbility::RedirectReleasedProjectiles,
-		RedirectDelay,
-		false
-	);
 }
 
 FVector UProjectileBarrageAbility::ResolveBarrageTargetCenter_Implementation() const
@@ -213,43 +180,4 @@ FVector UProjectileBarrageAbility::ResolveBarrageImpactPoint_Implementation(cons
 	}
 
 	return CandidatePoint;
-}
-
-void UProjectileBarrageAbility::RedirectReleasedProjectiles()
-{
-	ClearBarrageTimer();
-
-	const int32 ProjectileCount = GetReleasedProjectileCount();
-
-	for (int32 Index = 0; Index < ProjectileCount; ++Index)
-	{
-		AArrowBase* Arrow = GetReleasedProjectile(Index);
-
-		if (!IsValid(Arrow) ||
-			!Arrow->IsInFlight() ||
-			!BarrageImpactPoints.IsValidIndex(Index))
-		{
-			continue;
-		}
-
-		const FVector Direction = (
-			BarrageImpactPoints[Index] -
-			Arrow->GetActorLocation()
-		).GetSafeNormal();
-
-		if (!Direction.IsNearlyZero())
-		{
-			Arrow->Redirect(Direction);
-		}
-	}
-}
-
-void UProjectileBarrageAbility::ClearBarrageTimer()
-{
-	UWorld* World = GetWorld();
-
-	if (IsValid(World))
-	{
-		World->GetTimerManager().ClearTimer(RedirectTimerHandle);
-	}
 }

@@ -53,13 +53,6 @@ void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Eve
 			return;
 		}
 
-		// The swing becoming active is the commit point; a failed commit swings nothing.
-		if (!IsCommitted() && !RequestCommit())
-		{
-			RequestCancelAbility();
-			return;
-		}
-
 		ReleaseBoundSword();
 
 		BoundSword = Sword;
@@ -82,11 +75,6 @@ void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Eve
 
 void UMeleeAttackAbility::ReleaseBoundSword()
 {
-	if (!IsValid(BoundSword))
-	{
-		return;
-	}
-
 	if (SwingGroup.IsValid())
 	{
 		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
@@ -96,6 +84,12 @@ void UMeleeAttackAbility::ReleaseBoundSword()
 
 		SwingGroup = FImpactGroupHandle();
 	}
+	
+	if (!IsValid(BoundSword))
+	{
+		return;
+	}
+	
 	BoundSword->EndHitDetection();
 	BoundSword->OnSwordHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
 	BoundSword = nullptr;
@@ -118,7 +112,7 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
 	{
 		FAbilityPayload Payload;
-		Payload.Damage = Damage;
+		Payload.Damage = GetRankedFloat(DamageByRank);
 		Payload.Instigator = GetOwningCharacter();
 		Payload.Causer = BoundSword.Get();
 		Payload.Hit = Hit;

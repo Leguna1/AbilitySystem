@@ -22,7 +22,7 @@ void UAnimNotify_AbilityEvent::Notify(USkeletalMeshComponent* MeshComp, UAnimSeq
 
 	if (UAbilityComponent* AbilityComponent = Owner->FindComponentByClass<UAbilityComponent>())
 	{
-		AbilityComponent->HandleAbilityEvent(EventTag);
+		AbilityComponent->HandleAbilityEvent(EventTag, Animation);
 	}
 }
 

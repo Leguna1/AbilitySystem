@@ -119,8 +119,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Animation")
 	FName RecoverySectionName = TEXT("Recovery");
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging", meta = (ClampMin = "0.01"))
-	float MaximumChargeTime = 1.5f;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging")
+	FAbilityRankedFloat MaximumChargeTimeByRank = FAbilityRankedFloat(1.5f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging")
 	bool bAutoReleaseAtMaximumCharge = true;
@@ -149,4 +149,8 @@ private:
 
 	UPROPERTY(Transient)
 	bool bMaximumChargeReached = false;
+	
+	/** Resolved from MaximumChargeTimeByRank at activation. */
+	UPROPERTY(Transient)
+	float MaximumChargeTime = 0.0f;
 };

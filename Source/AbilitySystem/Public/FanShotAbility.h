@@ -19,8 +19,8 @@ enum class EFanSpreadMode : uint8
  * Releases every prepared arrow simultaneously in a horizontal fan centered on
  * the player's aim (control rotation), spread around the world up axis.
  *
- * Arrow count is socket-driven: it equals the number of configured hand/bow
- * sockets on RangedAttackAbility. Skill-tree "more arrows" upgrades add sockets.
+ * Arrow count comes from ProjectileCountByRank (up to the configured socket
+ * count), so "more arrows" upgrades are ranks, not new sockets.
  *
  * Unlike Barrage, there is no arc, redirect, or ground targeting: this is a
  * single flat volley fired outward on release.

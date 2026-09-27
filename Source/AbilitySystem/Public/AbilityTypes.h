@@ -65,6 +65,9 @@ struct FAbilityRankedFloat
 {
 	GENERATED_BODY()
 
+	FAbilityRankedFloat() = default;
+	explicit FAbilityRankedFloat(const float InitialValue) { Values.Add(InitialValue); }
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|Rank")
 	TArray<float> Values;
 
@@ -82,6 +85,9 @@ struct FAbilityRankedInt
 {
 	GENERATED_BODY()
 
+	FAbilityRankedInt() = default;
+	explicit FAbilityRankedInt(const int32 InitialValue) { Values.Add(InitialValue); }
+	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|Rank")
 	TArray<int32> Values;
 

@@ -7,6 +7,7 @@
 #include "TargetableInterface.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
+#include "Engine/EngineTypes.h"
 
 UTargetingComponent::UTargetingComponent()
 {
@@ -25,6 +26,14 @@ void UTargetingComponent::BeginPlay()
 		return;
 	}
 
+	if (TargetObjectTypes.IsEmpty())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UTargetingComponent on %s has no TargetObjectTypes; defaulting to Pawn."),
+			*GetNameSafe(GetOwner()));
+
+		TargetObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
+	}
+	
 	if (ReleaseRange < AcquisitionRange)
 	{
 		ReleaseRange = AcquisitionRange;

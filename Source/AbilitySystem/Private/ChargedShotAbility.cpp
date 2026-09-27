@@ -13,13 +13,14 @@ UChargedShotAbility::UChargedShotAbility()
 
 bool UChargedShotAbility::CanActivateAbility_Implementation() const
 {
+	
 	if (!Super::CanActivateAbility_Implementation())
 	{
 		return false;
 	}
 
 	return IsValid(AbilityMontage) &&
-		MaximumChargeTime > 0.0f &&
+		GetRankedFloat(MaximumChargeTimeByRank) > 0.0f &&
 		ValidateMontageSections();
 }
 
@@ -29,6 +30,8 @@ void UChargedShotAbility::ActivateAbility_Implementation()
 	CurrentChargeTime = 0.0f;
 	bChargeStarted = false;
 	bMaximumChargeReached = false;
+	
+	MaximumChargeTime = FMath::Max(GetRankedFloat(MaximumChargeTimeByRank), 0.01f);
 
 	Super::ActivateAbility_Implementation();
 

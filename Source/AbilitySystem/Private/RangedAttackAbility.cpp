@@ -5,7 +5,6 @@
 #include "BowBase.h"
 #include "GameFramework/Character.h"
 #include "TargetingComponent.h"
-#include "BowDataAsset.h"
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 
 bool URangedAttackAbility::CanActivateAbility_Implementation() const
@@ -42,8 +41,6 @@ bool URangedAttackAbility::CanActivateAbility_Implementation() const
 }
 void URangedAttackAbility::ActivateAbility_Implementation()
 {
-	ACharacter* Character = GetOwningCharacter();
-
 	Bow = GetEquippedWeaponAs<ABowBase>();
 
 	bProjectilePrepared = false;
@@ -55,7 +52,6 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 		RequestCancelAbility();
 		return;
 	}
-	Bow->HandleFeedbackPoint(EBowFeedbackPoint::AbilityStart,BowData);
 
 	Bow->DiscardPreparedArrows();
 
@@ -90,11 +86,7 @@ void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason
 	if (IsValid(Bow))
 	{
 		Bow->EndDrawVisuals();
-
-		Bow->HandleFeedbackPoint(
-			EBowFeedbackPoint::AbilityEnd,
-			BowData
-		);
+		
 	}
 
 	DiscardPreparedProjectile();
@@ -120,6 +112,22 @@ bool URangedAttackAbility::HasPreparedProjectile() const
 	return bProjectilePrepared &&
 		IsValid(Bow) &&
 		Bow->HasPreparedArrows();
+}
+int32 URangedAttackAbility::GetProjectileCount() const
+{
+	const int32 SocketCount = ProjectileHandSocketNames.Num();
+
+	if (ProjectileCountByRank.Values.IsEmpty())
+	{
+		return SocketCount;
+	}
+
+	return FMath::Clamp(GetRankedInt(ProjectileCountByRank), 1, SocketCount);
+}
+
+float URangedAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
+{
+	return GetRankedFloat(DamageMultiplierByRank);
 }
 
 void URangedAttackAbility::ResetProjectileCycle()
@@ -168,12 +176,14 @@ bool URangedAttackAbility::PrepareProjectile_Implementation()
 		Bow->DiscardPreparedArrows();
 	}
 
-	if (!Bow->PrepareArrows(ArrowData, ProjectileHandSocketNames.Num()))
+	const int32 ProjectileCount = GetProjectileCount();
+
+	if (!Bow->PrepareArrows(ArrowData, ProjectileCount))
 	{
 		return false;
 	}
 
-	for (int32 Index = 0; Index < ProjectileHandSocketNames.Num(); ++Index)
+	for (int32 Index = 0; Index < ProjectileCount; ++Index)
 	{
 		if (!Bow->AttachPreparedArrowToWielder(Index, ProjectileHandSocketNames[Index]))
 		{
@@ -186,11 +196,6 @@ bool URangedAttackAbility::PrepareProjectile_Implementation()
 	bProjectileNocked = false;
 	bProjectileReleased = false;
 
-	Bow->HandleFeedbackPoint(
-		EBowFeedbackPoint::SpawnArrow,
-		BowData
-	);
-
 	OnProjectilePrepared();
 	return true;
 }
@@ -201,12 +206,12 @@ bool URangedAttackAbility::NockProjectile_Implementation()
 		!bProjectilePrepared ||
 		bProjectileReleased ||
 		ProjectileBowSocketNames.IsEmpty() ||
-		ProjectileBowSocketNames.Num() != Bow->GetPreparedArrowCount())
+		Bow->GetPreparedArrowCount() > ProjectileBowSocketNames.Num())
 	{
 		return false;
 	}
 
-	for (int32 Index = 0; Index < ProjectileBowSocketNames.Num(); ++Index)
+	for (int32 Index = 0; Index < Bow->GetPreparedArrowCount(); ++Index)
 	{
 		if (!Bow->AttachPreparedArrowToBow(Index, ProjectileBowSocketNames[Index]))
 		{
@@ -217,20 +222,7 @@ bool URangedAttackAbility::NockProjectile_Implementation()
 	bProjectileNocked = true;
 
 	Bow->BeginDrawVisuals();
-
-	Bow->HandleFeedbackPoint(
-		EBowFeedbackPoint::NockArrow,
-		BowData
-	);
-
-	for (int32 Index = 0; Index < Bow->GetPreparedArrowCount(); ++Index)
-	{
-		if (AArrowBase* PreparedArrow = Bow->GetPreparedArrow(Index))
-		{
-			PreparedArrow->PlayStartFeedback();
-		}
-	}
-
+	
 	OnProjectileNocked();
 	return true;
 }
@@ -284,7 +276,10 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 		Directions.Add(Direction);
 	}
 
-	const float Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
+	FArrowShotParams ShotParams;
+	ShotParams.Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
+	ShotParams.bTargetedShot = bHasTarget;
+	ShotParams.DamageMultiplier = FMath::Max(ResolveProjectileDamageMultiplier(), 0.0f);
 
 	// Open before release so every arrow can join; seal right after so the
 	// group closes once the last arrow resolves.
@@ -292,15 +287,16 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 		? UImpactGroupSubsystem::Get(this)
 		: nullptr;
 
-	const FImpactGroupHandle ImpactGroup = IsValid(ImpactGroups)
-		? ImpactGroups->OpenGroup(ProjectileImpactGroup)
-		: FImpactGroupHandle();
+	if (IsValid(ImpactGroups))
+	{
+		ShotParams.ImpactGroup = ImpactGroups->OpenGroup(ProjectileImpactGroup);
+	}
 
-	const bool bReleased = Bow->ReleasePreparedArrows(Directions, Strength, bHasTarget, ImpactGroup);
+	const bool bReleased = Bow->ReleasePreparedArrows(Directions, ShotParams);
 
 	if (IsValid(ImpactGroups))
 	{
-		ImpactGroups->SealGroup(ImpactGroup);
+		ImpactGroups->SealGroup(ShotParams.ImpactGroup);
 	}
 
 	if (!bReleased)
@@ -319,16 +315,13 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	}
 	Bow->EndDrawVisuals();
 
-	Bow->HandleFeedbackPoint(
-		EBowFeedbackPoint::ReleaseArrow,
-		BowData
-	);
+	
 
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 	bProjectileReleased = true;
 
-	OnProjectileReleased(Strength);
+	OnProjectileReleased(ShotParams.Strength);
 	return true;
 }
 

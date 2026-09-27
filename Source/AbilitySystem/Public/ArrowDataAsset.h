@@ -59,14 +59,7 @@ public:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Movement", meta = (ClampMin = "0.0"))
 	float MaximumGravityScale = 2.0f;
-
-	/* -------------------- Start feedback -------------------- */
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|Start")
-	TObjectPtr<UNiagaraSystem> StartEffect;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arrow|Feedback|Start")
-	TObjectPtr<USoundBase> StartSound;
+	
 
 	/* -------------------- Ongoing feedback -------------------- */
 

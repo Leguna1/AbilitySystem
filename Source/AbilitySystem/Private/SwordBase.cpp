@@ -40,11 +40,13 @@ void ASwordBase::BeginHitDetection()
 	HitActorsThisSwing.Reset();
 	bHitDetectionActive = true;
 
-	HitBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	HitBox->SetGenerateOverlapEvents(true);
+	HitBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 
-	// Catch actors already inside the box at swing start (overlap-begin only
-	// fires on entry, so a target already touching wouldn't otherwise register).
+	// Refresh now: anything already inside the blade registers immediately instead
+	// of waiting for the next movement. HandleHitBoxOverlap dedups repeats.
+	HitBox->UpdateOverlaps();
+	
 	TArray<AActor*> Overlapping;
 	HitBox->GetOverlappingActors(Overlapping);
 	for (AActor* Actor : Overlapping)

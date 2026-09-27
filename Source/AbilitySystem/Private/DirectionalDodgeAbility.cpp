@@ -117,24 +117,10 @@ void UDirectionalDodgeAbility::ActivateAbility_Implementation()
 
 	if (bRotateTowardDodgeDirection && !bDodgeBackward)
 	{
-		const float DodgeYaw = DodgeDirection.Rotation().Yaw;
-		Character->SetActorRotation(FRotator(0.0f, DodgeYaw, 0.0f));
+		Character->SetActorRotation(FRotator(0.0f, DodgeDirection.Rotation().Yaw, 0.0f));
 	}
 
-	
-
 	OnDodgePrepared(DodgeDirection);
-
-	// Feedback: start burst (world or attached) + ongoing trail (tracked so we
-	// can stop it when the dodge ends). Captured start location anchors both the
-	// start burst and, later, comparison for the landing burst.
-	DodgeStartLocation = Character->GetActorLocation();
-
-	PlayDodgeFeedbackSet(StartFeedback, DodgeStartLocation, /*bTrackOngoing*/ false);
-	OnDodgeStartFeedback(DodgeDirection, DodgeStartLocation);
-
-	PlayDodgeFeedbackSet(OngoingFeedback, DodgeStartLocation, /*bTrackOngoing*/ true);
-	OnDodgeOngoingFeedback(DodgeDirection);
 
 	UAnimMontage* Montage = SelectAbilityMontage();
 
@@ -194,16 +180,14 @@ bool UDirectionalDodgeAbility::CalculateDodgeDirection(FVector& OutDirection, bo
 
 	return !OutDirection.IsNearlyZero();
 }
-
 bool UDirectionalDodgeAbility::IsDodgePathClear(const FVector& Direction, FHitResult* OutHit) const
 {
 	const ACharacter* Character = GetOwningCharacter();
-	const UCapsuleComponent* CapsuleComponent = IsValid(Character)
-		? Character->GetCapsuleComponent()
-		: nullptr;
+	const UCapsuleComponent* CapsuleComponent = IsValid(Character) ? Character->GetCapsuleComponent() : nullptr;
+	const UCharacterMovementComponent* Movement = IsValid(Character) ? Character->GetCharacterMovement() : nullptr;
 
-	if (!IsValid(Character) ||
-		!IsValid(CapsuleComponent) ||
+	if (!IsValid(CapsuleComponent) ||
+		!IsValid(Movement) ||
 		Direction.IsNearlyZero() ||
 		!IsValid(GetWorld()))
 	{
@@ -212,34 +196,66 @@ bool UDirectionalDodgeAbility::IsDodgePathClear(const FVector& Direction, FHitRe
 
 	const float CapsuleRadius = CapsuleComponent->GetScaledCapsuleRadius();
 	const float CapsuleHalfHeight = CapsuleComponent->GetScaledCapsuleHalfHeight();
+	const float StepHeight = Movement->MaxStepHeight;
+	const float WalkableFloorZ = Movement->GetWalkableFloorZ();
 
-	const FVector Start = Character->GetActorLocation();
-	const float TraceDistance = DodgeDistance + ObstaclePadding;
-	const FVector End = Start + Direction.GetSafeNormal2D() * TraceDistance;
+	// Raise the capsule's bottom by the step height while keeping its top in place,
+	// so the floor and small steps don't count as obstacles.
+	const float Lift = FMath::Min(StepHeight * 0.5f, FMath::Max(CapsuleHalfHeight - CapsuleRadius, 0.0f));
+	const FCollisionShape SweepShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight - Lift);
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(DirectionalDodge), false, Character);
-	QueryParams.AddIgnoredActor(Character);
 
-	FHitResult HitResult;
+	const FVector FlatDirection = Direction.GetSafeNormal2D();
+	FVector Position = Character->GetActorLocation() + FVector(0.0f, 0.0f, Lift);
+	float Remaining = DodgeDistance + ObstaclePadding;
 
-	const bool bBlocked = GetWorld()->SweepSingleByChannel(
-		HitResult,
-		Start,
-		End,
-		FQuat::Identity,
-		DodgeTraceChannel,
-		FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight),
-		QueryParams
-	);
+	constexpr int32 MaxSlopeSteps = 4;
 
-	if (OutHit)
+	for (int32 StepIndex = 0; StepIndex < MaxSlopeSteps; ++StepIndex)
 	{
-		*OutHit = HitResult;
+		FHitResult HitResult;
+
+		const bool bBlocked = GetWorld()->SweepSingleByChannel(
+			HitResult,
+			Position,
+			Position + FlatDirection * Remaining,
+			FQuat::Identity,
+			DodgeTraceChannel,
+			SweepShape,
+			QueryParams
+		);
+
+		if (OutHit)
+		{
+			*OutHit = HitResult;
+		}
+
+		if (!bBlocked)
+		{
+			return true;
+		}
+
+		// Walls, and starting inside geometry, reject the dodge.
+		if (HitResult.bStartPenetrating || HitResult.ImpactNormal.Z < WalkableFloorZ)
+		{
+			return false;
+		}
+
+		// Walkable rise: step up onto it and continue with what's left.
+		Remaining -= HitResult.Distance;
+
+		if (Remaining <= UE_KINDA_SMALL_NUMBER)
+		{
+			return true;
+		}
+
+		Position = HitResult.Location + FVector(0.0f, 0.0f, StepHeight);
 	}
 
-	return !bBlocked;
+	// Still climbing after every step: treat as too steep.
+	return false;
 }
-
 void UDirectionalDodgeAbility::OnDodgePrepared_Implementation(FVector Direction)
 {
 }
@@ -253,107 +269,4 @@ FVector UDirectionalDodgeAbility::GetRootMotionWarpDirection_Implementation() co
 	}
 
 	return Super::GetRootMotionWarpDirection_Implementation();
-}
-
-void UDirectionalDodgeAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
-{
-	// Stop the attached trail, then fire the landing burst at the current location.
-	StopOngoingDodgeFeedback();
-
-	const ACharacter* Character = GetOwningCharacter();
-	const FVector EndLocation = IsValid(Character)
-		? Character->GetActorLocation()
-		: DodgeStartLocation;
-
-	PlayDodgeFeedbackSet(EndFeedback, EndLocation, /*bTrackOngoing*/ false);
-	OnDodgeEndFeedback(EndLocation);
-
-	Super::OnAbilityEnded_Implementation(EndReason);
-}
-
-void UDirectionalDodgeAbility::PlayDodgeFeedbackSet(
-	const FDodgeFeedbackSet& Set,
-	const FVector& WorldLocation,
-	const bool bTrackOngoing)
-{
-	ACharacter* Character = GetOwningCharacter();
-	if (!IsValid(Character))
-	{
-		return;
-	}
-
-	USceneComponent* AttachRoot = Character->GetRootComponent();
-
-	// --- Effect ---
-	if (IsValid(Set.Effect))
-	{
-		UNiagaraComponent* SpawnedEffect = nullptr;
-
-		if (Set.bAttachToCharacter && IsValid(AttachRoot))
-		{
-			SpawnedEffect = UNiagaraFunctionLibrary::SpawnSystemAttached(
-				Set.Effect,
-				AttachRoot,
-				NAME_None,
-				FVector::ZeroVector,
-				FRotator::ZeroRotator,
-				EAttachLocation::SnapToTarget,
-				/*bAutoDestroy*/ !bTrackOngoing
-			);
-		}
-		else
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				Character,
-				Set.Effect,
-				WorldLocation,
-				Character->GetActorRotation()
-			);
-		}
-
-		if (bTrackOngoing && IsValid(SpawnedEffect))
-		{
-			OngoingEffectComponent = SpawnedEffect;
-		}
-	}
-
-	// --- Sound ---
-	if (IsValid(Set.Sound))
-	{
-		if (Set.bAttachToCharacter && IsValid(AttachRoot))
-		{
-			UAudioComponent* SpawnedSound = UGameplayStatics::SpawnSoundAttached(
-				Set.Sound,
-				AttachRoot
-			);
-
-			if (bTrackOngoing && IsValid(SpawnedSound))
-			{
-				OngoingSoundComponent = SpawnedSound;
-			}
-		}
-		else
-		{
-			UGameplayStatics::PlaySoundAtLocation(
-				Character,
-				Set.Sound,
-				WorldLocation
-			);
-		}
-	}
-}
-
-void UDirectionalDodgeAbility::StopOngoingDodgeFeedback()
-{
-	if (IsValid(OngoingEffectComponent))
-	{
-		OngoingEffectComponent->Deactivate();
-		OngoingEffectComponent = nullptr;
-	}
-
-	if (IsValid(OngoingSoundComponent))
-	{
-		OngoingSoundComponent->Stop();
-		OngoingSoundComponent = nullptr;
-	}
 }

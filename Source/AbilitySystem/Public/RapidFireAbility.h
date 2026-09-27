@@ -119,8 +119,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rapid Fire|Animation")
 	FName RecoverySectionName = TEXT("Recovery");
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rapid Fire", meta = (ClampMin = "1"))
-	int32 MaximumShots = 6;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rapid Fire")
+	FAbilityRankedInt MaximumShotsByRank = FAbilityRankedInt(6);
 
 	/**
 	 * Determines what movement input does while Rapid Fire is active.
@@ -159,4 +159,8 @@ private:
 
 	UPROPERTY(Transient)
 	bool bFiringLoopStarted = false;
+	
+	/** Resolved from MaximumShotsByRank at activation. */
+	UPROPERTY(Transient)
+	int32 MaximumShots = 0;
 };

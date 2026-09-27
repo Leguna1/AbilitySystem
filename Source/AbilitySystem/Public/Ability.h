@@ -11,6 +11,7 @@ class UAbilityComponent;
 class UMotionWarpingComponent;
 class UTargetingComponent;
 class UTexture2D;
+class UAnimSequenceBase;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UAbility : public UObject
@@ -230,6 +231,9 @@ public:
 
 	/** Event that pays the cost for the animation-event triggers. Subclasses supply a fallback when unset. */
 	virtual FGameplayTag GetCostEventTag() const { return CostEventTag; }
+	
+	/** Whether an event from SourceAnimation belongs to this execution. Null source = manual event, always accepted. */
+	virtual bool AcceptsAnimationEvent(const UAnimSequenceBase* SourceAnimation) const { return true; }
 	
 protected:
 	/* -------------------- Ability requests -------------------- */

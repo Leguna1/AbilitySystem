@@ -8,7 +8,6 @@
 class AArrowBase;
 class ABowBase;
 class UArrowDataAsset;
-class UBowDataAsset;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API URangedAttackAbility : public UOffensiveAbilityBase
@@ -34,6 +33,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	bool IsProjectileNocked() const { return bProjectileNocked; }
+	
+	/** Arrows this execution prepares and releases. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
+	int32 GetProjectileCount() const;
 
 protected:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Ranged")
@@ -69,6 +72,11 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	float ResolveProjectileStrength() const;
 	virtual float ResolveProjectileStrength_Implementation() const;
+	
+	/** The ability's damage multiplier for each arrow it releases. Default 1. */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
+	float ResolveProjectileDamageMultiplier() const;
+	virtual float ResolveProjectileDamageMultiplier_Implementation() const;
 
 	/**
 	 * Determines whether this ranged ability should use the current automatic
@@ -105,9 +113,6 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	TObjectPtr<UArrowDataAsset> ArrowData;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Feedback")
-	TObjectPtr<UBowDataAsset> BowData;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
 	TArray<FName> ProjectileHandSocketNames;
@@ -134,6 +139,14 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio", meta = (EditCondition = "bGroupProjectileImpacts"))
 	FImpactGroupSettings ProjectileImpactGroup;
+	
+	/** The ability's damage multiplier per rank, applied on top of the arrow data's damage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
+	FAbilityRankedFloat DamageMultiplierByRank = FAbilityRankedFloat(1.0f);
+
+	/** Arrows per release, by rank. Empty = one per configured socket pair. Always clamped to the socket count. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
+	FAbilityRankedInt ProjectileCountByRank;
 
 private:
 	bool HandleProjectileAnimationEvent(FGameplayTag EventTag);

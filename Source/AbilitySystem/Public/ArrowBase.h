@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "ImpactGroupTypes.h"
+#include "ArrowShotParams.h"
 #include "ArrowBase.generated.h"
 
 class AArrowBase;
@@ -32,11 +33,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arrow")
 	UArrowDataAsset* GetArrowData() const { return ArrowData; }
 	
-	UFUNCTION(BlueprintCallable, Category = "Arrow|Feedback")
-	void PlayStartFeedback();
 
 	UFUNCTION(BlueprintPure, Category = "Arrow")
-	float GetFiredStrength() const { return FiredStrength; }
+	float GetFiredStrength() const { return ShotParams.Strength; }
 
 	UFUNCTION(BlueprintPure, Category = "Arrow")
 	float GetCalculatedDamage() const;
@@ -45,15 +44,18 @@ public:
 	bool HasImpacted() const { return bHasImpacted; }
 
 	UFUNCTION(BlueprintPure, Category = "Arrow")
-	bool WasTargetedShot() const { return bWasTargetedShot; }
+	bool WasTargetedShot() const { return ShotParams.bTargetedShot; }
+	
+	UFUNCTION(BlueprintPure, Category = "Arrow")
+	const FArrowShotParams& GetShotParams() const { return ShotParams; }
 
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Arrow")
 	void SpinBegin();
 	virtual void SpinBegin_Implementation();
 
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Arrow")
-	bool Fire(const FVector& Direction, float Strength, bool bTargetedShot);
-	virtual bool Fire_Implementation(const FVector& Direction, float Strength, bool bTargetedShot);
+	bool Fire(const FVector& Direction, const FArrowShotParams& InShotParams);
+	virtual bool Fire_Implementation(const FVector& Direction, const FArrowShotParams& InShotParams);
 
 	UFUNCTION(BlueprintCallable, Category = "Arrow|Pooling")
 	bool ActivateFromPool(UArrowDataAsset* NewArrowData);
@@ -81,6 +83,12 @@ public:
 	
 	/** Joins a volley's impact group; the group then decides this arrow's impact sound. */
 	void JoinImpactGroup(const FImpactGroupHandle& InImpactGroup);
+	
+	/**
+ * Turns the arrow toward TargetPoint after Delay seconds, if it is still in
+ * flight. Runs on the arrow, so it survives the ability that fired it.
+ */
+	void ScheduleRedirect(const FVector& TargetPoint, float Delay, bool bDisableGravity);
 
 protected:
 	virtual void BeginPlay() override;
@@ -107,7 +115,7 @@ protected:
 	FVector Velocity = FVector::ZeroVector;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Arrow|Runtime")
-	float FiredStrength = 0.0f;
+	FArrowShotParams ShotParams;
 
 	UPROPERTY(Transient, BlueprintReadOnly, Category = "Arrow|Feedback")
 	TObjectPtr<UAudioComponent> OngoingSoundRef;
@@ -130,7 +138,6 @@ private:
 
 	bool bIsInFlight = false;
 	bool bHasImpacted = false;
-	bool bWasTargetedShot = false;
 	bool bIsSpinning = false;
 
 	float SpinElapsedTime = 0.0f;
@@ -149,4 +156,10 @@ private:
 	FImpactGroupHandle ImpactGroup;
 	
 	void PlayImpactFeedback(bool bHitTarget, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const;
+	
+	void HandleScheduledRedirect();
+
+	FTimerHandle RedirectTimerHandle;
+	FVector RedirectTargetPoint = FVector::ZeroVector;
+	bool bRedirectDisablesGravity = false;
 };

@@ -11,7 +11,7 @@ class ABILITYSYSTEM_API UProjectileBarrageAbility : public URangedAttackAbility
 	UProjectileBarrageAbility();
 
 public:
-	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
+	
 
 protected:
 	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const override;
@@ -26,8 +26,7 @@ protected:
 	FVector ResolveBarrageImpactPoint(int32 ProjectileIndex, int32 ProjectileCount, const FVector& TargetCenter) const;
 	virtual FVector ResolveBarrageImpactPoint_Implementation(int32 ProjectileIndex, int32 ProjectileCount, const FVector& TargetCenter) const;
 
-	UFUNCTION(BlueprintCallable, Category = "Ability|Barrage")
-	void RedirectReleasedProjectiles();
+	
 	
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Launch", meta = (ClampMin = "0.0"))
 	float ForwardLaunchStrength = 1.0f;
@@ -39,11 +38,9 @@ protected:
 	float BarrageFlightLifespan = 5.0f;
 
 	/**
-	 * Max random flight-time added per arrow (seconds), spreading landings over
-	 * time so their impact sounds don't stack and phase-cancel. Each arrow gets a
-	 * random offset in [0, this]. ~0.3-0.5 turns a mushy simultaneous hit into a
-	 * distinct patter. 0 = all land together (original behaviour).
-	 */
+ * Max random delay (seconds) added to each arrow's redirect, so the volley
+ * rains down over time instead of landing on one frame. 0 = all turn together.
+ */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Flight", meta = (ClampMin = "0.0"))
 	float BarrageImpactStagger = 0.35f;
 
@@ -69,10 +66,6 @@ protected:
 	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
 
 private:
-	void ClearBarrageTimer();
-
-	UPROPERTY(Transient)
-	TArray<FVector> BarrageImpactPoints;
-
-	FTimerHandle RedirectTimerHandle;
+	
+	
 };

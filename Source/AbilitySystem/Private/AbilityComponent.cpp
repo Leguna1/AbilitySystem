@@ -399,7 +399,7 @@ void UAbilityComponent::ClearBufferedInputs()
 	}
 }
 
-void UAbilityComponent::HandleAbilityEvent(const FGameplayTag EventTag)
+void UAbilityComponent::HandleAbilityEvent(FGameplayTag EventTag, const UAnimSequenceBase* SourceAnimation)
 {
 	if (!IsValid(ActiveAbility) || !EventTag.IsValid() || bEndingAbility)
 	{
@@ -407,6 +407,11 @@ void UAbilityComponent::HandleAbilityEvent(const FGameplayTag EventTag)
 	}
 
 	UAbility* EventAbility = ActiveAbility;
+	
+	if (!EventAbility->AcceptsAnimationEvent(SourceAnimation))
+	{
+		return;
+	}
 
 	// Cost before delivery: a failed payment means the event (e.g. the release) never happens.
 	if (!ApplyEventCost(EventAbility, EventTag) || ActiveAbility != EventAbility)

@@ -64,7 +64,9 @@ void UAbilityProgressWidget::EvaluateActiveAbility()
 	}
 
 	UAbility* Active = AbilityComponent->GetActiveAbility();
-	if (!IsValid(Active) || !Active->GetClass()->ImplementsInterface(UAbilityProgressProvider::StaticClass()))
+	if (!IsValid(Active) ||
+	Active->GetAbilityStatus() != EAbilityStatus::Active ||
+	!Active->GetClass()->ImplementsInterface(UAbilityProgressProvider::StaticClass()))
 	{
 		Hide();
 		return;
@@ -101,7 +103,10 @@ void UAbilityProgressWidget::TickFill()
 	}
 
 	UAbility* Active = AbilityComponent->GetActiveAbility();
-	if (!IsValid(Active) || !Active->GetClass()->ImplementsInterface(UAbilityProgressProvider::StaticClass()))
+	
+	if (!IsValid(Active) ||
+	Active->GetAbilityStatus() != EAbilityStatus::Active ||
+	!Active->GetClass()->ImplementsInterface(UAbilityProgressProvider::StaticClass()))
 	{
 		Hide();
 		return;

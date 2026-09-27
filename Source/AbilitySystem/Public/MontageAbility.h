@@ -27,6 +27,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Montage")
 	bool IsAbilityMontagePlaying() const;
+	
+	virtual bool AcceptsAnimationEvent(const UAnimSequenceBase* SourceAnimation) const override;
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Montage")

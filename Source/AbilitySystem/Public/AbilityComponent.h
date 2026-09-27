@@ -15,6 +15,7 @@ class UInputBufferComponent;
 class UMotionWarpingComponent;
 class UResourceComponent;
 class UTargetingComponent;
+class UAnimSequenceBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
@@ -114,8 +115,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void ClearBufferedInputs();
 
+	/** SourceAnimation lets the active ability reject events from animations that aren't its own (e.g. a blending-out montage). */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
-	void HandleAbilityEvent(FGameplayTag EventTag);
+	void HandleAbilityEvent(FGameplayTag EventTag, const UAnimSequenceBase* SourceAnimation = nullptr);
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Tags")
 	void AddLooseOwnerTag(FGameplayTag Tag);

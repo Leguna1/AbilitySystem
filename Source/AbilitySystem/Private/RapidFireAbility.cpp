@@ -15,14 +15,15 @@ URapidFireAbility::URapidFireAbility()
 
 bool URapidFireAbility::CanActivateAbility_Implementation() const
 {
+	
 	if (!Super::CanActivateAbility_Implementation())
 	{
 		return false;
 	}
 
 	return IsValid(AbilityMontage) &&
-		MaximumShots > 0 &&
-		ValidateMontageSections();
+	GetRankedInt(MaximumShotsByRank) > 0 &&
+	ValidateMontageSections();
 }
 
 void URapidFireAbility::ActivateAbility_Implementation()
@@ -32,6 +33,8 @@ void URapidFireAbility::ActivateAbility_Implementation()
 	bFinishRequested = false;
 	bFiringLoopStarted = false;
 
+	MaximumShots = FMath::Max(GetRankedInt(MaximumShotsByRank), 1);
+	
 	Super::ActivateAbility_Implementation();
 
 	if (GetAbilityStatus() != EAbilityStatus::Active ||
@@ -210,16 +213,6 @@ bool URapidFireAbility::RequestFinishRapidFire()
 	UAnimInstance* AnimInstance = GetAnimInstance();
 
 	if (!IsValid(AnimInstance) || !IsValid(AbilityMontage))
-	{
-		RequestCancelAbility();
-		return false;
-	}
-
-	/*
-	 * Rapid Fire becomes committed when it decides to stop producing shots
-	 * and proceed through its recovery.
-	 */
-	if (!RequestCommit())
 	{
 		RequestCancelAbility();
 		return false;
