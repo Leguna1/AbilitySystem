@@ -255,4 +255,7 @@ private:
 	FVector PreviousMoveDir = FVector::ForwardVector;
 
 	FTimerHandle RefreshTimerHandle;
+	
+	UFUNCTION()
+	void HandleTargetDied(AActor* Killer);
 };

@@ -102,6 +102,11 @@ float UResourceComponent::ModifyCurrentResource(
 
 		if (!FMath::IsNearlyEqual(OldHealth, CurrentHealth))
 		{
+			// The dead stay dead until Revive; healing is ignored.
+			if (bIsDead && ModifyValue > 0.0f)
+			{
+				return CurrentHealth;
+			}
 			BroadcastResourceChange(
 				EResourceType::Health,
 				EResourceValueType::Current,
@@ -484,11 +489,23 @@ void UResourceComponent::EvaluateDeath(
 		StopHealthRegeneration();
 
 		OnDeath.Broadcast();
-		return;
+	}
+}
+bool UResourceComponent::Revive(const float HealthFraction)
+{
+	if (!bIsDead)
+	{
+		return false;
 	}
 
-	if (NewHealth > 0.0f)
-	{
-		bIsDead = false;
-	}
+	bIsDead = false;
+
+	const float OldHealth = CurrentHealth;
+	const float TargetHealth = MaxHealth * FMath::Clamp(HealthFraction, 0.0f, 1.0f);
+
+	CurrentHealth = FMath::Min(FMath::Max(TargetHealth, 1.0f), MaxHealth);
+
+	BroadcastResourceChange(EResourceType::Health, EResourceValueType::Current, OldHealth, CurrentHealth);
+	OnRevived.Broadcast();
+	return true;
 }

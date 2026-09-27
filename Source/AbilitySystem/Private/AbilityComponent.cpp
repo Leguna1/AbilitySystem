@@ -6,6 +6,7 @@
 #include "MotionWarpingComponent.h"
 #include "ResourceComponent.h"
 #include "TargetingComponent.h"
+#include "AbilitySystemTags.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -271,11 +272,11 @@ bool UAbilityComponent::ResolveBufferedAbilityInput()
 	return bExecuted;
 }
 
-void UAbilityComponent::CancelActiveAbility()
+void UAbilityComponent::CancelActiveAbility(const bool bResolveBufferedInput)
 {
 	if (IsValid(ActiveAbility))
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, bResolveBufferedInput);
 	}
 }
 
@@ -716,7 +717,12 @@ bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, cons
 	{
 		return false;
 	}
-
+	
+	if (OwnerTags.HasTag(AbilitySystemTags::State_Dead))
+	{
+		return false;
+	}
+	
 	if (Ability->GetAbilityRank() <= 0)
 	{
 		return false;

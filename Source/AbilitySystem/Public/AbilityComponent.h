@@ -103,8 +103,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	bool ResolveBufferedAbilityInput();
 
+	/** Cancels the active ability. Death, stuns and hit reactions pass false so a buffered attack can't fire through them. */
 	UFUNCTION(BlueprintCallable, Category = "Ability")
-	void CancelActiveAbility();
+	void CancelActiveAbility(bool bResolveBufferedInput = true);
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void MovementInputReceived(FVector2D MovementInput);

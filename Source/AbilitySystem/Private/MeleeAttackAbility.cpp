@@ -1,5 +1,6 @@
 #include "MeleeAttackAbility.h"
 
+#include "CombatantComponent.h"
 #include "PayloadReceiver.h"
 #include "SwordBase.h"
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
@@ -81,7 +82,7 @@ void UMeleeAttackAbility::ReleaseBoundSword()
 		{
 			ImpactGroups->SealGroup(SwingGroup);
 		}
-
+		
 		SwingGroup = FImpactGroupHandle();
 	}
 	
@@ -105,20 +106,15 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	const FVector ImpactLocation = !Hit.ImpactPoint.IsNearlyZero()
 		? FVector(Hit.ImpactPoint)
 		: HitActor->GetActorLocation();
+	
 
-	bool bPayloadAccepted = false;
+	FAbilityPayload Payload;
+	Payload.Damage = GetRankedFloat(DamageByRank);
+	Payload.Instigator = GetOwningCharacter();
+	Payload.Causer = BoundSword.Get();
+	Payload.Hit = Hit;
 
-	// Same interface arrows use, so melee and ranged share the damage-delivery contract.
-	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
-	{
-		FAbilityPayload Payload;
-		Payload.Damage = GetRankedFloat(DamageByRank);
-		Payload.Instigator = GetOwningCharacter();
-		Payload.Causer = BoundSword.Get();
-		Payload.Hit = Hit;
-
-		bPayloadAccepted = IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
-	}
+	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 
 	if (UImpactGroupSubsystem* ImpactFeedback = UImpactGroupSubsystem::Get(this))
 	{

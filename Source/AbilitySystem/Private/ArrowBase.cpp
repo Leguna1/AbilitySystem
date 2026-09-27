@@ -14,7 +14,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "TimerManager.h"
 #include "ImpactGroupSubsystem.h"
-#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
+#include "CombatantComponent.h"
 
 AArrowBase::AArrowBase()
 {
@@ -477,19 +477,15 @@ void AArrowBase::HandleImpact(
 	}
 
 	const float ImpactDamage = GetCalculatedDamage();
-	bool bPayloadAccepted = false;
 
 	// Deliver first: whether the target accepted the payload decides hit vs miss feedback.
-	if (HitActor->GetClass()->ImplementsInterface(UPayloadReceiver::StaticClass()))
-	{
-		FAbilityPayload Payload;
-		Payload.Damage = ImpactDamage;
-		Payload.Instigator = GetInstigator();
-		Payload.Causer = this;
-		Payload.Hit = SweepResult;
+	FAbilityPayload Payload;
+	Payload.Damage = ImpactDamage;
+	Payload.Instigator = GetInstigator();
+	Payload.Causer = this;
+	Payload.Hit = SweepResult;
 
-		bPayloadAccepted = IPayloadReceiver::Execute_ReceivePayload(HitActor, Payload);
-	}
+	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 
 	PlayImpactFeedback(bPayloadAccepted, ImpactLocation, HitComponent, SweepResult);
 	LeaveImpactGroup();

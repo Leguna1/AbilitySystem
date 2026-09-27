@@ -8,6 +8,7 @@
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/EngineTypes.h"
+#include "CombatantComponent.h"
 
 UTargetingComponent::UTargetingComponent()
 {
@@ -157,7 +158,18 @@ bool UTargetingComponent::SetTarget(AActor* NewTarget)
 	}
 
 	AActor* PreviousTarget = CurrentTarget;
+
+	if (UCombatantComponent* PreviousCombatant = IsValid(PreviousTarget) ? PreviousTarget->FindComponentByClass<UCombatantComponent>() : nullptr)
+	{
+		PreviousCombatant->OnDied.RemoveDynamic(this, &UTargetingComponent::HandleTargetDied);
+	}
+
 	CurrentTarget = NewTarget;
+
+	if (UCombatantComponent* NewCombatant = IsValid(CurrentTarget) ? CurrentTarget->FindComponentByClass<UCombatantComponent>() : nullptr)
+	{
+		NewCombatant->OnDied.AddDynamic(this, &UTargetingComponent::HandleTargetDied);
+	}
 
 	OnTargetChanged.Broadcast(PreviousTarget, CurrentTarget);
 	return IsValid(CurrentTarget);
@@ -172,7 +184,14 @@ bool UTargetingComponent::IsValidTarget(AActor* Candidate) const
 	{
 		return false;
 	}
-
+	if (const UCombatantComponent* Combatant = Candidate->FindComponentByClass<UCombatantComponent>())
+	{
+		if (Combatant->IsDead())
+		{
+			return false;
+		}
+	}
+	
 	if (!ITargetableInterface::Execute_IsTargetable(Candidate))
 	{
 		return false;
@@ -515,4 +534,10 @@ FVector UTargetingComponent::GetTargetingForwardVector() const
 	}
 
 	return OwningCharacter->GetActorForwardVector();
+}
+void UTargetingComponent::HandleTargetDied(AActor* Killer)
+{
+	// Drop the corpse now and pick the next target, instead of waiting for the next refresh.
+	ClearTarget();
+	RefreshTarget();
 }

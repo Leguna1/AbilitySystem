@@ -27,6 +27,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(
 );
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnDeath);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnRevived);
 
 UCLASS(ClassGroup = (Ability), meta = (BlueprintSpawnableComponent))
 class ABILITYSYSTEM_API UResourceComponent : public UActorComponent
@@ -77,6 +78,16 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Resources|Events")
 	FOnDeath OnDeath;
+	
+	UFUNCTION(BlueprintPure, Category = "Resources")
+	bool IsDead() const { return bIsDead; }
+
+	/** Brings a dead owner back with HealthFraction of max health. Healing alone never revives. */
+	UFUNCTION(BlueprintCallable, Category = "Resources")
+	bool Revive(float HealthFraction = 1.0f);
+
+	UPROPERTY(BlueprintAssignable, Category = "Resources|Events")
+	FOnRevived OnRevived;
 
 protected:
 	virtual void BeginPlay() override;
