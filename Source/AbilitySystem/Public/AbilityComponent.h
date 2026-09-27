@@ -276,7 +276,12 @@ private:
 
 	int32 FindCooldownIndex(FGameplayTag AbilityId) const;
 	void StartCooldown(FGameplayTag AbilityId, float Duration);
-	void CommitAbilityCostAndCooldown(const UAbility* Ability);
+	void SpendAbilityCost(const UAbility* Ability);
+	bool ChargeRepeatedCost(const UAbility* Ability);
+
+	/** Applies the ability's cost trigger for this event. False = payment failed; the event must not be delivered. */
+	bool ApplyEventCost(UAbility* Ability, FGameplayTag EventTag);
+	
 	float GetCurrentFocus() const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Ability|Granted")

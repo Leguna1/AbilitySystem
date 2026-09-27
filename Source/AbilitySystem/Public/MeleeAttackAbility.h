@@ -21,12 +21,15 @@ UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UMeleeAttackAbility : public UOffensiveAbilityBase
 {
 	GENERATED_BODY()
+	UMeleeAttackAbility();
 
 public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 	virtual void OnAnimationEvent_Implementation(FGameplayTag EventTag) override;
 	virtual bool CanActivateAbility_Implementation() const override;
+	
+	virtual FGameplayTag GetCostEventTag() const override;
 
 protected:
 	/** Damage delivered per hit this swing. */

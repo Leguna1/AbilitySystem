@@ -60,6 +60,7 @@ public:
 	virtual void OnAbilityMontageEnded_Implementation(UAnimMontage* Montage, bool bInterrupted) override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
 	virtual bool CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const override;
+	virtual void OnCostPaymentFailed_Implementation() override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Rapid Fire")
 	ERapidFireStage GetRapidFireStage() const { return RapidFireStage; }

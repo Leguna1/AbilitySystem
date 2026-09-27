@@ -20,6 +20,8 @@ public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAnimationEvent_Implementation(FGameplayTag EventTag) override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
+	
+	virtual FGameplayTag GetCostEventTag() const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	ABowBase* GetBow() const { return Bow; }

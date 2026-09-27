@@ -399,7 +399,7 @@ void UAbilityComponent::ClearBufferedInputs()
 	}
 }
 
-void UAbilityComponent::HandleAbilityEvent(FGameplayTag EventTag)
+void UAbilityComponent::HandleAbilityEvent(const FGameplayTag EventTag)
 {
 	if (!IsValid(ActiveAbility) || !EventTag.IsValid() || bEndingAbility)
 	{
@@ -407,6 +407,12 @@ void UAbilityComponent::HandleAbilityEvent(FGameplayTag EventTag)
 	}
 
 	UAbility* EventAbility = ActiveAbility;
+
+	// Cost before delivery: a failed payment means the event (e.g. the release) never happens.
+	if (!ApplyEventCost(EventAbility, EventTag) || ActiveAbility != EventAbility)
+	{
+		return;
+	}
 
 	DispatchAbilityCallback([EventAbility, EventTag]()
 	{
@@ -492,7 +498,8 @@ bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
 		return true;
 	}
 
-	if (!RequestingAbility->CanCommitAbility())
+	if (!RequestingAbility->CanCommitAbility() ||
+		!CanAffordAbility(RequestingAbility->GetAbilityId()))
 	{
 		return false;
 	}
@@ -500,7 +507,12 @@ bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
 	RequestingAbility->SetCommitted(true);
 	RequestingAbility->SetEarlyCancellationClosed(true);
 
-	CommitAbilityCostAndCooldown(RequestingAbility);
+	SpendAbilityCost(RequestingAbility);
+
+	if (RequestingAbility->GetCooldownTrigger() == EAbilityCooldownTrigger::OnCommit)
+	{
+		StartCooldown(RequestingAbility->GetAbilityId(), RequestingAbility->GetCooldownDuration());
+	}
 
 	DispatchAbilityCallback([this, RequestingAbility]()
 	{
@@ -813,6 +825,20 @@ bool UAbilityComponent::ActivateAbilityInstance(UAbility* Ability)
 		ActivatedAbility->ActivateAbility();
 	});
 
+	if (ActiveAbility != ActivatedAbility)
+	{
+		return false;
+	}
+
+	// Paid only once activation has actually succeeded (e.g. the montage is playing).
+	if (ActivatedAbility->GetCostTrigger() == EAbilityCostTrigger::OnActivate &&
+		!ActivatedAbility->IsCommitted() &&
+		!CommitAbility(ActivatedAbility))
+	{
+		EndActiveAbilityInternal(EAbilityEndReason::Failed);
+		return false;
+	}
+
 	return ActiveAbility == ActivatedAbility;
 }
 
@@ -838,6 +864,12 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 
 	RemoveActiveAbilityTags();
 	
+	// Started before listeners hear about the end, so UI sees the cooldown immediately.
+	if (EndingAbility->IsCommitted() &&
+		EndingAbility->GetCooldownTrigger() == EAbilityCooldownTrigger::OnAbilityEnd)
+	{
+		StartCooldown(EndingAbilityId, EndingAbility->GetCooldownDuration());
+	}
 
 	DispatchAbilityCallback([this, EndingAbility, EndingAbilityId, EndReason]()
 	{
@@ -854,6 +886,7 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	{
 		ResolveBufferedAbilityInput();
 	}
+	
 }
 void UAbilityComponent::SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, const bool bClosed) const
 {
@@ -1145,24 +1178,61 @@ bool UAbilityComponent::CanAffordAbility(const FGameplayTag AbilityId) const
 	return GetCurrentFocus() >= Cost;
 }
 
-void UAbilityComponent::CommitAbilityCostAndCooldown(const UAbility* Ability)
+void UAbilityComponent::SpendAbilityCost(const UAbility* Ability)
 {
-	if (!IsValid(Ability))
-	{
-		return;
-	}
-
 	const float Cost = Ability->GetFocusCost();
+
 	if (Cost > 0.0f && IsValid(ResourceComponent))
 	{
-		ResourceComponent->ModifyResource(
-			EResourceType::Focus,
-			EResourceValueType::Current,
-			-Cost
-		);
+		ResourceComponent->ModifyResource(EResourceType::Focus, EResourceValueType::Current, -Cost);
+	}
+}
+
+bool UAbilityComponent::ChargeRepeatedCost(const UAbility* Ability)
+{
+	if (!CanAffordAbility(Ability->GetAbilityId()))
+	{
+		return false;
 	}
 
-	StartCooldown(Ability->GetAbilityId(), Ability->GetCooldownDuration());
+	SpendAbilityCost(Ability);
+	return true;
+}
+
+bool UAbilityComponent::ApplyEventCost(UAbility* Ability, const FGameplayTag EventTag)
+{
+	const EAbilityCostTrigger Trigger = Ability->GetCostTrigger();
+
+	const bool bEventTrigger =
+		Trigger == EAbilityCostTrigger::OnAnimationEvent ||
+		Trigger == EAbilityCostTrigger::OnEveryAnimationEvent;
+
+	if (!bEventTrigger || !EventTag.MatchesTagExact(Ability->GetCostEventTag()))
+	{
+		return true;
+	}
+
+	bool bPaid = false;
+
+	if (!Ability->IsCommitted())
+	{
+		bPaid = CommitAbility(Ability);
+	}
+	else
+	{
+		// Once-only triggers have already paid; repeating triggers pay again.
+		bPaid = Trigger == EAbilityCostTrigger::OnAnimationEvent || ChargeRepeatedCost(Ability);
+	}
+
+	if (!bPaid)
+	{
+		DispatchAbilityCallback([Ability]()
+		{
+			Ability->OnCostPaymentFailed();
+		});
+	}
+
+	return bPaid;
 }
 
 float UAbilityComponent::GetLongestBufferDurationForInput(FGameplayTag InputTag) const

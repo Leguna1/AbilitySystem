@@ -106,11 +106,20 @@ void UAbilitySlotWidget::HandleAbilityActivated(FGameplayTag AbilityId, UAbility
 	}
 }
 
-void UAbilitySlotWidget::HandleAbilityEnded(FGameplayTag AbilityId, UAbility* Ability, EAbilityEndReason EndReason)
+void UAbilitySlotWidget::HandleAbilityEnded(const FGameplayTag AbilityId, UAbility* Ability, const EAbilityEndReason EndReason)
 {
-	if (AbilityId.MatchesTagExact(SlotAbilityId))
+	if (!AbilityId.MatchesTagExact(SlotAbilityId))
 	{
-		SetActive(false);
+		return;
+	}
+
+	SetActive(false);
+
+	if (!bOnCooldown &&
+		IsValid(AbilityComponent) &&
+		AbilityComponent->IsAbilityOnCooldown(SlotAbilityId))
+	{
+		BeginCooldownPoll();
 	}
 }
 

@@ -9,6 +9,8 @@ URapidFireAbility::URapidFireAbility()
 	bCanActivateFromHeldInput = false;
 	bRequireInputHeldAtResolution = false;
 	bEndAbilityWhenMontageEnds = false;
+	CostTrigger = EAbilityCostTrigger::OnEveryAnimationEvent;
+	CooldownTrigger = EAbilityCooldownTrigger::OnAbilityEnd;
 }
 
 bool URapidFireAbility::CanActivateAbility_Implementation() const
@@ -200,9 +202,7 @@ float URapidFireAbility::GetRapidFireProgress() const
 
 bool URapidFireAbility::RequestFinishRapidFire()
 {
-	if (RapidFireStage != ERapidFireStage::Firing ||
-		bFinishRequested ||
-		IsCommitted())
+	if (RapidFireStage != ERapidFireStage::Firing || bFinishRequested)
 	{
 		return false;
 	}
@@ -240,7 +240,16 @@ bool URapidFireAbility::RequestFinishRapidFire()
 	OnRapidFireFinishRequested();
 	return true;
 }
+void URapidFireAbility::OnCostPaymentFailed_Implementation()
+{
+	// Out of focus mid-volley: stop shooting and recover. Before the first shot, fail as usual.
+	if (IsCommitted() && (bFinishRequested || RequestFinishRapidFire()))
+	{
+		return;
+	}
 
+	Super::OnCostPaymentFailed_Implementation();
+}
 bool URapidFireAbility::ConfigureMontageSections()
 {
 	UAnimInstance* AnimInstance = GetAnimInstance();

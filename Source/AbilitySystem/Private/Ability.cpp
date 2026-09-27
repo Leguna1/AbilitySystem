@@ -223,3 +223,10 @@ bool UAbility::OwnerHasAnyTags(const FGameplayTagContainer& Tags) const
 {
 	return IsValid(AbilityComponent) && AbilityComponent->HasAnyOwnerTags(Tags);
 }
+void UAbility::OnCostPaymentFailed_Implementation()
+{
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->EndAbility(this, EAbilityEndReason::Failed);
+	}
+}

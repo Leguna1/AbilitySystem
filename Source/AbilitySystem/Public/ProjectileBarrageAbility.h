@@ -8,6 +8,7 @@ UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UProjectileBarrageAbility : public URangedAttackAbility
 {
 	GENERATED_BODY()
+	UProjectileBarrageAbility();
 
 public:
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;

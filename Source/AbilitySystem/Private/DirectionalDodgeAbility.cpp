@@ -14,6 +14,7 @@ UDirectionalDodgeAbility::UDirectionalDodgeAbility()
 	ActivationPriority = 300;
 	bCanActivateFromHeldInput = false;
 	bRequireInputHeldAtResolution = false;
+	CostTrigger = EAbilityCostTrigger::OnActivate;
 }
 
 bool UDirectionalDodgeAbility::CanActivateAbility_Implementation() const
@@ -120,11 +121,7 @@ void UDirectionalDodgeAbility::ActivateAbility_Implementation()
 		Character->SetActorRotation(FRotator(0.0f, DodgeYaw, 0.0f));
 	}
 
-	if (!RequestCommit())
-	{
-		RequestCancelAbility();
-		return;
-	}
+	
 
 	OnDodgePrepared(DodgeDirection);
 

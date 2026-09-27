@@ -33,6 +33,32 @@ enum class EAbilityEndReason : uint8
 
 	Failed UMETA(DisplayName = "Failed")
 };
+UENUM(BlueprintType)
+enum class EAbilityCostTrigger : uint8
+{
+	/** The ability calls RequestCommit itself. */
+	Manual UMETA(DisplayName = "Manual"),
+
+	/** Paid once, as soon as activation has succeeded. */
+	OnActivate UMETA(DisplayName = "On Activate"),
+
+	/** Paid once, the first time the cost event fires. */
+	OnAnimationEvent UMETA(DisplayName = "On Animation Event"),
+
+	/** Paid every time the cost event fires (e.g. per shot). The first payment commits. */
+	OnEveryAnimationEvent UMETA(DisplayName = "On Every Animation Event")
+};
+
+UENUM(BlueprintType)
+enum class EAbilityCooldownTrigger : uint8
+{
+	/** Starts at the first payment. */
+	OnCommit UMETA(DisplayName = "On Commit"),
+
+	/** Starts when the ability ends, for any reason, if it committed. */
+	OnAbilityEnd UMETA(DisplayName = "On Ability End")
+};
+
 /** A float that scales with ability rank. Rank 1 reads Values[0]; ranks past the end reuse the last entry. */
 USTRUCT(BlueprintType)
 struct FAbilityRankedFloat

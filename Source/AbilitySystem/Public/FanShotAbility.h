@@ -37,9 +37,6 @@ protected:
 	/** Computes this arrow's outgoing direction as an offset from the aim center. */
 	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const override;
 
-	/** Single-burst ability: commit (spend cost, start cooldown) when the fan is released. */
-	virtual void OnProjectileReleased_Implementation(float Strength) override;
-
 	/** Center direction the fan spreads around. Defaults to control-rotation forward, then actor forward. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Fan Shot")
 	FVector ResolveFanCenterDirection() const;

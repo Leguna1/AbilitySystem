@@ -9,17 +9,6 @@ bool UFanShotAbility::ShouldUseCurrentTarget_Implementation() const
 	return false;
 }
 
-void UFanShotAbility::OnProjectileReleased_Implementation(const float Strength)
-{
-	Super::OnProjectileReleased_Implementation(Strength);
-
-	// The fan leaving the bow is the commit point for this single-burst ability.
-	if (!IsCommitted())
-	{
-		RequestCommit();
-	}
-}
-
 FVector UFanShotAbility::ResolveFanCenterDirection_Implementation() const
 {
 	const ACharacter* Character = GetOwningCharacter();

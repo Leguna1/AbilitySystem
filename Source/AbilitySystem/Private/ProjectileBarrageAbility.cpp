@@ -6,6 +6,11 @@
 #include "TargetingComponent.h"
 #include "TimerManager.h"
 
+UProjectileBarrageAbility::UProjectileBarrageAbility()
+{
+	CostTrigger = EAbilityCostTrigger::OnAnimationEvent;
+}
+
 void UProjectileBarrageAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
 	ClearBarrageTimer();
@@ -69,12 +74,6 @@ bool UProjectileBarrageAbility::ShouldUseCurrentTarget_Implementation() const
 void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float Strength)
 {
 	Super::OnProjectileReleased_Implementation(Strength);
-
-	// Single-burst ability: the volley leaving the bow is the commit point.
-	if (!IsCommitted())
-	{
-		RequestCommit();
-	}
 
 	ClearBarrageTimer();
 	BarrageImpactPoints.Reset();

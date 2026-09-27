@@ -396,3 +396,8 @@ bool URangedAttackAbility::HandleProjectileAnimationEvent(const FGameplayTag Eve
 
 	return true;
 }
+FGameplayTag URangedAttackAbility::GetCostEventTag() const
+{
+	const FGameplayTag Configured = Super::GetCostEventTag();
+	return Configured.IsValid() ? Configured : ReleaseProjectileEventTag;
+}

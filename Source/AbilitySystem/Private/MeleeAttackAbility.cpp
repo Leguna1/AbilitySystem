@@ -5,6 +5,12 @@
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 #include "GameFramework/Character.h"
 
+
+UMeleeAttackAbility::UMeleeAttackAbility()
+{
+	CostTrigger = EAbilityCostTrigger::OnAnimationEvent;
+}
+
 bool UMeleeAttackAbility::CanActivateAbility_Implementation() const
 {
 	if (!Super::CanActivateAbility_Implementation())
@@ -14,6 +20,12 @@ bool UMeleeAttackAbility::CanActivateAbility_Implementation() const
 
 	const ASwordBase* Sword = GetEquippedWeaponAs<ASwordBase>();
 	return IsValid(Sword) && Sword->IsDrawn();
+}
+
+FGameplayTag UMeleeAttackAbility::GetCostEventTag() const
+{
+	const FGameplayTag Configured = Super::GetCostEventTag();
+	return Configured.IsValid() ? Configured : BeginHitWindowEventTag;
 }
 void UMeleeAttackAbility::ActivateAbility_Implementation()
 {

@@ -214,6 +214,23 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
 	int32 GetMaxRank() const { return FMath::Max(MaxRank, StartingRank); }
 	
+	/**
+ * A cost payment failed (the owner could not afford it). The event that
+ * triggered it was not delivered. Default: end the ability as Failed.
+ */
+	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Cost")
+	void OnCostPaymentFailed();
+	virtual void OnCostPaymentFailed_Implementation();
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	EAbilityCostTrigger GetCostTrigger() const { return CostTrigger; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	EAbilityCooldownTrigger GetCooldownTrigger() const { return CooldownTrigger; }
+
+	/** Event that pays the cost for the animation-event triggers. Subclasses supply a fallback when unset. */
+	virtual FGameplayTag GetCostEventTag() const { return CostEventTag; }
+	
 protected:
 	/* -------------------- Ability requests -------------------- */
 
@@ -293,13 +310,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Input")
 	FGameplayTag ActivationInputTag;
 
-	/** Focus spent when this ability commits. Checked at activation, spent at commit. */
+	/** Focus spent per payment (see CostTrigger). Affordability is checked at activation and before every payment. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (ClampMin = "0.0"))
 	float FocusCost = 0.0f;
 
 	/** Seconds this ability is unavailable after it commits. 0 = no cooldown. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (ClampMin = "0.0"))
 	float CooldownDuration = 0.0f;
+	
+	/** When FocusCost is paid. The first payment commits the ability (point of no return). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost")
+	EAbilityCostTrigger CostTrigger = EAbilityCostTrigger::Manual;
+
+	/** Event that pays the cost. Empty = the ability's default (ranged: release, melee: hit window start). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost", meta = (EditCondition = "CostTrigger == EAbilityCostTrigger::OnAnimationEvent || CostTrigger == EAbilityCostTrigger::OnEveryAnimationEvent"))
+	FGameplayTag CostEventTag;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Cost")
+	EAbilityCooldownTrigger CooldownTrigger = EAbilityCooldownTrigger::OnCommit;
 	
 	/** Rank before any learning. 0 = must be learned before use; 1 = usable from the start. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rank", meta = (ClampMin = "0"))
