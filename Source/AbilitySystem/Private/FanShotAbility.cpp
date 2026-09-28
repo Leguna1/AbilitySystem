@@ -4,6 +4,17 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
 
+
+void UFanShotAbility::ActivateAbility_Implementation()
+{
+	const float BaseSpread = SpreadMode == EFanSpreadMode::TotalAngle
+		? TotalSpreadAngle
+		: AngleBetweenArrows;
+
+	ResolvedSpreadAngle = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_Spread, BaseSpread), 0.0f);
+
+	Super::ActivateAbility_Implementation();
+}
 bool UFanShotAbility::ShouldUseCurrentTarget_Implementation() const
 {
 	return false;
@@ -44,14 +55,14 @@ float UFanShotAbility::ComputeYawOffsetForIndex(const int32 ProjectileIndex, con
 	switch (SpreadMode)
 	{
 	case EFanSpreadMode::AnglePerArrow:
-		return CenteredStep * AngleBetweenArrows;
+		return CenteredStep * ResolvedSpreadAngle;
 
 	case EFanSpreadMode::TotalAngle:
 	default:
-	{
-		const float GapAngle = TotalSpreadAngle / static_cast<float>(ProjectileCount - 1);
-		return CenteredStep * GapAngle;
-	}
+		{
+			const float GapAngle = ResolvedSpreadAngle / static_cast<float>(ProjectileCount - 1);
+			return CenteredStep * GapAngle;
+		}
 	}
 }
 

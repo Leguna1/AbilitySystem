@@ -12,7 +12,8 @@ class ABILITYSYSTEM_API UProjectileBarrageAbility : public URangedAttackAbility
 
 public:
 	
-
+	virtual void ActivateAbility_Implementation() override;
+	
 protected:
 	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const override;
 	virtual bool ShouldUseCurrentTarget_Implementation() const override;
@@ -67,5 +68,6 @@ protected:
 
 private:
 	
-	
+	UPROPERTY(Transient)
+	float ResolvedImpactRadius = 0.0f;
 };

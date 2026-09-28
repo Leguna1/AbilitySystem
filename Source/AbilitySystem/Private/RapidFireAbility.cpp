@@ -33,7 +33,10 @@ void URapidFireAbility::ActivateAbility_Implementation()
 	bFinishRequested = false;
 	bFiringLoopStarted = false;
 
-	MaximumShots = FMath::Max(GetRankedInt(MaximumShotsByRank), 1);
+	MaximumShots = FMath::Max(
+		GetModifiedInt(AbilitySystemTags::Stat_ShotCount, GetRankedInt(MaximumShotsByRank)),
+		1
+	);
 	
 	Super::ActivateAbility_Implementation();
 
@@ -166,7 +169,7 @@ void URapidFireAbility::OnAbilityEnded_Implementation(const EAbilityEndReason En
 	bFiringLoopStarted = false;
 }
 
-bool URapidFireAbility::CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const
+bool URapidFireAbility::CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const
 {
 	return true;
 }

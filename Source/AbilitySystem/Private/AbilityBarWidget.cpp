@@ -1,6 +1,7 @@
 #include "AbilityBarWidget.h"
 
 #include "Ability.h"
+#include "ActiveAbility.h"
 #include "AbilityComponent.h"
 #include "AbilitySlotWidget.h"
 #include "Components/PanelWidget.h"
@@ -38,12 +39,14 @@ void UAbilityBarWidget::RebuildSlots()
 
 	for (const TSubclassOf<UAbility>& AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
 	{
-		if (!IsValid(AbilityClass))
+		// Only activatable abilities get a hotbar slot; passives are skipped.
+		if (!IsValid(AbilityClass) || !AbilityClass->IsChildOf(UActiveAbility::StaticClass()))
 		{
 			continue;
 		}
 
 		UAbilitySlotWidget* AbilitySlot = CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass);
+
 		if (!IsValid(AbilitySlot))
 		{
 			continue;

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Ability.h"
+#include "ActiveAbility.h"
 #include "MontageAbility.generated.h"
 
 class UAnimInstance;
@@ -13,7 +13,7 @@ class UAnimMontage;
  * UAbilityComponent does not know that this class uses animation.
  */
 UCLASS(Abstract, Blueprintable, BlueprintType)
-class ABILITYSYSTEM_API UMontageAbility : public UAbility
+class ABILITYSYSTEM_API UMontageAbility : public UActiveAbility
 {
 	GENERATED_BODY()
 

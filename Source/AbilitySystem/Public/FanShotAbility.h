@@ -29,6 +29,9 @@ UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UFanShotAbility : public URangedAttackAbility
 {
 	GENERATED_BODY()
+	
+public:
+	virtual void ActivateAbility_Implementation() override;
 
 protected:
 	/** A fan aims by spread rather than at a single target, so never home to the current target. */
@@ -56,4 +59,7 @@ protected:
 private:
 	/** Signed yaw offset (degrees) for an arrow index given the total arrow count. */
 	float ComputeYawOffsetForIndex(int32 ProjectileIndex, int32 ProjectileCount) const;
+	/** TotalSpreadAngle or AngleBetweenArrows (per SpreadMode) with modifiers, fixed at activation. */
+	UPROPERTY(Transient)
+	float ResolvedSpreadAngle = 0.0f;
 };

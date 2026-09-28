@@ -1,12 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Ability.h"
+#include "ActiveAbility.h"
 #include "AbilityTypes.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "InputBufferTypes.h"
 #include "UObject/ObjectKey.h"
+#include "ModifierTypes.h"
 #include "AbilityComponent.generated.h"
 
 class ACharacter;
@@ -17,12 +18,13 @@ class UResourceComponent;
 class UTargetingComponent;
 class UAnimSequenceBase;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityEndedEventSignature, FGameplayTag, AbilityId, UAbility*, Ability, EAbilityEndReason, EndReason);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityEndedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability, EAbilityEndReason, EndReason);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOwnedTagsChangedEventSignature, FGameplayTagContainer, OwnedTags);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGrantedAbilitiesChangedEventSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityRankChangedEventSignature, FGameplayTag, AbilityId, int32, OldRank, int32, NewRank);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FModifiersChangedEventSignature);
 
 /** Parallel-array cooldown store keyed by ability id (no TMap by project convention). */
 USTRUCT()
@@ -36,6 +38,10 @@ struct FAbilityCooldownState
 	/** World time (seconds) at which the matching ability leaves cooldown. */
 	UPROPERTY()
 	TArray<double> EndTimes;
+	
+	/** Duration each cooldown started with, so the sweep stays smooth if modifiers change mid-cooldown. */
+	UPROPERTY()
+	TArray<float> Durations;
 };
 /** Learned ranks keyed by ability id. Effective rank = StartingRank + learned, clamped to MaxRank. */
 USTRUCT()
@@ -55,7 +61,7 @@ class ABILITYSYSTEM_API UAbilityComponent : public UActorComponent
 {
 	GENERATED_BODY()
 
-	friend class UAbility;
+	friend class UActiveAbility;
 
 public:
 	UAbilityComponent();
@@ -139,7 +145,7 @@ public:
 	FGameplayTagContainer GetOwnedGameplayTags() const;
 
 	UFUNCTION(BlueprintPure, Category = "Ability")
-	UAbility* GetActiveAbility() const { return ActiveAbility; }
+	UActiveAbility* GetActiveAbility() const { return ActiveAbility; }
 
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	bool HasActiveAbility() const { return IsValid(ActiveAbility); }
@@ -218,6 +224,36 @@ public:
 	/** Single entry point for ability input: true on press, false on release. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void HandleInput(FGameplayTag InputTag, bool bPressed);
+	
+	/* -------------------- Modifiers -------------------- */
+
+	/**
+	 * Adds or replaces Source's entry under EntryKey (null source = this component).
+	 * Magnitudes are read at Rank. Duration <= 0 = until removed.
+	 * GrantedTags are owner tags for as long as the entry is active.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
+	void ApplyModifiers(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& Modifiers, int32 Rank, const FGameplayTagContainer& GrantedTags, float Duration = 0.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
+	bool RemoveModifierEntry(const UObject* Source, FName EntryKey);
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
+	bool RemoveModifiersFromSource(const UObject* Source);
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
+	bool HasModifierEntry(const UObject* Source, FName EntryKey) const;
+
+	/** (Base + all Adds) x (1 + all Percents), for modifiers scoped to AbilityTags whose owner-tag conditions hold. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
+	float GetModifiedValue(FGameplayTag Stat, float BaseValue, const FGameplayTagContainer& AbilityTags) const;
+
+	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
+	FModifiersChangedEventSignature ModifiersChangedEvent;
+	
+	/** Focus cost per payment, including modifiers. What the hotbar shows and what a payment spends. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
+	float GetAbilityFocusCost(FGameplayTag AbilityId) const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -233,21 +269,22 @@ private:
 		int32 Priority = 0;
 	};
 
-	bool CommitAbility(UAbility* RequestingAbility);
-	void EndAbility(UAbility* RequestingAbility, EAbilityEndReason EndReason);
-	void SetAbilityTickEnabled(UAbility* RequestingAbility, bool bEnabled);
-	void SetAbilityTransitionOpen(UAbility* RequestingAbility, bool bOpen);
-	void SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, bool bClosed) const;
+	bool CommitAbility(UActiveAbility* RequestingAbility);
+	void EndAbility(UActiveAbility* RequestingAbility, EAbilityEndReason EndReason);
+	void SetAbilityTickEnabled(UActiveAbility* RequestingAbility, bool bEnabled);
+	void SetAbilityTransitionOpen(UActiveAbility* RequestingAbility, bool bOpen);
+	void SetAbilityEarlyCancellationClosed(UActiveAbility* RequestingAbility, bool bClosed) const;
 
 	void BuildAbilityInputCandidates(TArray<FAbilityInputCandidate>& OutCandidates);
 	bool ExecuteAbilityInputCandidate(const FAbilityInputCandidate& Candidate);
-	bool ExecuteRepeatedAbilityRequest(UAbility* Ability);
+	bool ExecuteRepeatedAbilityRequest(UActiveAbility* Ability);
 	bool ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbilityClass);
 
-	bool CanActivateAbilityInstance(const UAbility* Ability, bool bReplacingActiveAbility) const;
-	static bool CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason);
-	UAbility* CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass);
-	bool ActivateAbilityInstance(UAbility* Ability);
+	bool CanActivateAbilityInstance(const UActiveAbility* Ability, bool bReplacingActiveAbility) const;
+	static bool CanReplaceActiveAbility(const UActiveAbility* CurrentAbility, const UActiveAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason);
+	/** Null for passive classes: only active abilities have executions. */
+	UActiveAbility* CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass);
+	bool ActivateAbilityInstance(UActiveAbility* Ability);
 	void EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bResolveBufferedInput = true);
 
 	struct FAbilityGrantSources
@@ -279,11 +316,11 @@ private:
 
 	int32 FindCooldownIndex(FGameplayTag AbilityId) const;
 	void StartCooldown(FGameplayTag AbilityId, float Duration);
-	void SpendAbilityCost(const UAbility* Ability);
-	bool ChargeRepeatedCost(const UAbility* Ability);
+	void SpendAbilityCost(const UActiveAbility* Ability);
+	bool ChargeRepeatedCost(const UActiveAbility* Ability);
 
 	/** Applies the ability's cost trigger for this event. False = payment failed; the event must not be delivered. */
-	bool ApplyEventCost(UAbility* Ability, FGameplayTag EventTag);
+	bool ApplyEventCost(UActiveAbility* Ability, FGameplayTag EventTag);
 	
 	float GetCurrentFocus() const;
 
@@ -317,7 +354,7 @@ private:
 	TArray<TSubclassOf<UAbility>> GrantedAbilityClasses;
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Runtime", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UAbility> ActiveAbility;
+	TObjectPtr<UActiveAbility> ActiveAbility;
 
 	UPROPERTY(Transient)
 	TMap<FGameplayTag, int32> LooseOwnerTagCounts;
@@ -333,4 +370,19 @@ private:
 	
 	void HandleInputPressed(FGameplayTag InputTag);
 	void HandleInputReleased(FGameplayTag InputTag);
+	
+	UFUNCTION()
+	void HandleModifierExpiry();
+
+	void HandleModifiersChanged();
+	void ScheduleModifierExpiry();
+	double GetWorldTime() const;
+
+	UPROPERTY(Transient)
+	FStatModifierContainer ModifierContainer;
+
+	FTimerHandle ModifierExpiryTimer;
+	
+	float ResolveFocusCost(const UActiveAbility* Ability) const;
+	float ResolveCooldownDuration(const UActiveAbility* Ability) const;
 };

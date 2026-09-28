@@ -65,7 +65,13 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 
 	if (IsValid(ResourceComponent))
 	{
-		const float Damage = FMath::Max(Payload.Damage * DamageTakenMultiplier, 0.0f);
+		// The owner's modifiers (defensive passives) adjust the base multiplier.
+		const float TakenMultiplier = IsValid(AbilityComponent)
+			? AbilityComponent->GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, FGameplayTagContainer())
+			: DamageTakenMultiplier;
+
+		const float Damage = FMath::Max(Payload.Damage * FMath::Max(TakenMultiplier, 0.0f), 0.0f);
+		
 		const float HealthBefore = ResourceComponent->GetResourceValue(EResourceType::Health, EResourceValueType::Current);
 
 		// A lethal hit fires OnDeath inside ModifyResource; this lets that callback credit the killer.

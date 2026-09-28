@@ -54,7 +54,7 @@ public:
 	virtual void OnMovementInputReceived_Implementation(FVector2D MovementInput) override;
 	virtual void OnAbilityMontageEnded_Implementation(UAnimMontage* Montage, bool bInterrupted) override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
-	virtual bool CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const override;
+	virtual bool CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Charged Shot")
 	EChargedShotStage GetChargedShotStage() const { return ChargedShotStage; }

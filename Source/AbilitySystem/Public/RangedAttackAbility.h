@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "OffensiveAbilityBase.h"
 #include "ImpactGroupTypes.h"
+#include "AbilitySystemTags.h"
 #include "RangedAttackAbility.generated.h"
 
 class AArrowBase;
@@ -34,7 +35,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	bool IsProjectileNocked() const { return bProjectileNocked; }
 	
-	/** Arrows this execution prepares and releases. */
+	/** Arrows this execution prepares and releases, fixed at activation (rank + modifiers, clamped to sockets). */
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	int32 GetProjectileCount() const;
 
@@ -165,4 +166,12 @@ private:
 	
 	UPROPERTY(Transient)
 	TObjectPtr<ABowBase> Bow;
+	
+	int32 ResolveProjectileCount() const;
+
+	UPROPERTY(Transient)
+	float ResolvedDamageMultiplier = 1.0f;
+
+	UPROPERTY(Transient)
+	int32 ResolvedProjectileCount = 0;
 };

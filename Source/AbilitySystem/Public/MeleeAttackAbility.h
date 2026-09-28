@@ -67,4 +67,7 @@ private:
 	void ReleaseBoundSword();
 	
 	FImpactGroupHandle SwingGroup;
+	
+	UPROPERTY(Transient)
+	float ResolvedDamage = 0.0f;
 };

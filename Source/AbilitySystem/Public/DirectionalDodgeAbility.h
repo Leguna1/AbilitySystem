@@ -25,7 +25,7 @@ public:
 	virtual bool CanActivateAbility_Implementation() const override;
 	virtual void ActivateAbility_Implementation() override;
 	
-	virtual bool CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const override;
+	virtual bool CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const override;
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Dodge")
 	FVector GetDodgeDirection() const { return DodgeDirection; }

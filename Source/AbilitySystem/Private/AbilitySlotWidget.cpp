@@ -1,6 +1,6 @@
 #include "AbilitySlotWidget.h"
 
-#include "Ability.h"
+#include "ActiveAbility.h"
 #include "AbilityComponent.h"
 #include "Components/Widget.h"
 #include "TimerManager.h"
@@ -14,6 +14,7 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 		AbilityComponent->AbilityEndedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 		AbilityComponent->AbilityCommittedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
 		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
+		AbilityComponent->ModifiersChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleModifiersChanged);
 		
 		if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 		{
@@ -30,6 +31,8 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 	}
 
 	const UAbility* Defaults = AbilityComponent->GetAbilityDefaults(AbilityClass);
+	const UActiveAbility* ActiveDefaults = Cast<UActiveAbility>(Defaults);
+
 	if (!IsValid(Defaults))
 	{
 		return;
@@ -39,14 +42,16 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 	DisplayName = Defaults->GetDisplayName();
 	Description = Defaults->GetDescription();
 	Icon = Defaults->GetIcon();
-	ActivationInputTag = Defaults->GetActivationInputTag();
-	KeybindLabel = Defaults->GetKeybindLabel();
-	FocusCost = Defaults->GetFocusCost();
+	ActivationInputTag = IsValid(ActiveDefaults) ? ActiveDefaults->GetActivationInputTag() : FGameplayTag();
+	KeybindLabel = IsValid(ActiveDefaults) ? ActiveDefaults->GetKeybindLabel() : FText::GetEmpty();
+	
 
 	AbilityComponent->AbilityActivatedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 	AbilityComponent->AbilityEndedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 	AbilityComponent->AbilityCommittedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
 	AbilityComponent->AbilityRankChangedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
+	AbilityComponent->ModifiersChangedEvent.AddDynamic(this, &UAbilitySlotWidget::HandleModifiersChanged);
+	
 	if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 	{
 		Resources->OnResourceChanged.AddDynamic(this, &UAbilitySlotWidget::HandleResourceChanged);
@@ -64,6 +69,7 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, T
 	}
 
 	OnSlotInitialized();
+	RefreshFocusCost();
 	RefreshRank();
 
 	// Defer tooltip creation to hover so we don't build a widget per slot up-front.
@@ -83,6 +89,7 @@ void UAbilitySlotWidget::NativeDestruct()
 		AbilityComponent->AbilityEndedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 		AbilityComponent->AbilityCommittedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
 		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityRankChanged);
+		AbilityComponent->ModifiersChangedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleModifiersChanged);
 		
 		if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 		{
@@ -98,7 +105,7 @@ void UAbilitySlotWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UAbilitySlotWidget::HandleAbilityActivated(FGameplayTag AbilityId, UAbility* Ability)
+void UAbilitySlotWidget::HandleAbilityActivated(FGameplayTag AbilityId, UActiveAbility* Ability)
 {
 	if (AbilityId.MatchesTagExact(SlotAbilityId))
 	{
@@ -106,7 +113,7 @@ void UAbilitySlotWidget::HandleAbilityActivated(FGameplayTag AbilityId, UAbility
 	}
 }
 
-void UAbilitySlotWidget::HandleAbilityEnded(const FGameplayTag AbilityId, UAbility* Ability, const EAbilityEndReason EndReason)
+void UAbilitySlotWidget::HandleAbilityEnded(const FGameplayTag AbilityId, UActiveAbility* Ability, const EAbilityEndReason EndReason)
 {
 	if (!AbilityId.MatchesTagExact(SlotAbilityId))
 	{
@@ -134,7 +141,7 @@ void UAbilitySlotWidget::SetActive(bool bNewActive)
 	OnActiveStateChanged(bIsActive);
 }
 
-void UAbilitySlotWidget::HandleAbilityCommitted(FGameplayTag AbilityId, UAbility* Ability)
+void UAbilitySlotWidget::HandleAbilityCommitted(FGameplayTag AbilityId, UActiveAbility* Ability)
 {
 	if (!AbilityId.MatchesTagExact(SlotAbilityId))
 	{
@@ -246,4 +253,15 @@ void UAbilitySlotWidget::RefreshRank()
 	MaxRank = IsValid(Defaults) ? Defaults->GetMaxRank() : 0;
 
 	OnRankChanged(AbilityRank, MaxRank, AbilityRank <= 0);
+}
+void UAbilitySlotWidget::HandleModifiersChanged()
+{
+	RefreshFocusCost();
+	RefreshAffordability();
+}
+
+void UAbilitySlotWidget::RefreshFocusCost()
+{
+	FocusCost = IsValid(AbilityComponent) ? AbilityComponent->GetAbilityFocusCost(SlotAbilityId) : 0.0f;
+	OnFocusCostChanged(FocusCost);
 }

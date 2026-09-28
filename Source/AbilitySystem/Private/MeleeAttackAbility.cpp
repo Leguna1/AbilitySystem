@@ -5,6 +5,8 @@
 #include "SwordBase.h"
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 #include "GameFramework/Character.h"
+#include "AbilitySystemTags.h"
+
 
 
 UMeleeAttackAbility::UMeleeAttackAbility()
@@ -31,6 +33,11 @@ FGameplayTag UMeleeAttackAbility::GetCostEventTag() const
 void UMeleeAttackAbility::ActivateAbility_Implementation()
 {
 	// OffensiveAbilityBase handles target-facing warp + montage play.
+	
+	ResolvedDamage = FMath::Max(
+	GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageByRank)),
+	0.0f);
+	
 	Super::ActivateAbility_Implementation();
 }
 void UMeleeAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
@@ -109,7 +116,7 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	
 
 	FAbilityPayload Payload;
-	Payload.Damage = GetRankedFloat(DamageByRank);
+	Payload.Damage = ResolvedDamage;
 	Payload.Instigator = GetOwningCharacter();
 	Payload.Causer = BoundSword.Get();
 	Payload.Hit = Hit;

@@ -137,7 +137,7 @@ void UDirectionalDodgeAbility::ActivateAbility_Implementation()
 	}
 }
 
-bool UDirectionalDodgeAbility::CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const
+bool UDirectionalDodgeAbility::CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const
 {
 	return true;
 }

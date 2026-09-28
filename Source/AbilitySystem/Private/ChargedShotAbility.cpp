@@ -31,7 +31,9 @@ void UChargedShotAbility::ActivateAbility_Implementation()
 	bChargeStarted = false;
 	bMaximumChargeReached = false;
 	
-	MaximumChargeTime = FMath::Max(GetRankedFloat(MaximumChargeTimeByRank), 0.01f);
+	MaximumChargeTime = FMath::Max(
+	GetModifiedFloat(AbilitySystemTags::Stat_ChargeTime, GetRankedFloat(MaximumChargeTimeByRank)),
+	0.01f);
 
 	Super::ActivateAbility_Implementation();
 
@@ -175,7 +177,7 @@ void UChargedShotAbility::OnAbilityEnded_Implementation(const EAbilityEndReason 
 	bMaximumChargeReached = false;
 }
 
-bool UChargedShotAbility::CanReplaceActiveAbility_Implementation(const UAbility* CurrentAbility) const
+bool UChargedShotAbility::CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const
 {
 	return true;
 }

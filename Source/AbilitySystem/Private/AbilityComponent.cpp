@@ -1,12 +1,14 @@
 #include "AbilityComponent.h"
 
-#include "Ability.h"
+#include "ActiveAbility.h"
 #include "GameFramework/Character.h"
 #include "InputBufferComponent.h"
 #include "MotionWarpingComponent.h"
 #include "ResourceComponent.h"
 #include "TargetingComponent.h"
 #include "AbilitySystemTags.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -63,6 +65,11 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
 	}
 
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ModifierExpiryTimer);
+	}
+	
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -75,7 +82,7 @@ void UAbilityComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAct
 		return;
 	}
 
-	UAbility* TickingAbility = ActiveAbility;
+	UActiveAbility* TickingAbility = ActiveAbility;
 
 	DispatchAbilityCallback([TickingAbility, DeltaTime]()
 	{
@@ -232,7 +239,7 @@ bool UAbilityComponent::TryActivateAbility(FGameplayTag AbilityId)
 		return ReplaceActiveAbility(AbilityClass);
 	}
 
-	UAbility* NewAbility = CreateExecutionInstance(AbilityClass);
+	UActiveAbility* NewAbility = CreateExecutionInstance(AbilityClass);
 
 	if (!IsValid(NewAbility) || !CanActivateAbilityInstance(NewAbility, false))
 	{
@@ -300,7 +307,7 @@ void UAbilityComponent::HandleInputPressed(const FGameplayTag InputTag)
 		return;
 	}
 
-	UAbility* InputAbility = ActiveAbility;
+	UActiveAbility* InputAbility = ActiveAbility;
 
 	DispatchAbilityCallback([InputAbility, InputTag]()
 	{
@@ -353,7 +360,7 @@ void UAbilityComponent::HandleInputReleased(FGameplayTag InputTag)
 		return;
 	}
 
-	UAbility* InputAbility = ActiveAbility;
+	UActiveAbility* InputAbility = ActiveAbility;
 
 	DispatchAbilityCallback([InputAbility, InputTag]()
 	{
@@ -373,7 +380,7 @@ void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
 		return;
 	}
 
-	UAbility* InputAbility = ActiveAbility;
+	UActiveAbility* InputAbility = ActiveAbility;
 
 	DispatchAbilityCallback([InputAbility, MovementInput]()
 	{
@@ -407,7 +414,7 @@ void UAbilityComponent::HandleAbilityEvent(FGameplayTag EventTag, const UAnimSeq
 		return;
 	}
 
-	UAbility* EventAbility = ActiveAbility;
+	UActiveAbility* EventAbility = ActiveAbility;
 	
 	if (!EventAbility->AcceptsAnimationEvent(SourceAnimation))
 	{
@@ -480,17 +487,18 @@ bool UAbilityComponent::HasAnyOwnerTags(const FGameplayTagContainer& Tags) const
 
 FGameplayTagContainer UAbilityComponent::GetOwnedGameplayTags() const
 {
-	FGameplayTagContainer Result = BuildLooseOwnerTags();
+	FGameplayTagContainer Result = BuildOwnedTagsWithoutActiveAbility();
 	Result.AppendTags(ActiveGrantedTags);
 	return Result;
 }
+
 
 bool UAbilityComponent::IsActiveAbilityCommitted() const
 {
 	return IsValid(ActiveAbility) && ActiveAbility->IsCommitted();
 }
 
-bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
+bool UAbilityComponent::CommitAbility(UActiveAbility* RequestingAbility)
 {
 	if (!IsValid(RequestingAbility) ||
 		RequestingAbility != ActiveAbility ||
@@ -517,7 +525,7 @@ bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
 
 	if (RequestingAbility->GetCooldownTrigger() == EAbilityCooldownTrigger::OnCommit)
 	{
-		StartCooldown(RequestingAbility->GetAbilityId(), RequestingAbility->GetCooldownDuration());
+		StartCooldown(RequestingAbility->GetAbilityId(), ResolveCooldownDuration(RequestingAbility));
 	}
 
 	DispatchAbilityCallback([this, RequestingAbility]()
@@ -529,15 +537,15 @@ bool UAbilityComponent::CommitAbility(UAbility* RequestingAbility)
 	return true;
 }
 
-void UAbilityComponent::EndAbility(UAbility* RequestingAbility, EAbilityEndReason EndReason)
+void UAbilityComponent::EndAbility(UActiveAbility* RequestingAbility, EAbilityEndReason EndReason)
 {
 	if (IsValid(RequestingAbility) && RequestingAbility == ActiveAbility)
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
+		EndActiveAbilityInternal(EndReason);
 	}
 }
 
-void UAbilityComponent::SetAbilityTickEnabled(UAbility* RequestingAbility, bool bEnabled)
+void UAbilityComponent::SetAbilityTickEnabled(UActiveAbility* RequestingAbility, bool bEnabled)
 {
 	if (!IsValid(RequestingAbility) || RequestingAbility != ActiveAbility || bEndingAbility)
 	{
@@ -564,7 +572,8 @@ void UAbilityComponent::BuildAbilityInputCandidates(TArray<FAbilityInputCandidat
 	{
 		for (const TSubclassOf<UAbility> AbilityClass : GrantedAbilityClasses)
 		{
-			const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+			// Passives fail the cast and never become input candidates.
+			const UActiveAbility* AbilityCDO = Cast<UActiveAbility>(GetAbilityCDO(AbilityClass));
 
 			if (!IsValid(AbilityCDO) ||
 				!AbilityCDO->GetActivationInputTag().IsValid() ||
@@ -616,7 +625,7 @@ bool UAbilityComponent::ExecuteAbilityInputCandidate(const FAbilityInputCandidat
 
 	if (!IsValid(ActiveAbility))
 	{
-		UAbility* NewAbility = CreateExecutionInstance(Candidate.AbilityClass);
+		UActiveAbility* NewAbility = CreateExecutionInstance(Candidate.AbilityClass);
 
 		if (!IsValid(NewAbility) || !CanActivateAbilityInstance(NewAbility, false))
 		{
@@ -642,7 +651,7 @@ bool UAbilityComponent::ExecuteAbilityInputCandidate(const FAbilityInputCandidat
 	return ReplaceActiveAbility(Candidate.AbilityClass);
 }
 
-bool UAbilityComponent::ExecuteRepeatedAbilityRequest(UAbility* Ability)
+bool UAbilityComponent::ExecuteRepeatedAbilityRequest(UActiveAbility* Ability)
 {
 	if (!IsValid(Ability) ||
 		Ability != ActiveAbility ||
@@ -668,7 +677,7 @@ bool UAbilityComponent::ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbili
 		return false;
 	}
 
-	UAbility* IncomingAbility = CreateExecutionInstance(IncomingAbilityClass);
+	UActiveAbility* IncomingAbility = CreateExecutionInstance(IncomingAbilityClass);
 
 	if (!IsValid(IncomingAbility))
 	{
@@ -697,7 +706,7 @@ bool UAbilityComponent::ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbili
 	return ActivateAbilityInstance(IncomingAbility);
 }
 
-bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, const bool bReplacingActiveAbility) const
+bool UAbilityComponent::CanActivateAbilityInstance(const UActiveAbility* Ability, const bool bReplacingActiveAbility) const
 {
 	if (!IsValid(Ability) || !Ability->GetAbilityId().IsValid())
 	{
@@ -741,7 +750,7 @@ bool UAbilityComponent::CanActivateAbilityInstance(const UAbility* Ability, cons
 	return Ability->CanActivateAbility();
 }
 
-bool UAbilityComponent::CanReplaceActiveAbility(const UAbility* CurrentAbility, const UAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason)
+bool UAbilityComponent::CanReplaceActiveAbility(const UActiveAbility* CurrentAbility, const UActiveAbility* IncomingAbility, EAbilityEndReason& OutReplacementReason)
 {
 	OutReplacementReason = EAbilityEndReason::Interrupted;
 
@@ -792,14 +801,17 @@ bool UAbilityComponent::CanReplaceActiveAbility(const UAbility* CurrentAbility, 
 
 	return bCanInterrupt;
 }
-UAbility* UAbilityComponent::CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass)
+UActiveAbility* UAbilityComponent::CreateExecutionInstance(const TSubclassOf<UAbility> AbilityClass)
 {
-	if (!AbilityClass || !IsValid(OwningCharacter))
+	// Only active abilities have executions; passives are never instanced here.
+	if (!AbilityClass ||
+		!AbilityClass->IsChildOf(UActiveAbility::StaticClass()) ||
+		!IsValid(OwningCharacter))
 	{
 		return nullptr;
 	}
 
-	UAbility* NewAbility = NewObject<UAbility>(this, AbilityClass);
+	UActiveAbility* NewAbility = NewObject<UActiveAbility>(this, AbilityClass);
 
 	if (!IsValid(NewAbility))
 	{
@@ -810,7 +822,7 @@ UAbility* UAbilityComponent::CreateExecutionInstance(TSubclassOf<UAbility> Abili
 	return NewAbility;
 }
 
-bool UAbilityComponent::ActivateAbilityInstance(UAbility* Ability)
+bool UAbilityComponent::ActivateAbilityInstance(UActiveAbility* Ability)
 {
 	if (!IsValid(Ability) || IsValid(ActiveAbility) || bEndingAbility)
 	{
@@ -828,7 +840,7 @@ bool UAbilityComponent::ActivateAbilityInstance(UAbility* Ability)
 
 	ApplyActiveAbilityTags();
 
-	UAbility* ActivatedAbility = ActiveAbility;
+	UActiveAbility* ActivatedAbility = ActiveAbility;
 
 	DispatchAbilityCallback([this, ActivatedAbility]()
 	{
@@ -863,7 +875,7 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	bEndingAbility = true;
 	bResolveBufferedInputAfterCallback = false;
 
-	UAbility* EndingAbility = ActiveAbility;
+	UActiveAbility* EndingAbility = ActiveAbility;
 	const FGameplayTag EndingAbilityId = EndingAbility->GetAbilityId();
 
 	EndingAbility->SetAbilityStatus(EAbilityStatus::Ending);
@@ -879,7 +891,7 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	if (EndingAbility->IsCommitted() &&
 		EndingAbility->GetCooldownTrigger() == EAbilityCooldownTrigger::OnAbilityEnd)
 	{
-		StartCooldown(EndingAbilityId, EndingAbility->GetCooldownDuration());
+		StartCooldown(EndingAbilityId, ResolveCooldownDuration(EndingAbility));
 	}
 
 	DispatchAbilityCallback([this, EndingAbility, EndingAbilityId, EndReason]()
@@ -899,7 +911,7 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	}
 	
 }
-void UAbilityComponent::SetAbilityEarlyCancellationClosed(UAbility* RequestingAbility, const bool bClosed) const
+void UAbilityComponent::SetAbilityEarlyCancellationClosed(UActiveAbility* RequestingAbility, const bool bClosed) const
 {
 	if (!IsValid(RequestingAbility) ||
 		RequestingAbility != ActiveAbility ||
@@ -935,7 +947,7 @@ void UAbilityComponent::DispatchAbilityCallback(const TFunctionRef<void()>& Call
 
 	const bool bResolved = ResolveBufferedAbilityInput();
 
-	UE_LOG(LogTemp, Warning, TEXT("[Transition] Deferred resolution result=%d"), bResolved);
+	UE_LOG(LogTemp, Verbose, TEXT("[Transition] Deferred resolution result=%d"), bResolved);
 }
 
 FGameplayTagContainer UAbilityComponent::BuildLooseOwnerTags() const
@@ -955,7 +967,10 @@ FGameplayTagContainer UAbilityComponent::BuildLooseOwnerTags() const
 
 FGameplayTagContainer UAbilityComponent::BuildOwnedTagsWithoutActiveAbility() const
 {
-	return BuildLooseOwnerTags();
+	// Loose tags plus tags granted by active modifier entries (boosters, procs, states).
+	FGameplayTagContainer Result = BuildLooseOwnerTags();
+	ModifierContainer.AppendGrantedTags(Result, GetWorldTime());
+	return Result;
 }
 
 void UAbilityComponent::ApplyActiveAbilityTags()
@@ -1061,7 +1076,7 @@ void UAbilityComponent::EraseEmptyGrants(const TArray<TSubclassOf<UAbility>>& Ca
 	// a resolution here could start a sibling that is about to be removed.
 	if (IsValid(ActiveAbility) && Candidates.Contains(ActiveAbility->GetClass()))
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, true);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
 	}
 
 	bool bAnyErased = false;
@@ -1111,6 +1126,7 @@ void UAbilityComponent::StartCooldown(const FGameplayTag AbilityId, const float 
 	{
 		CooldownState.AbilityIds.Add(AbilityId);
 		CooldownState.EndTimes.Add(EndTime);
+		CooldownState.Durations.Add(Duration);
 	}
 }
 
@@ -1139,22 +1155,22 @@ bool UAbilityComponent::IsAbilityOnCooldown(const FGameplayTag AbilityId) const
 
 float UAbilityComponent::GetAbilityCooldownProgress(const FGameplayTag AbilityId) const
 {
-	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
-	const UAbility* Defaults = GetAbilityCDO(AbilityClass);
+	const int32 Index = FindCooldownIndex(AbilityId);
 
-	if (!IsValid(Defaults) || Defaults->GetCooldownDuration() <= 0.0f)
+	if (Index == INDEX_NONE || CooldownState.Durations[Index] <= 0.0f)
 	{
 		return 0.0f;
 	}
 
 	const float Remaining = GetAbilityCooldownRemaining(AbilityId);
+
 	if (Remaining <= 0.0f)
 	{
 		return 0.0f;
 	}
 
 	// Remaining fraction: 1 at start of cooldown, 0 when ready.
-	return FMath::Clamp(Remaining / Defaults->GetCooldownDuration(), 0.0f, 1.0f);
+	return FMath::Clamp(Remaining / CooldownState.Durations[Index], 0.0f, 1.0f);
 }
 
 float UAbilityComponent::GetCurrentFocus() const
@@ -1167,14 +1183,14 @@ float UAbilityComponent::GetCurrentFocus() const
 bool UAbilityComponent::CanAffordAbility(const FGameplayTag AbilityId) const
 {
 	const TSubclassOf<UAbility> AbilityClass = FindAbilityClassById(AbilityId);
-	const UAbility* Defaults = GetAbilityCDO(AbilityClass);
+	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(AbilityClass));
 
 	if (!IsValid(Defaults))
 	{
 		return false;
 	}
 
-	const float Cost = Defaults->GetFocusCost();
+	const float Cost = ResolveFocusCost(Defaults);
 	if (Cost <= 0.0f)
 	{
 		return true;
@@ -1189,9 +1205,9 @@ bool UAbilityComponent::CanAffordAbility(const FGameplayTag AbilityId) const
 	return GetCurrentFocus() >= Cost;
 }
 
-void UAbilityComponent::SpendAbilityCost(const UAbility* Ability)
+void UAbilityComponent::SpendAbilityCost(const UActiveAbility* Ability)
 {
-	const float Cost = Ability->GetFocusCost();
+	const float Cost = ResolveFocusCost(Ability);
 
 	if (Cost > 0.0f && IsValid(ResourceComponent))
 	{
@@ -1199,7 +1215,7 @@ void UAbilityComponent::SpendAbilityCost(const UAbility* Ability)
 	}
 }
 
-bool UAbilityComponent::ChargeRepeatedCost(const UAbility* Ability)
+bool UAbilityComponent::ChargeRepeatedCost(const UActiveAbility* Ability)
 {
 	if (!CanAffordAbility(Ability->GetAbilityId()))
 	{
@@ -1210,7 +1226,7 @@ bool UAbilityComponent::ChargeRepeatedCost(const UAbility* Ability)
 	return true;
 }
 
-bool UAbilityComponent::ApplyEventCost(UAbility* Ability, const FGameplayTag EventTag)
+bool UAbilityComponent::ApplyEventCost(UActiveAbility* Ability, const FGameplayTag EventTag)
 {
 	const EAbilityCostTrigger Trigger = Ability->GetCostTrigger();
 
@@ -1252,7 +1268,7 @@ float UAbilityComponent::GetLongestBufferDurationForInput(FGameplayTag InputTag)
 
 	for (const TSubclassOf<UAbility> AbilityClass : GrantedAbilityClasses)
 	{
-		const UAbility* AbilityCDO = GetAbilityCDO(AbilityClass);
+		const UActiveAbility* AbilityCDO = Cast<UActiveAbility>(GetAbilityCDO(AbilityClass));
 
 		if (!IsValid(AbilityCDO) ||
 			!AbilityCDO->GetActivationInputTag().MatchesTagExact(InputTag))
@@ -1265,14 +1281,14 @@ float UAbilityComponent::GetLongestBufferDurationForInput(FGameplayTag InputTag)
 
 	return LongestDuration;
 }
-void UAbilityComponent::SetAbilityTransitionOpen(UAbility* RequestingAbility, bool bOpen)
+void UAbilityComponent::SetAbilityTransitionOpen(UActiveAbility* RequestingAbility, const bool bOpen)
 {
 	if (!IsValid(RequestingAbility) ||
 		RequestingAbility != ActiveAbility ||
 		RequestingAbility->GetAbilityStatus() != EAbilityStatus::Active ||
 		bEndingAbility)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[Transition] Open rejected."));
+		UE_LOG(LogTemp, Verbose, TEXT("[Transition] Open rejected."));
 		return;
 	}
 
@@ -1280,7 +1296,7 @@ void UAbilityComponent::SetAbilityTransitionOpen(UAbility* RequestingAbility, bo
 
 	UE_LOG(
 		LogTemp,
-		Warning,
+		Verbose,
 		TEXT("[Transition] %s | Ability=%s | Dispatching=%d | Resolving=%d"),
 		bOpen ? TEXT("OPENED") : TEXT("CLOSED"),
 		*GetNameSafe(RequestingAbility),
@@ -1296,14 +1312,14 @@ void UAbilityComponent::SetAbilityTransitionOpen(UAbility* RequestingAbility, bo
 	if (bDispatchingAbilityCallback)
 	{
 		bResolveBufferedInputAfterCallback = true;
-		UE_LOG(LogTemp, Warning, TEXT("[Transition] Resolution deferred until callback returns."));
+		UE_LOG(LogTemp, Verbose, TEXT("[Transition] Resolution deferred until callback returns."));
 		return;
 	}
 
 	if (!bResolvingBufferedInput)
 	{
 		const bool bResolved = ResolveBufferedAbilityInput();
-		UE_LOG(LogTemp, Warning, TEXT("[Transition] Immediate resolution result=%d"), bResolved);
+		UE_LOG(LogTemp, Verbose, TEXT("[Transition] Immediate resolution result=%d"), bResolved);
 	}
 }
 int32 UAbilityComponent::FindRankIndex(const FGameplayTag AbilityId) const
@@ -1402,4 +1418,114 @@ void UAbilityComponent::HandleInput(const FGameplayTag InputTag, const bool bPre
 	{
 		HandleInputReleased(InputTag);
 	}
+}
+void UAbilityComponent::ApplyModifiers(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& Modifiers, const int32 Rank, const FGameplayTagContainer& GrantedTags, const float Duration)
+{
+	const double ExpiresAt = Duration > 0.0f ? GetWorldTime() + Duration : 0.0;
+
+	ModifierContainer.Apply(ResolveGrantSource(Source), EntryKey, Modifiers, FMath::Max(Rank, 1), GrantedTags, ExpiresAt);
+	HandleModifiersChanged();
+}
+
+bool UAbilityComponent::RemoveModifierEntry(const UObject* Source, const FName EntryKey)
+{
+	if (!ModifierContainer.Remove(ResolveGrantSource(Source), EntryKey))
+	{
+		return false;
+	}
+
+	HandleModifiersChanged();
+	return true;
+}
+
+bool UAbilityComponent::RemoveModifiersFromSource(const UObject* Source)
+{
+	if (!ModifierContainer.RemoveAll(ResolveGrantSource(Source)))
+	{
+		return false;
+	}
+
+	HandleModifiersChanged();
+	return true;
+}
+
+bool UAbilityComponent::HasModifierEntry(const UObject* Source, const FName EntryKey) const
+{
+	return ModifierContainer.Contains(ResolveGrantSource(Source), EntryKey);
+}
+
+float UAbilityComponent::GetModifiedValue(const FGameplayTag Stat, const float BaseValue, const FGameplayTagContainer& AbilityTags) const
+{
+	return ModifierContainer.Evaluate(Stat, BaseValue, AbilityTags, GetOwnedGameplayTags(), GetWorldTime());
+}
+
+void UAbilityComponent::HandleModifiersChanged()
+{
+	ScheduleModifierExpiry();
+
+	// Entries can grant tags, so owner-tag listeners refresh along with modifier listeners.
+	BroadcastOwnedTagsChanged();
+	ModifiersChangedEvent.Broadcast();
+}
+
+void UAbilityComponent::ScheduleModifierExpiry()
+{
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	TimerManager.ClearTimer(ModifierExpiryTimer);
+
+	const double NextExpiry = ModifierContainer.GetNextExpiryTime();
+
+	if (NextExpiry <= 0.0)
+	{
+		return;
+	}
+
+	const float Delay = FMath::Max(static_cast<float>(NextExpiry - World->GetTimeSeconds()), UE_KINDA_SMALL_NUMBER);
+	TimerManager.SetTimer(ModifierExpiryTimer, this, &UAbilityComponent::HandleModifierExpiry, Delay, false);
+}
+
+void UAbilityComponent::HandleModifierExpiry()
+{
+	if (ModifierContainer.PruneExpired(GetWorldTime()))
+	{
+		HandleModifiersChanged();
+	}
+	else
+	{
+		ScheduleModifierExpiry();
+	}
+}
+
+double UAbilityComponent::GetWorldTime() const
+{
+	const UWorld* World = GetWorld();
+	return IsValid(World) ? World->GetTimeSeconds() : 0.0;
+}
+float UAbilityComponent::ResolveFocusCost(const UActiveAbility* Ability) const
+{
+	return FMath::Max(
+		GetModifiedValue(AbilitySystemTags::Stat_Cost, Ability->GetFocusCost(), Ability->GetAbilityTags()),
+		0.0f
+	);
+}
+
+float UAbilityComponent::ResolveCooldownDuration(const UActiveAbility* Ability) const
+{
+	return FMath::Max(
+		GetModifiedValue(AbilitySystemTags::Stat_Cooldown, Ability->GetCooldownDuration(), Ability->GetAbilityTags()),
+		0.0f
+	);
+}
+
+float UAbilityComponent::GetAbilityFocusCost(const FGameplayTag AbilityId) const
+{
+	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(FindAbilityClassById(AbilityId)));
+	return IsValid(Defaults) ? ResolveFocusCost(Defaults) : 0.0f;
 }

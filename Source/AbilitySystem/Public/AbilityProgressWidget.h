@@ -59,10 +59,10 @@ protected:
 
 private:
 	UFUNCTION()
-	void HandleAbilityActivated(FGameplayTag AbilityId, UAbility* Ability);
+	void HandleAbilityActivated(FGameplayTag AbilityId, UActiveAbility* Ability);
 
 	UFUNCTION()
-	void HandleAbilityEnded(FGameplayTag AbilityId, UAbility* Ability, EAbilityEndReason EndReason);
+	void HandleAbilityEnded(FGameplayTag AbilityId, UActiveAbility* Ability, EAbilityEndReason EndReason);
 
 	void EvaluateActiveAbility();
 	void TickFill();

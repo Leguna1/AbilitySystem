@@ -6,6 +6,13 @@
 #include "TargetingComponent.h"
 #include "TimerManager.h"
 
+
+void UProjectileBarrageAbility::ActivateAbility_Implementation()
+{
+	ResolvedImpactRadius = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_Radius, ImpactRadius), 0.0f);
+
+	Super::ActivateAbility_Implementation();
+}
 UProjectileBarrageAbility::UProjectileBarrageAbility()
 {
 	CostTrigger = EAbilityCostTrigger::OnAnimationEvent;
@@ -136,13 +143,13 @@ FVector UProjectileBarrageAbility::ResolveBarrageImpactPoint_Implementation(cons
 
 	FVector CandidatePoint = TargetCenter;
 
-	if (ProjectileCount > 1 && ImpactRadius > KINDA_SMALL_NUMBER)
+	if (ProjectileCount > 1 && ResolvedImpactRadius > KINDA_SMALL_NUMBER)
 	{
 		const float GoldenAngle = 137.507764f;
 		const float NormalizedIndex = static_cast<float>(ProjectileIndex + 1) /
 			static_cast<float>(ProjectileCount);
 
-		const float Radius = FMath::Sqrt(NormalizedIndex) * ImpactRadius;
+		const float Radius = FMath::Sqrt(NormalizedIndex) * ResolvedImpactRadius;
 		const float AngleDegrees = GoldenAngle * static_cast<float>(ProjectileIndex);
 
 		const FVector OffsetDirection = FVector::ForwardVector.RotateAngleAxis(

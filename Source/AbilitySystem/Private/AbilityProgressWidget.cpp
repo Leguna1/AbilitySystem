@@ -1,6 +1,7 @@
 #include "AbilityProgressWidget.h"
 
 #include "Ability.h"
+#include "ActiveAbility.h"
 #include "AbilityComponent.h"
 #include "TimerManager.h"
 
@@ -43,12 +44,12 @@ void UAbilityProgressWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UAbilityProgressWidget::HandleAbilityActivated(FGameplayTag AbilityId, UAbility* Ability)
+void UAbilityProgressWidget::HandleAbilityActivated(FGameplayTag AbilityId, UActiveAbility* Ability)
 {
 	EvaluateActiveAbility();
 }
 
-void UAbilityProgressWidget::HandleAbilityEnded(FGameplayTag AbilityId, UAbility* Ability, EAbilityEndReason EndReason)
+void UAbilityProgressWidget::HandleAbilityEnded(FGameplayTag AbilityId, UActiveAbility* Ability, EAbilityEndReason EndReason)
 {
 	// The active ability is changing; re-evaluate against whatever is active now
 	// (may be nothing, or an immediate replacement).
@@ -63,7 +64,7 @@ void UAbilityProgressWidget::EvaluateActiveAbility()
 		return;
 	}
 
-	UAbility* Active = AbilityComponent->GetActiveAbility();
+	UActiveAbility* Active = AbilityComponent->GetActiveAbility();
 	if (!IsValid(Active) ||
 	Active->GetAbilityStatus() != EAbilityStatus::Active ||
 	!Active->GetClass()->ImplementsInterface(UAbilityProgressProvider::StaticClass()))
@@ -102,7 +103,7 @@ void UAbilityProgressWidget::TickFill()
 		return;
 	}
 
-	UAbility* Active = AbilityComponent->GetActiveAbility();
+	UActiveAbility* Active = AbilityComponent->GetActiveAbility();
 	
 	if (!IsValid(Active) ||
 	Active->GetAbilityStatus() != EAbilityStatus::Active ||

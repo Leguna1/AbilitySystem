@@ -54,6 +54,14 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 	}
 
 	Bow->DiscardPreparedArrows();
+	
+	// Fixed for this execution, like ranks: a booster ending mid-volley doesn't change it.
+	ResolvedDamageMultiplier = FMath::Max(
+		GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageMultiplierByRank)),
+		0.0f
+	);
+
+	ResolvedProjectileCount = ResolveProjectileCount();
 
 	Super::ActivateAbility_Implementation();
 }
@@ -115,19 +123,25 @@ bool URangedAttackAbility::HasPreparedProjectile() const
 }
 int32 URangedAttackAbility::GetProjectileCount() const
 {
+	return ResolvedProjectileCount;
+}
+int32 URangedAttackAbility::ResolveProjectileCount() const
+{
 	const int32 SocketCount = ProjectileHandSocketNames.Num();
 
-	if (ProjectileCountByRank.Values.IsEmpty())
-	{
-		return SocketCount;
-	}
+	const int32 BaseCount = ProjectileCountByRank.Values.IsEmpty()
+		? SocketCount
+		: GetRankedInt(ProjectileCountByRank);
 
-	return FMath::Clamp(GetRankedInt(ProjectileCountByRank), 1, SocketCount);
+	return FMath::Clamp(
+		GetModifiedInt(AbilitySystemTags::Stat_ProjectileCount, BaseCount),
+		1,
+		SocketCount
+	);
 }
-
 float URangedAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
 {
-	return GetRankedFloat(DamageMultiplierByRank);
+	return ResolvedDamageMultiplier;
 }
 
 void URangedAttackAbility::ResetProjectileCycle()

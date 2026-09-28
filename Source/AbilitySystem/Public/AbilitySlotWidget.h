@@ -8,6 +8,7 @@
 #include "AbilitySlotWidget.generated.h"
 
 class UAbility;
+class UActiveAbility;
 class UAbilityComponent;
 class UTexture2D;
 class UWidget;
@@ -51,7 +52,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	FText GetKeybindLabel() const { return KeybindLabel; }
 
-	/** Focus cost read from the ability's defaults. Static; set once at init. */
+	/** Current cost per payment, including modifiers. */
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	float GetFocusCost() const { return FocusCost; }
 
@@ -110,19 +111,23 @@ protected:
 	/** Called after OnSlotInitialized and whenever the rank changes. bLocked = rank 0: grey out / show a lock. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnRankChanged(int32 NewRank, int32 NewMaxRank, bool bLocked);
+	
+	/** Called on init and whenever modifiers change the cost. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnFocusCostChanged(float NewCost);
 
 private:
 	UFUNCTION()
 	UWidget* GetTooltipWidget();
 
 	UFUNCTION()
-	void HandleAbilityActivated(FGameplayTag AbilityId, UAbility* Ability);
+	void HandleAbilityActivated(FGameplayTag AbilityId, UActiveAbility* Ability);
 
 	UFUNCTION()
-	void HandleAbilityEnded(FGameplayTag AbilityId, UAbility* Ability, EAbilityEndReason EndReason);
+	void HandleAbilityEnded(FGameplayTag AbilityId, UActiveAbility* Ability, EAbilityEndReason EndReason);
 
 	UFUNCTION()
-	void HandleAbilityCommitted(FGameplayTag AbilityId, UAbility* Ability);
+	void HandleAbilityCommitted(FGameplayTag AbilityId, UActiveAbility* Ability);
 
 	UFUNCTION()
 	void HandleResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
@@ -188,4 +193,9 @@ private:
 
 	UPROPERTY(Transient)
 	bool bIsActive = false;
+	
+	UFUNCTION()
+	void HandleModifiersChanged();
+
+	void RefreshFocusCost();
 };
