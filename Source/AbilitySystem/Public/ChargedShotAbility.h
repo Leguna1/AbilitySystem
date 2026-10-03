@@ -124,6 +124,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging")
 	bool bAutoReleaseAtMaximumCharge = true;
+	/**
+ * Auto-release jumps straight to Recovery at full charge. When false, the
+ * current Charge loop finishes first (smoother pose, but a variable delay).
+ */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging", meta = (EditCondition = "bAutoReleaseAtMaximumCharge"))
+	bool bImmediateReleaseAtMaximumCharge = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Interruption")
 	EChargeInterruptionResponse MovementInterruptionResponse = EChargeInterruptionResponse::Cancel;

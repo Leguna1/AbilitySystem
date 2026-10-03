@@ -17,6 +17,8 @@ class UMotionWarpingComponent;
 class UResourceComponent;
 class UTargetingComponent;
 class UAnimSequenceBase;
+class UCombatantComponent;
+class UPassiveAbility;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
@@ -254,6 +256,18 @@ public:
 	/** Focus cost per payment, including modifiers. What the hotbar shows and what a payment spends. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
 	float GetAbilityFocusCost(FGameplayTag AbilityId) const;
+	
+	/** Forwards a gameplay event from an ability to every active passive. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
+	void BroadcastGameplayEvent(FGameplayTag EventTag, UActiveAbility* Source);
+	
+	/** Sets the UI stack count of an active entry (e.g. remaining charges). */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
+	bool SetModifierEntryStacks(const UObject* Source, FName EntryKey, int32 Stacks);
+
+	/** Every active effect (keyed entries) with display data, in application order. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
+	void GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -385,4 +399,39 @@ private:
 	
 	float ResolveFocusCost(const UActiveAbility* Ability) const;
 	float ResolveCooldownDuration(const UActiveAbility* Ability) const;
+	
+	/* -------------------- Passives -------------------- */
+
+	UPassiveAbility* FindPassiveInstance(TSubclassOf<UAbility> AbilityClass) const;
+	void CreatePassiveInstance(TSubclassOf<UAbility> AbilityClass);
+	void DestroyPassiveInstance(TSubclassOf<UAbility> AbilityClass);
+
+	/** Re-snapshots the passive's rank and re-applies its modifiers at the new rank. */
+	void RefreshPassiveRank(TSubclassOf<UAbility> AbilityClass);
+
+	/** Calls Func on every active passive. Iterates a copy, so passives may grant or revoke abilities from inside. */
+	void ForEachActivePassive(TFunctionRef<void(UPassiveAbility*)> Func);
+
+	UFUNCTION()
+	void HandleOwnerDamageDealt(AActor* Target, const FAbilityPayload& Payload, float DamageApplied);
+
+	UFUNCTION()
+	void HandleOwnerPayloadReceived(const FAbilityPayload& Payload, float DamageApplied);
+
+	UFUNCTION()
+	void HandleOwnerKilled(AActor* Victim);
+
+	UFUNCTION()
+	void HandleOwnerDied(AActor* Killer);
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UPassiveAbility>> PassiveInstances;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UCombatantComponent> CombatantComponent;
+	
+	void ApplyMovementSpeed();
+
+	/** Walk speed before modifiers, captured at BeginPlay. */
+	float BaseMaxWalkSpeed = 0.0f;
 };

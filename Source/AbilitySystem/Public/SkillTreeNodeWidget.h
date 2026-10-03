@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GameplayTagContainer.h"
 #include "SkillTreeComponent.h"
+#include "SkillTreeAsset.h"
 #include "SkillTreeNodeWidget.generated.h"
 
 class UAbility;
@@ -67,6 +68,9 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
 	int32 GetMaxRank() const { return MaxRank; }
 
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	ESkillNodeKind GetKind() const { return Kind; }
+	
 protected:
 	/** Populate static visuals (icon, name, cost) here. Called once after init. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Skill Tree|UI")
@@ -78,6 +82,8 @@ protected:
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Skill Tree|UI")
 	void OnNodeStateChanged(ESkillNodeState NewState, bool bCanUnlockNow, bool bCanRefundNow);
+	
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
 	UPROPERTY(Transient)
@@ -106,4 +112,7 @@ private:
 
 	UPROPERTY(Transient)
 	int32 MaxRank = 0;
+	
+	UPROPERTY(Transient)
+	ESkillNodeKind Kind = ESkillNodeKind::Skill;
 };

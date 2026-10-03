@@ -23,7 +23,10 @@ enum class ESkillNodeState : uint8
 	Unlocked UMETA(DisplayName = "Unlocked"),
 
 	/** At max rank. */
-	Maxed UMETA(DisplayName = "Maxed")
+	Maxed UMETA(DisplayName = "Maxed"),
+	
+	/** Rank 0 and blocked by a bought node in the same exclusive group. */
+	Excluded UMETA(DisplayName = "Excluded")
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSkillTreeChangedSignature);
@@ -118,6 +121,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|Events")
 	FSkillPointsChangedSignature OnSkillPointsChanged;
+	
+	/** True if another node in this node's exclusive group has bought ranks. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree")
+	bool IsNodeExcluded(FGameplayTag NodeId) const;
 
 protected:
 	virtual void BeginPlay() override;
@@ -145,4 +152,8 @@ private:
 	/** Points earned over the whole game. Available = Total - Spent. */
 	UPROPERTY(Transient)
 	int32 TotalSkillPoints = 0;
+	
+	/** Grants every passive the tree references (locked at rank 0 until bought). */
+	void GrantTreePassives();
+	void RevokeTreePassives();
 };

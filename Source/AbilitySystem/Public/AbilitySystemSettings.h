@@ -26,4 +26,8 @@ public:
 
 	UPROPERTY(Config, EditAnywhere, Category = "Impacts|Environment", meta = (ClampMin = "0.1", ClampMax = "3.0"))
 	float EnvironmentPitchMax = 1.05f;
+	
+	/** Every delivered hit is scaled by a random factor in [1 - this, 1 + this]. 0 = no variance. */
+	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "0.5"))
+	float DamageVariance = 0.07f;
 };

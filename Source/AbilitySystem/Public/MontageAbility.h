@@ -29,6 +29,8 @@ public:
 	bool IsAbilityMontagePlaying() const;
 	
 	virtual bool AcceptsAnimationEvent(const UAnimSequenceBase* SourceAnimation) const override;
+	
+	virtual void OnMovementInputReceived_Implementation(FVector2D MovementInput) override;
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Montage")
@@ -122,6 +124,18 @@ protected:
 
 	/** Installs (or clears) the distance warp target for the given montage. Called on play. */
 	void ApplyRootMotionDistanceWarp() const;
+	
+	/** From this event on, movement input ends the ability (recovery cancel). Empty = movement never cancels. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Movement Cancel")
+	FGameplayTag MovementCancelEventTag;
+
+	/** Blend-out used when movement ends the ability. Short keeps it responsive. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Movement Cancel", meta = (ClampMin = "0.0"))
+	float MovementCancelBlendOutTime = 0.12f;
+
+	/** Movement input below this size never cancels (stick drift, tiny taps). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Movement Cancel", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MovementCancelDeadZone = 0.3f;
 
 private:
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
@@ -129,4 +143,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> ActiveMontage;
+	
+	bool bMovementCancelOpen = false;
+	bool bEndedByMovement = false;
 };

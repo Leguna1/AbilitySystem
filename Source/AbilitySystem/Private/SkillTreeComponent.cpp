@@ -2,6 +2,7 @@
 
 #include "Ability.h"
 #include "AbilityComponent.h"
+#include "PassiveAbility.h"
 #include "SkillTreeAsset.h"
 
 USkillTreeComponent::USkillTreeComponent()
@@ -24,12 +25,15 @@ void USkillTreeComponent::BeginPlay()
 
 	// Every rank change (purchase, refund, save load, debug) refreshes the tree through one path.
 	AbilityComponent->AbilityRankChangedEvent.AddDynamic(this, &USkillTreeComponent::HandleAbilityRankChanged);
+	
+	GrantTreePassives();
 }
 
 void USkillTreeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (IsValid(AbilityComponent))
 	{
+		RevokeTreePassives();
 		AbilityComponent->AbilityRankChangedEvent.RemoveDynamic(this, &USkillTreeComponent::HandleAbilityRankChanged);
 	}
 
@@ -38,7 +42,11 @@ void USkillTreeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void USkillTreeComponent::SetTreeAsset(USkillTreeAsset* InTreeAsset)
 {
+	RevokeTreePassives();
+
 	TreeAsset = InTreeAsset;
+
+	GrantTreePassives();
 	BroadcastTreeChanged();
 }
 
@@ -131,6 +139,11 @@ ESkillNodeState USkillTreeComponent::GetNodeState(const FGameplayTag NodeId) con
 			: ESkillNodeState::Unlocked;
 	}
 
+	if (IsNodeExcluded(NodeId))
+	{
+		return ESkillNodeState::Excluded;
+	}
+
 	return ArePrerequisitesMet(NodeId)
 		? ESkillNodeState::Available
 		: ESkillNodeState::Locked;
@@ -161,10 +174,11 @@ bool USkillTreeComponent::CanUnlockNode(const FGameplayTag NodeId) const
 	const FSkillTreeNode* Node = FindValidNode(NodeId);
 
 	return Node &&
-		IsValid(AbilityComponent) &&
-		ArePrerequisitesMet(NodeId) &&
-		GetNodeRank(NodeId) < GetNodeMaxRank(NodeId) &&
-		GetAvailableSkillPoints() >= Node->Cost;
+	IsValid(AbilityComponent) &&
+	!IsNodeExcluded(NodeId) &&
+	ArePrerequisitesMet(NodeId) &&
+	GetNodeRank(NodeId) < GetNodeMaxRank(NodeId) &&
+	GetAvailableSkillPoints() >= Node->Cost;
 }
 
 bool USkillTreeComponent::CanRefundNode(const FGameplayTag NodeId) const
@@ -230,4 +244,54 @@ void USkillTreeComponent::BroadcastTreeChanged()
 {
 	OnSkillPointsChanged.Broadcast(GetAvailableSkillPoints());
 	OnSkillTreeChanged.Broadcast();
+}
+bool USkillTreeComponent::IsNodeExcluded(const FGameplayTag NodeId) const
+{
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
+
+	// A node that already has bought ranks is the one doing the excluding.
+	if (!Node || Node->ExclusiveGroup.IsNone() || GetNodeLearnedRank(NodeId) > 0)
+	{
+		return false;
+	}
+
+	for (const FSkillTreeNode& Other : TreeAsset->Nodes)
+	{
+		if (Other.ExclusiveGroup == Node->ExclusiveGroup &&
+			!Other.NodeId.MatchesTagExact(NodeId) &&
+			GetNodeLearnedRank(Other.NodeId) > 0)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void USkillTreeComponent::GrantTreePassives()
+{
+	if (!IsValid(AbilityComponent) || !IsValid(TreeAsset))
+	{
+		return;
+	}
+
+	TArray<TSubclassOf<UAbility>> Passives;
+
+	for (const FSkillTreeNode& Node : TreeAsset->Nodes)
+	{
+		if (Node.AbilityClass && Node.AbilityClass->IsChildOf(UPassiveAbility::StaticClass()))
+		{
+			Passives.AddUnique(Node.AbilityClass);
+		}
+	}
+
+	AbilityComponent->GrantAbilities(Passives, this);
+}
+
+void USkillTreeComponent::RevokeTreePassives()
+{
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->RevokeAbilitiesFromSource(this);
+	}
 }

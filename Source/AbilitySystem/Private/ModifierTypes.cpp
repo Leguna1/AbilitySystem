@@ -1,6 +1,6 @@
 #include "ModifierTypes.h"
 
-void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& InModifiers, const int32 Rank, const FGameplayTagContainer& InGrantedTags, const double ExpiresAt)
+void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& InModifiers, const int32 Rank, const FGameplayTagContainer& InGrantedTags, const double ExpiresAt, float Duration)
 {
 	const FObjectKey SourceKey(Source);
 	int32 Index = FindEntry(SourceKey, EntryKey);
@@ -32,6 +32,7 @@ void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, 
 
 	Entry.GrantedTags = InGrantedTags;
 	Entry.ExpiresAt = ExpiresAt;
+	Entry.Duration = FMath::Max(Duration, 0.0f);
 }
 
 bool FStatModifierContainer::Remove(const UObject* Source, const FName EntryKey)
@@ -150,4 +151,16 @@ int32 FStatModifierContainer::FindEntry(const FObjectKey& SourceKey, const FName
 	}
 
 	return INDEX_NONE;
+}
+bool FStatModifierContainer::SetStacks(const UObject* Source, const FName EntryKey, const int32 Stacks)
+{
+	const int32 Index = FindEntry(FObjectKey(Source), EntryKey);
+
+	if (Index == INDEX_NONE || Entries[Index].Stacks == Stacks)
+	{
+		return false;
+	}
+
+	Entries[Index].Stacks = Stacks;
+	return true;
 }

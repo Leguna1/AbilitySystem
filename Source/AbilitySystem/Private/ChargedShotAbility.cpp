@@ -285,7 +285,10 @@ bool UChargedShotAbility::HandleMaximumCharge()
 	{
 		return RequestChargedRelease(false);
 	}
-
+	if (bAutoReleaseAtMaximumCharge)
+	{
+		return RequestChargedRelease(bImmediateReleaseAtMaximumCharge);
+	}
 	/*
 	 * Remain in the looping Charge section at maximum strength until another
 	 * release source calls RequestChargedRelease().

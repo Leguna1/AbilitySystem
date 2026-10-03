@@ -195,3 +195,10 @@ FVector2D UActiveAbility::GetMovementInput() const
 	const UAbilityComponent* Component = GetAbilityComponent();
 	return IsValid(Component) ? Component->GetMovementInput() : FVector2D::ZeroVector;
 }
+void UActiveAbility::SendGameplayEvent(const FGameplayTag EventTag)
+{
+	if (UAbilityComponent* Component = GetAbilityComponent())
+	{
+		Component->BroadcastGameplayEvent(EventTag, this);
+	}
+}

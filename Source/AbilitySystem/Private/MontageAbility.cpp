@@ -5,6 +5,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "MotionWarpingComponent.h"
+#include "AbilitySystemTags.h"
 
 void UMontageAbility::ActivateAbility_Implementation()
 {
@@ -18,7 +19,9 @@ void UMontageAbility::ActivateAbility_Implementation()
 
 void UMontageAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
-	const float BlendOutTime = EndReason == EAbilityEndReason::EarlyCancelled
+	const float BlendOutTime = bEndedByMovement
+	? MovementCancelBlendOutTime
+	: EndReason == EAbilityEndReason::EarlyCancelled
 		? EarlyCancellationBlendOutTime
 		: EndBlendOutTime;
 
@@ -43,9 +46,12 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 
 	ActiveMontage = nullptr;
 
+	// Attack-speed modifiers scale every montage this ability plays (each combo step reads it anew).
+	const float EffectivePlayRate = PlayRate * FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_AttackSpeed, 1.0f), 0.1f);
+
 	const float Duration = AnimInstance->Montage_Play(
 		Montage,
-		PlayRate,
+		EffectivePlayRate,
 		EMontagePlayReturnType::MontageLength,
 		0.0f,
 		true
@@ -152,6 +158,7 @@ void UMontageAbility::OnAbilityMontageEnded_Implementation(UAnimMontage* Montage
 		return;
 	}
 
+	
 	RequestEndAbility();
 }
 
@@ -169,6 +176,11 @@ void UMontageAbility::OnAnimationEvent_Implementation(const FGameplayTag EventTa
 		EventTag.MatchesTagExact(CloseEarlyCancellationEventTag))
 	{
 		CloseEarlyCancellation();
+	}
+	if (MovementCancelEventTag.IsValid() &&
+	EventTag.MatchesTagExact(MovementCancelEventTag))
+	{
+		bMovementCancelOpen = true;
 	}
 }
 
@@ -252,4 +264,20 @@ void UMontageAbility::ApplyRootMotionDistanceWarp() const
 		TargetLocation,
 		Character->GetActorRotation()
 	);
+}
+void UMontageAbility::OnMovementInputReceived_Implementation(const FVector2D MovementInput)
+{
+	Super::OnMovementInputReceived_Implementation(MovementInput);
+
+	if (!bMovementCancelOpen ||
+		bEndedByMovement ||
+		GetAbilityStatus() != EAbilityStatus::Active ||
+		MovementInput.SizeSquared() <= FMath::Square(MovementCancelDeadZone))
+	{
+		return;
+	}
+
+	// The meaningful part is done, so this counts as a normal finish.
+	bEndedByMovement = true;
+	RequestEndAbility();
 }

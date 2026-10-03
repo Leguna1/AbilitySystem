@@ -9,6 +9,9 @@
 #include "AbilitySystemTags.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "PassiveAbility.h"
+#include "CombatantComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -33,6 +36,27 @@ void UAbilityComponent::BeginPlay()
 		return;
 	}
 
+	if (const UCharacterMovementComponent* Movement = OwningCharacter->GetCharacterMovement())
+	{
+		BaseMaxWalkSpeed = Movement->MaxWalkSpeed;
+	}
+	// Passives need the owning character, so their instances are created here,
+	// not at grant time during InitializeComponent.
+	for (const TSubclassOf<UAbility>& AbilityClass : GrantedAbilityClasses)
+	{
+		CreatePassiveInstance(AbilityClass);
+	}
+
+	CombatantComponent = GetOwner()->FindComponentByClass<UCombatantComponent>();
+
+	if (IsValid(CombatantComponent))
+	{
+		CombatantComponent->OnDamageDealt.AddDynamic(this, &UAbilityComponent::HandleOwnerDamageDealt);
+		CombatantComponent->OnPayloadReceived.AddDynamic(this, &UAbilityComponent::HandleOwnerPayloadReceived);
+		CombatantComponent->OnKilled.AddDynamic(this, &UAbilityComponent::HandleOwnerKilled);
+		CombatantComponent->OnDied.AddDynamic(this, &UAbilityComponent::HandleOwnerDied);
+	}
+	
 	if (!IsValid(InputBufferComponent))
 	{
 		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires UInputBufferComponent on %s."), *GetNameSafe(GetOwner()));
@@ -69,6 +93,24 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 	{
 		World->GetTimerManager().ClearTimer(ModifierExpiryTimer);
 	}
+	
+	if (IsValid(CombatantComponent))
+	{
+		CombatantComponent->OnDamageDealt.RemoveDynamic(this, &UAbilityComponent::HandleOwnerDamageDealt);
+		CombatantComponent->OnPayloadReceived.RemoveDynamic(this, &UAbilityComponent::HandleOwnerPayloadReceived);
+		CombatantComponent->OnKilled.RemoveDynamic(this, &UAbilityComponent::HandleOwnerKilled);
+		CombatantComponent->OnDied.RemoveDynamic(this, &UAbilityComponent::HandleOwnerDied);
+	}
+
+	for (UPassiveAbility* Passive : PassiveInstances)
+	{
+		if (IsValid(Passive))
+		{
+			Passive->DeactivatePassive();
+		}
+	}
+
+	PassiveInstances.Reset();
 	
 	Super::EndPlay(EndPlayReason);
 }
@@ -532,6 +574,11 @@ bool UAbilityComponent::CommitAbility(UActiveAbility* RequestingAbility)
 	{
 		RequestingAbility->OnAbilityCommitted();
 		AbilityCommittedEvent.Broadcast(RequestingAbility->GetAbilityId(), RequestingAbility);
+		
+		ForEachActivePassive([RequestingAbility](UPassiveAbility* Passive)
+		{
+			Passive->OnAbilityCommitted(RequestingAbility);
+		});
 	});
 
 	return true;
@@ -845,8 +892,16 @@ bool UAbilityComponent::ActivateAbilityInstance(UActiveAbility* Ability)
 	DispatchAbilityCallback([this, ActivatedAbility]()
 	{
 		AbilityActivatedEvent.Broadcast(ActivatedAbility->GetAbilityId(), ActivatedAbility);
+		
+		// Before ActivateAbility, so an effect a passive applies here still reaches this execution's snapshot.
+		ForEachActivePassive([ActivatedAbility](UPassiveAbility* Passive)
+		{
+			Passive->OnAbilityActivated(ActivatedAbility);
+		});
 		ActivatedAbility->ActivateAbility();
 	});
+	
+	
 
 	if (ActiveAbility != ActivatedAbility)
 	{
@@ -898,6 +953,11 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	{
 		EndingAbility->OnAbilityEnded(EndReason);
 		AbilityEndedEvent.Broadcast(EndingAbilityId, EndingAbility, EndReason);
+		
+		ForEachActivePassive([EndingAbility, EndReason](UPassiveAbility* Passive)
+		{
+			Passive->OnAbilityEnded(EndingAbility, EndReason);
+		});
 	});
 
 	EndingAbility->SetAbilityStatus(EAbilityStatus::Inactive);
@@ -1062,6 +1122,13 @@ bool UAbilityComponent::AddGrantInternal(const TSubclassOf<UAbility> AbilityClas
 	GrantedAbilitySources.AddDefaulted_GetRef().Sources.Add(SourceKey);
 
 	bOutClassAdded = true;
+	
+	// Grants during InitializeComponent are instanced in BeginPlay instead.
+	if (HasBegunPlay())
+	{
+		CreatePassiveInstance(AbilityClass);
+	}
+	
 	return true;
 }
 
@@ -1091,6 +1158,7 @@ void UAbilityComponent::EraseEmptyGrants(const TArray<TSubclassOf<UAbility>>& Ca
 			continue;
 		}
 
+		DestroyPassiveInstance(AbilityClass);
 		GrantedAbilityClasses.RemoveAt(GrantIndex);
 		GrantedAbilitySources.RemoveAt(GrantIndex);
 		bAnyErased = true;
@@ -1405,6 +1473,7 @@ int32 UAbilityComponent::SetLearnedRank(const TSubclassOf<UAbility> AbilityClass
 		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
 	}
 
+	RefreshPassiveRank(AbilityClass);
 	AbilityRankChangedEvent.Broadcast(AbilityId, OldRank, NewRank);
 	return NewRank;
 }
@@ -1423,7 +1492,7 @@ void UAbilityComponent::ApplyModifiers(const UObject* Source, const FName EntryK
 {
 	const double ExpiresAt = Duration > 0.0f ? GetWorldTime() + Duration : 0.0;
 
-	ModifierContainer.Apply(ResolveGrantSource(Source), EntryKey, Modifiers, FMath::Max(Rank, 1), GrantedTags, ExpiresAt);
+	ModifierContainer.Apply(ResolveGrantSource(Source), EntryKey, Modifiers, FMath::Max(Rank, 1), GrantedTags, ExpiresAt, Duration);
 	HandleModifiersChanged();
 }
 
@@ -1461,8 +1530,9 @@ float UAbilityComponent::GetModifiedValue(const FGameplayTag Stat, const float B
 
 void UAbilityComponent::HandleModifiersChanged()
 {
+	ApplyMovementSpeed();
 	ScheduleModifierExpiry();
-
+	
 	// Entries can grant tags, so owner-tag listeners refresh along with modifier listeners.
 	BroadcastOwnedTagsChanged();
 	ModifiersChangedEvent.Broadcast();
@@ -1528,4 +1598,185 @@ float UAbilityComponent::GetAbilityFocusCost(const FGameplayTag AbilityId) const
 {
 	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(FindAbilityClassById(AbilityId)));
 	return IsValid(Defaults) ? ResolveFocusCost(Defaults) : 0.0f;
+}
+UPassiveAbility* UAbilityComponent::FindPassiveInstance(const TSubclassOf<UAbility> AbilityClass) const
+{
+	for (UPassiveAbility* Passive : PassiveInstances)
+	{
+		if (IsValid(Passive) && Passive->GetClass() == AbilityClass)
+		{
+			return Passive;
+		}
+	}
+
+	return nullptr;
+}
+
+void UAbilityComponent::CreatePassiveInstance(const TSubclassOf<UAbility> AbilityClass)
+{
+	if (!AbilityClass ||
+		!AbilityClass->IsChildOf(UPassiveAbility::StaticClass()) ||
+		IsValid(FindPassiveInstance(AbilityClass)))
+	{
+		return;
+	}
+
+	UPassiveAbility* Passive = NewObject<UPassiveAbility>(this, AbilityClass);
+
+	if (!IsValid(Passive))
+	{
+		return;
+	}
+
+	Passive->InitializeAbility(this, OwningCharacter);
+	PassiveInstances.Add(Passive);
+
+	// No-op while the passive is rank 0 (granted but not learned).
+	Passive->ActivatePassive();
+}
+
+void UAbilityComponent::DestroyPassiveInstance(const TSubclassOf<UAbility> AbilityClass)
+{
+	UPassiveAbility* Passive = FindPassiveInstance(AbilityClass);
+
+	if (!IsValid(Passive))
+	{
+		return;
+	}
+
+	// Out of the list first, so its own deactivation can't receive further events.
+	PassiveInstances.Remove(Passive);
+	Passive->DeactivatePassive();
+}
+
+void UAbilityComponent::RefreshPassiveRank(const TSubclassOf<UAbility> AbilityClass)
+{
+	UPassiveAbility* Passive = FindPassiveInstance(AbilityClass);
+
+	if (!IsValid(Passive))
+	{
+		return;
+	}
+
+	Passive->DeactivatePassive();
+	Passive->InitializeAbility(this, OwningCharacter);
+	Passive->ActivatePassive();
+}
+
+void UAbilityComponent::ForEachActivePassive(const TFunctionRef<void(UPassiveAbility*)> Func)
+{
+	const TArray<TObjectPtr<UPassiveAbility>> Snapshot = PassiveInstances;
+
+	for (UPassiveAbility* Passive : Snapshot)
+	{
+		if (IsValid(Passive) && Passive->IsPassiveActive())
+		{
+			Func(Passive);
+		}
+	}
+}
+
+void UAbilityComponent::HandleOwnerDamageDealt(AActor* Target, const FAbilityPayload& Payload, const float DamageApplied)
+{
+	ForEachActivePassive([Target, &Payload, DamageApplied](UPassiveAbility* Passive)
+	{
+		Passive->OnDamageDealt(Target, Payload, DamageApplied);
+	});
+}
+
+void UAbilityComponent::HandleOwnerPayloadReceived(const FAbilityPayload& Payload, const float DamageApplied)
+{
+	ForEachActivePassive([&Payload, DamageApplied](UPassiveAbility* Passive)
+	{
+		Passive->OnPayloadReceived(Payload, DamageApplied);
+	});
+}
+
+void UAbilityComponent::HandleOwnerKilled(AActor* Victim)
+{
+	ForEachActivePassive([Victim](UPassiveAbility* Passive)
+	{
+		Passive->OnKilled(Victim);
+	});
+}
+
+void UAbilityComponent::HandleOwnerDied(AActor* Killer)
+{
+	ForEachActivePassive([Killer](UPassiveAbility* Passive)
+	{
+		Passive->OnDied(Killer);
+	});
+}
+void UAbilityComponent::BroadcastGameplayEvent(const FGameplayTag EventTag, UActiveAbility* Source)
+{
+	if (!EventTag.IsValid())
+	{
+		return;
+	}
+
+	ForEachActivePassive([EventTag, Source](UPassiveAbility* Passive)
+	{
+		Passive->OnGameplayEvent(EventTag, Source);
+	});
+}
+void UAbilityComponent::ApplyMovementSpeed()
+{
+	UCharacterMovementComponent* Movement = IsValid(OwningCharacter) ? OwningCharacter->GetCharacterMovement() : nullptr;
+
+	if (!IsValid(Movement) || BaseMaxWalkSpeed <= 0.0f)
+	{
+		return;
+	}
+
+	// Movement isn't an ability, so only unscoped modifiers apply.
+	Movement->MaxWalkSpeed = BaseMaxWalkSpeed * FMath::Max(
+		GetModifiedValue(AbilitySystemTags::Stat_MoveSpeed, 1.0f, FGameplayTagContainer()),
+		0.0f
+	);
+}
+bool UAbilityComponent::SetModifierEntryStacks(const UObject* Source, const FName EntryKey, const int32 Stacks)
+{
+	if (!ModifierContainer.SetStacks(ResolveGrantSource(Source), EntryKey, Stacks))
+	{
+		return false;
+	}
+
+	// No stats changed, but listeners such as the effects bar want the new count.
+	ModifiersChangedEvent.Broadcast();
+	return true;
+}
+
+void UAbilityComponent::GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const
+{
+	OutEffects.Reset();
+
+	const double Now = GetWorldTime();
+
+	for (const FModifierEntry& Entry : ModifierContainer.GetEntries())
+	{
+		// Key None is a passive's permanent entry: always-on bonuses aren't effects.
+		if (Entry.EntryKey.IsNone() || Entry.IsExpired(Now))
+		{
+			continue;
+		}
+
+		FActiveEffectInfo& Info = OutEffects.AddDefaulted_GetRef();
+		UObject* SourceObject = Entry.Source.ResolveObjectPtr();
+
+		Info.Source = SourceObject;
+		Info.EntryKey = Entry.EntryKey;
+		Info.Duration = Entry.Duration;
+		Info.Stacks = Entry.Stacks;
+		Info.GrantedTags = Entry.GrantedTags;
+		Info.RemainingTime = Entry.ExpiresAt > 0.0
+			? static_cast<float>(FMath::Max(Entry.ExpiresAt - Now, 0.0))
+			: -1.0f;
+
+		if (const UAbility* SourceAbility = Cast<UAbility>(SourceObject))
+		{
+			Info.DisplayName = SourceAbility->GetDisplayName();
+			Info.Description = SourceAbility->GetDescription();
+			Info.Icon = SourceAbility->GetIcon();
+		}
+	}
 }

@@ -1,5 +1,5 @@
 #include "RangedComboAttackAbility.h"
-
+#include "AbilitySystemTags.h"
 #include "Animation/AnimMontage.h"
 
 URangedComboAttackAbility::URangedComboAttackAbility()
@@ -164,4 +164,23 @@ void URangedComboAttackAbility::OnComboStepFinished_Implementation(int32 ComboIn
 
 void URangedComboAttackAbility::OnComboAdvanced_Implementation(int32 PreviousComboIndex, int32 NewComboIndex)
 {
+}
+float URangedComboAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
+{
+	const float BaseMultiplier = Super::ResolveProjectileDamageMultiplier_Implementation();
+
+	return IsFinalComboStep()
+		? BaseMultiplier * FMath::Max(GetRankedFloat(FinisherDamageMultiplierByRank), 0.0f)
+		: BaseMultiplier;
+}
+
+void URangedComboAttackAbility::OnProjectileReleased_Implementation(const float Strength)
+{
+	Super::OnProjectileReleased_Implementation(Strength);
+
+	// The finisher counts as soon as its arrow leaves the bow, hit or miss.
+	if (IsFinalComboStep())
+	{
+		SendGameplayEvent(AbilitySystemTags::Event_Combo_Finished);
+	}
 }

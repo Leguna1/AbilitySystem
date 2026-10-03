@@ -52,6 +52,13 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Ranged Combo")
 	void OnComboAdvanced(int32 PreviousComboIndex, int32 NewComboIndex);
 	virtual void OnComboAdvanced_Implementation(int32 PreviousComboIndex, int32 NewComboIndex);
+	
+	virtual float ResolveProjectileDamageMultiplier_Implementation() const override;
+	virtual void OnProjectileReleased_Implementation(float Strength) override;
+
+	/** Damage multiplier for the final combo step, by rank (on top of the normal multiplier). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged Combo")
+	FAbilityRankedFloat FinisherDamageMultiplierByRank = FAbilityRankedFloat(1.5f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged Combo")
 	TArray<TObjectPtr<UAnimMontage>> ComboMontages;

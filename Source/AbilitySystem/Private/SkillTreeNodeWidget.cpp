@@ -2,6 +2,7 @@
 
 #include "Ability.h"
 #include "SkillTreeAsset.h"
+#include "InputCoreTypes.h"
 
 void USkillTreeNodeWidget::InitializeNode(USkillTreeComponent* InTreeComponent, FGameplayTag InNodeId)
 {
@@ -25,6 +26,7 @@ void USkillTreeNodeWidget::InitializeNode(USkillTreeComponent* InTreeComponent, 
 		return;
 	}
 
+	Kind = Node->Kind;
 	Cost = Node->Cost;
 	CanvasPosition = Node->CanvasPosition;
 
@@ -77,4 +79,24 @@ bool USkillTreeNodeWidget::TryUnlock()
 bool USkillTreeNodeWidget::TryRefund()
 {
 	return IsValid(TreeComponent) && TreeComponent->RefundNode(NodeId);
+}
+
+
+FReply USkillTreeNodeWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	const FKey Button = InMouseEvent.GetEffectingButton();
+
+	if (Button == EKeys::LeftMouseButton)
+	{
+		TryUnlock();
+		return FReply::Handled();
+	}
+
+	if (Button == EKeys::RightMouseButton)
+	{
+		TryRefund();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
 }

@@ -3,6 +3,7 @@
 #include "AbilityComponent.h"
 #include "AbilitySystemTags.h"
 #include "ResourceComponent.h"
+#include "AbilitySystemSettings.h"
 
 UCombatantComponent::UCombatantComponent()
 {
@@ -70,7 +71,12 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 			? AbilityComponent->GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, FGameplayTagContainer())
 			: DamageTakenMultiplier;
 
-		const float Damage = FMath::Max(Payload.Damage * FMath::Max(TakenMultiplier, 0.0f), 0.0f);
+		const float Variance = GetDefault<UAbilitySystemSettings>()->DamageVariance;
+
+		const float Damage = FMath::Max(
+			Payload.Damage * FMath::Max(TakenMultiplier, 0.0f) * FMath::FRandRange(1.0f - Variance, 1.0f + Variance),
+			0.0f
+		);
 		
 		const float HealthBefore = ResourceComponent->GetResourceValue(EResourceType::Health, EResourceValueType::Current);
 
