@@ -11,7 +11,6 @@
 #include "TimerManager.h"
 #include "PassiveAbility.h"
 #include "CombatantComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -35,11 +34,7 @@ void UAbilityComponent::BeginPlay()
 		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires an ACharacter owner."));
 		return;
 	}
-
-	if (const UCharacterMovementComponent* Movement = OwningCharacter->GetCharacterMovement())
-	{
-		BaseMaxWalkSpeed = Movement->MaxWalkSpeed;
-	}
+	
 	// Passives need the owning character, so their instances are created here,
 	// not at grant time during InitializeComponent.
 	for (const TSubclassOf<UAbility>& AbilityClass : GrantedAbilityClasses)
@@ -1530,7 +1525,7 @@ float UAbilityComponent::GetModifiedValue(const FGameplayTag Stat, const float B
 
 void UAbilityComponent::HandleModifiersChanged()
 {
-	ApplyMovementSpeed();
+	
 	ScheduleModifierExpiry();
 	
 	// Entries can grant tags, so owner-tag listeners refresh along with modifier listeners.
@@ -1719,21 +1714,6 @@ void UAbilityComponent::BroadcastGameplayEvent(const FGameplayTag EventTag, UAct
 		Passive->OnGameplayEvent(EventTag, Source);
 	});
 }
-void UAbilityComponent::ApplyMovementSpeed()
-{
-	UCharacterMovementComponent* Movement = IsValid(OwningCharacter) ? OwningCharacter->GetCharacterMovement() : nullptr;
-
-	if (!IsValid(Movement) || BaseMaxWalkSpeed <= 0.0f)
-	{
-		return;
-	}
-
-	// Movement isn't an ability, so only unscoped modifiers apply.
-	Movement->MaxWalkSpeed = BaseMaxWalkSpeed * FMath::Max(
-		GetModifiedValue(AbilitySystemTags::Stat_MoveSpeed, 1.0f, FGameplayTagContainer()),
-		0.0f
-	);
-}
 bool UAbilityComponent::SetModifierEntryStacks(const UObject* Source, const FName EntryKey, const int32 Stacks)
 {
 	if (!ModifierContainer.SetStacks(ResolveGrantSource(Source), EntryKey, Stacks))
@@ -1748,35 +1728,5 @@ bool UAbilityComponent::SetModifierEntryStacks(const UObject* Source, const FNam
 
 void UAbilityComponent::GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const
 {
-	OutEffects.Reset();
-
-	const double Now = GetWorldTime();
-
-	for (const FModifierEntry& Entry : ModifierContainer.GetEntries())
-	{
-		// Key None is a passive's permanent entry: always-on bonuses aren't effects.
-		if (Entry.EntryKey.IsNone() || Entry.IsExpired(Now))
-		{
-			continue;
-		}
-
-		FActiveEffectInfo& Info = OutEffects.AddDefaulted_GetRef();
-		UObject* SourceObject = Entry.Source.ResolveObjectPtr();
-
-		Info.Source = SourceObject;
-		Info.EntryKey = Entry.EntryKey;
-		Info.Duration = Entry.Duration;
-		Info.Stacks = Entry.Stacks;
-		Info.GrantedTags = Entry.GrantedTags;
-		Info.RemainingTime = Entry.ExpiresAt > 0.0
-			? static_cast<float>(FMath::Max(Entry.ExpiresAt - Now, 0.0))
-			: -1.0f;
-
-		if (const UAbility* SourceAbility = Cast<UAbility>(SourceObject))
-		{
-			Info.DisplayName = SourceAbility->GetDisplayName();
-			Info.Description = SourceAbility->GetDescription();
-			Info.Icon = SourceAbility->GetIcon();
-		}
-	}
+	ModifierContainer.GetDisplayInfo(OutEffects, GetWorldTime(), false);
 }

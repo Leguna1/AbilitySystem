@@ -40,7 +40,58 @@ struct FStatModifier
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Modifier")
 	FGameplayTagContainer RequiredOwnerTags;
 };
+/** Authored on an ability: a status its hits apply to the target. */
+USTRUCT(BlueprintType)
+struct FStatusEffectSpec
+{
+	GENERATED_BODY()
 
+	/** Identity of the status, always granted to the target while active. Re-applying refreshes it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status", meta = (Categories = "Status"))
+	FGameplayTag StatusTag;
+
+	/**
+	 * Modifiers on the target, at the applying ability's rank. Their scope is
+	 * matched against the ATTACKING ability's tags (empty = every attack).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status")
+	TArray<FStatModifier> Modifiers;
+
+	/** Extra tags on the target while active. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status")
+	FGameplayTagContainer GrantedTags;
+
+	/** Seconds, by the applying ability's rank. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status")
+	FAbilityRankedFloat DurationByRank = FAbilityRankedFloat(5.0f);
+
+	/** Applied only while the ATTACKER has all of these tags (lets traits switch statuses on). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status")
+	FGameplayTagContainer RequiredOwnerTags;
+};
+
+/** A status resolved for one hit, carried in the payload. */
+USTRUCT(BlueprintType)
+struct FStatusApplication
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	FGameplayTag StatusTag;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	TArray<FStatModifier> Modifiers;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	FGameplayTagContainer GrantedTags;
+
+	/** Rank the modifiers' magnitudes are read at. */
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	int32 Rank = 1;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	float Duration = 0.0f;
+};
 /** A modifier with its magnitude resolved for the rank it was applied at. */
 USTRUCT()
 struct FResolvedStatModifier
@@ -164,6 +215,14 @@ struct ABILITYSYSTEM_API FStatModifierContainer
 
 	/** Earliest pending expiry, or 0 if nothing is timed. */
 	double GetNextExpiryTime() const;
+	
+	void Reset() { Entries.Reset(); }
+	
+	/**
+ * Active entries resolved for display, in application order.
+ * Unkeyed entries (a passive's permanent bonus) are skipped unless bIncludeUnkeyed.
+ */
+	void GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, double Now, bool bIncludeUnkeyed) const;
 
 private:
 	int32 FindEntry(const FObjectKey& SourceKey, FName EntryKey) const;

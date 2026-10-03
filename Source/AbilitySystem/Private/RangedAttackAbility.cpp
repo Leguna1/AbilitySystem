@@ -294,6 +294,8 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	ShotParams.Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
 	ShotParams.bTargetedShot = bHasTarget;
 	ShotParams.DamageMultiplier = FMath::Max(ResolveProjectileDamageMultiplier(), 0.0f);
+	ShotParams.SourceAbilityTags = GetAbilityTags();
+	ResolveOnHitStatuses(ShotParams.Statuses);
 
 	// Open before release so every arrow can join; seal right after so the
 	// group closes once the last arrow resolves.

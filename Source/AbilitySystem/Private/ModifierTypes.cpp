@@ -1,4 +1,5 @@
 #include "ModifierTypes.h"
+#include "Ability.h"
 
 void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& InModifiers, const int32 Rank, const FGameplayTagContainer& InGrantedTags, const double ExpiresAt, float Duration)
 {
@@ -163,4 +164,40 @@ bool FStatModifierContainer::SetStacks(const UObject* Source, const FName EntryK
 
 	Entries[Index].Stacks = Stacks;
 	return true;
+}
+void FStatModifierContainer::GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, const double Now, const bool bIncludeUnkeyed) const
+{
+	OutInfo.Reset();
+
+	for (const FModifierEntry& Entry : Entries)
+	{
+		if (Entry.IsExpired(Now) || (!bIncludeUnkeyed && Entry.EntryKey.IsNone()))
+		{
+			continue;
+		}
+
+		FActiveEffectInfo& Info = OutInfo.AddDefaulted_GetRef();
+		UObject* SourceObject = Entry.Source.ResolveObjectPtr();
+
+		Info.Source = SourceObject;
+		Info.EntryKey = Entry.EntryKey;
+		Info.Duration = Entry.Duration;
+		Info.Stacks = Entry.Stacks;
+		Info.GrantedTags = Entry.GrantedTags;
+		Info.RemainingTime = Entry.ExpiresAt > 0.0
+			? static_cast<float>(FMath::Max(Entry.ExpiresAt - Now, 0.0))
+			: -1.0f;
+
+		if (const UAbility* SourceAbility = Cast<UAbility>(SourceObject))
+		{
+			Info.DisplayName = SourceAbility->GetDisplayName();
+			Info.Description = SourceAbility->GetDescription();
+			Info.Icon = SourceAbility->GetIcon();
+		}
+		else
+		{
+			// Statuses come from characters, not abilities: fall back to the status name.
+			Info.DisplayName = FText::FromName(Entry.EntryKey);
+		}
+	}
 }

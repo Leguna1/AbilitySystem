@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ImpactGroupTypes.h"
+#include "ModifierTypes.h"
 #include "ArrowShotParams.generated.h"
 
 /** Per-shot values the firing ability hands every arrow it releases. The arrow keeps them for its whole flight. */
@@ -25,4 +26,12 @@ struct FArrowShotParams
 	/** Impact group this shot's impacts report to. Invalid = ungrouped. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	FImpactGroupHandle ImpactGroup;
+	
+	/** Tags of the firing ability, passed on to every payload this arrow delivers. */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	FGameplayTagContainer SourceAbilityTags;
+
+	/** Statuses this arrow applies on hit. */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	TArray<FStatusApplication> Statuses;
 };

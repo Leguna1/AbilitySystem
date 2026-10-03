@@ -92,3 +92,22 @@ AWeaponBase* UOffensiveAbilityBase::GetEquippedWeapon() const
 
 	return IsValid(WeaponManager) ? WeaponManager->GetEquippedWeapon() : nullptr;
 }
+void UOffensiveAbilityBase::ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const
+{
+	OutStatuses.Reset();
+
+	for (const FStatusEffectSpec& Spec : OnHitStatuses)
+	{
+		if (!Spec.StatusTag.IsValid() || !OwnerHasAllTags(Spec.RequiredOwnerTags))
+		{
+			continue;
+		}
+
+		FStatusApplication& Status = OutStatuses.AddDefaulted_GetRef();
+		Status.StatusTag = Spec.StatusTag;
+		Status.Modifiers = Spec.Modifiers;
+		Status.GrantedTags = Spec.GrantedTags;
+		Status.Rank = FMath::Max(GetAbilityRank(), 1);
+		Status.Duration = FMath::Max(GetRankedFloat(Spec.DurationByRank), 0.0f);
+	}
+}

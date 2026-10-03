@@ -269,6 +269,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
 	void GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const;
 
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void InitializeComponent() override;
@@ -430,8 +431,4 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatantComponent> CombatantComponent;
 	
-	void ApplyMovementSpeed();
-
-	/** Walk speed before modifiers, captured at BeginPlay. */
-	float BaseMaxWalkSpeed = 0.0f;
 };

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "MontageAbility.h"
+#include "ModifierTypes.h"
 #include "OffensiveAbilityBase.generated.h"
 
 /**
@@ -55,4 +56,11 @@ protected:
 
 	template <typename T>
 	T* GetEquippedWeaponAs() const { return Cast<T>(GetEquippedWeapon()); }
+	
+	/** Statuses this ability's hits apply. Resolved at the ability's rank when it fires or strikes. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|On Hit")
+	TArray<FStatusEffectSpec> OnHitStatuses;
+
+	/** OnHitStatuses whose attacker requirements are met, resolved at this execution's rank. */
+	void ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const;
 };

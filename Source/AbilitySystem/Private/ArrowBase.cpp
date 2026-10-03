@@ -484,6 +484,8 @@ void AArrowBase::HandleImpact(
 	Payload.Instigator = GetInstigator();
 	Payload.Causer = this;
 	Payload.Hit = SweepResult;
+	Payload.SourceAbilityTags = ShotParams.SourceAbilityTags;
+	Payload.Statuses = ShotParams.Statuses;
 
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 

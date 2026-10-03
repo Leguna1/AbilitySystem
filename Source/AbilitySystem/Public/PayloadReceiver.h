@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/HitResult.h"
 #include "UObject/Interface.h"
+#include "ModifierTypes.h"
 #include "PayloadReceiver.generated.h"
 
 /**
@@ -30,7 +31,15 @@ struct FAbilityPayload
 	/** Impact details, when available. */
 	UPROPERTY(BlueprintReadWrite, Category = "Payload")
 	FHitResult Hit;
+	
+	/** Tags of the ability that delivered this. Empty for non-ability sources. */
+	UPROPERTY(BlueprintReadWrite, Category = "Payload")
+	FGameplayTagContainer SourceAbilityTags;
 
+	/** Statuses applied to the receiver if it accepts the payload. */
+	UPROPERTY(BlueprintReadWrite, Category = "Payload")
+	TArray<FStatusApplication> Statuses;
+	
 	// Future growth (uncomment/add as systems land):
 	// FGameplayTagContainer EffectTags;   // statuses to apply
 	// FVector KnockbackImpulse;           // directional force
@@ -60,4 +69,6 @@ public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "Payload")
 	bool ReceivePayload(const FAbilityPayload& Payload);
 	virtual bool ReceivePayload_Implementation(const FAbilityPayload& Payload) { return false; }
+	
+	
 };
