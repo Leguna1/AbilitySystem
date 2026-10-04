@@ -8,6 +8,7 @@
 #include "InputBufferTypes.h"
 #include "UObject/ObjectKey.h"
 #include "ModifierTypes.h"
+#include "HitReactionTypes.h"
 #include "AbilityComponent.generated.h"
 
 class ACharacter;
@@ -19,6 +20,7 @@ class UTargetingComponent;
 class UAnimSequenceBase;
 class UCombatantComponent;
 class UPassiveAbility;
+class UHitReactionAbility;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
@@ -268,6 +270,14 @@ public:
 	/** Every active effect (keyed entries) with display data, in application order. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
 	void GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const;
+	
+	/** Interrupts the active ability and plays the hit reaction. Stagger or stronger only. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Hit Reaction")
+	bool TriggerHitReaction(const FHitReactionResult& Reaction);
+
+	/** The reaction being started; read by UHitReactionAbility when it activates. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Hit Reaction")
+	const FHitReactionResult& GetPendingHitReaction() const { return PendingHitReaction; }
 
 
 protected:
@@ -275,6 +285,10 @@ protected:
 	virtual void InitializeComponent() override;
 	
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
+	
+	/** Played when this character is staggered. Granted automatically. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|Hit Reaction")
+	TSubclassOf<UHitReactionAbility> HitReactionAbilityClass;
 
 private:
 	struct FAbilityInputCandidate
@@ -430,5 +444,11 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatantComponent> CombatantComponent;
+	
+	UFUNCTION()
+	void HandleOwnerHitReaction(const FHitReactionResult& Result);
+
+	UPROPERTY(Transient)
+	FHitReactionResult PendingHitReaction;
 	
 };

@@ -27,4 +27,9 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceCount, "Stat.PierceCount", "Extra targets an arrow passes through.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceDamage, "Stat.PierceDamage", "Damage factor applied per target passed through.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_SeekChance, "Stat.SeekChance", "Chance (0..1) per projectile to seek an enemy.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_HazardDuration, "Stat.HazardDuration", "Seconds a spawned hazard lasts.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_LinkDistance, "Stat.LinkDistance", "Max distance between linked hazard points.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_SuperArmor, "State.SuperArmor", "Hits still land but never interrupt (flinch at most).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Playing an interrupting hit reaction.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PoiseDamage, "Stat.PoiseDamage", "Poise removed by this ability's hits.");
 }

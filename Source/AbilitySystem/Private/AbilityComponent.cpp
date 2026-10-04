@@ -11,6 +11,7 @@
 #include "TimerManager.h"
 #include "PassiveAbility.h"
 #include "CombatantComponent.h"
+#include "HitReactionAbility.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -50,6 +51,7 @@ void UAbilityComponent::BeginPlay()
 		CombatantComponent->OnPayloadReceived.AddDynamic(this, &UAbilityComponent::HandleOwnerPayloadReceived);
 		CombatantComponent->OnKilled.AddDynamic(this, &UAbilityComponent::HandleOwnerKilled);
 		CombatantComponent->OnDied.AddDynamic(this, &UAbilityComponent::HandleOwnerDied);
+		CombatantComponent->OnHitReaction.AddDynamic(this, &UAbilityComponent::HandleOwnerHitReaction);
 	}
 	
 	if (!IsValid(InputBufferComponent))
@@ -76,6 +78,12 @@ void UAbilityComponent::InitializeComponent()
 	// Runs for every component on the actor before any BeginPlay, so base
 	// abilities always precede weapon kits in GrantedAbilityClasses.
 	GrantAbilities(StartingAbilityClasses, this);
+	
+	if (HitReactionAbilityClass)
+	{
+		GrantAbility(HitReactionAbilityClass, this);
+	}
+	
 }
 void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 {
@@ -95,6 +103,7 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 		CombatantComponent->OnPayloadReceived.RemoveDynamic(this, &UAbilityComponent::HandleOwnerPayloadReceived);
 		CombatantComponent->OnKilled.RemoveDynamic(this, &UAbilityComponent::HandleOwnerKilled);
 		CombatantComponent->OnDied.RemoveDynamic(this, &UAbilityComponent::HandleOwnerDied);
+		CombatantComponent->OnHitReaction.RemoveDynamic(this, &UAbilityComponent::HandleOwnerHitReaction);
 	}
 
 	for (UPassiveAbility* Passive : PassiveInstances)
@@ -1729,4 +1738,44 @@ bool UAbilityComponent::SetModifierEntryStacks(const UObject* Source, const FNam
 void UAbilityComponent::GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const
 {
 	ModifierContainer.GetDisplayInfo(OutEffects, GetWorldTime(), false);
+}
+bool UAbilityComponent::TriggerHitReaction(const FHitReactionResult& Reaction)
+{
+	if (Reaction.Reaction < EHitReactionType::Stagger ||
+		!HitReactionAbilityClass ||
+		bEndingAbility ||
+		HasOwnerTag(AbilitySystemTags::State_Dead))
+	{
+		return false;
+	}
+
+	UActiveAbility* ReactionAbility = CreateExecutionInstance(HitReactionAbilityClass);
+
+	if (!IsValid(ReactionAbility))
+	{
+		return false;
+	}
+
+	PendingHitReaction = Reaction;
+
+	// Presses made before the hit must not fire out of the stagger.
+	ClearBufferedInputs();
+
+	// A hit always wins: no transition, early-cancel or block rules apply.
+	if (IsValid(ActiveAbility))
+	{
+		EndActiveAbilityInternal(EAbilityEndReason::Interrupted, false);
+	}
+
+	if (IsValid(ActiveAbility))
+	{
+		return false;
+	}
+
+	return ActivateAbilityInstance(ReactionAbility);
+}
+
+void UAbilityComponent::HandleOwnerHitReaction(const FHitReactionResult& Result)
+{
+	TriggerHitReaction(Result);
 }

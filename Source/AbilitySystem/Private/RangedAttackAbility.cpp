@@ -301,6 +301,7 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	ResolveOnHitStatuses(ShotParams.Statuses);
 	ShotParams.PierceCount = ResolvedPierceCount;
 	ShotParams.PierceDamageFactor = ResolvedPierceDamageFactor;
+	ShotParams.Impact = ResolveHitImpact();
 
 	// Open before release so every arrow can join; seal right after so the
 	// group closes once the last arrow resolves.

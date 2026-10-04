@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "HitReactionTypes.h"
 #include "MontageAbility.h"
 #include "ModifierTypes.h"
 #include "OffensiveAbilityBase.generated.h"
@@ -63,4 +64,14 @@ protected:
 
 	/** OnHitStatuses whose attacker requirements are met, resolved at this execution's rank. */
 	void ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const;
+
+	/** Resolves Specs at this execution's rank. Entries whose owner tags aren't met, or without a duration, are skipped. */
+	void ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const;
+	
+	/** How hard this ability's hits are. Poise damage is scaled by Stat.PoiseDamage. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|Impact")
+	FHitImpact HitImpact = FHitImpact(EHitReactionType::Stagger, 10.0f);
+
+	/** HitImpact with this execution's modifiers applied. */
+	FHitImpact ResolveHitImpact() const;
 };

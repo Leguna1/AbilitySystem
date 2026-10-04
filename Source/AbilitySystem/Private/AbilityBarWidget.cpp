@@ -39,8 +39,13 @@ void UAbilityBarWidget::RebuildSlots()
 
 	for (const TSubclassOf<UAbility>& AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
 	{
-		// Only activatable abilities get a hotbar slot; passives are skipped.
-		if (!IsValid(AbilityClass) || !AbilityClass->IsChildOf(UActiveAbility::StaticClass()))
+		const UActiveAbility* ActiveDefaults = IsValid(AbilityClass)
+			? Cast<UActiveAbility>(AbilityClass->GetDefaultObject())
+			: nullptr;
+
+		// Only player-activated abilities get a slot: passives fail the cast,
+		// reactions and other triggered abilities have no input tag.
+		if (!IsValid(ActiveDefaults) || !ActiveDefaults->GetActivationInputTag().IsValid())
 		{
 			continue;
 		}

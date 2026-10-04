@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "PayloadReceiver.h"
 #include "ModifierTypes.h"
+#include "HitReactionTypes.h"
 #include "CombatantComponent.generated.h"
 
 class UAbilityComponent;
@@ -15,6 +16,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantDiedSignature, AActor*, Ki
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantKilledSignature, AActor*, Victim);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantRevivedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantStatusesChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantHitReactionSignature, const FHitReactionResult&, Result);
 
 /**
  * Makes an actor a combat participant: receives payloads, applies damage to
@@ -101,6 +103,25 @@ public:
  */
 	UFUNCTION(BlueprintCallable, Category = "Combat|Movement")
 	void SetBaseMaxWalkSpeed(float NewBaseSpeed);
+	
+	/** Current poise, including any recovery since the last poise damage. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
+	float GetPoise() const;
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
+	float GetMaxPoise() const { return MaxPoise; }
+
+	/** True while a recent break prevents another one. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
+	bool IsStaggerImmune() const;
+
+	/** The owner's ability-component tags plus its status tags. */
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	bool HasCombatTag(FGameplayTag Tag) const;
+
+	/** A hit produced a reaction (flinch or stronger). Step 2 plays it; for now, Blueprints can listen. */
+	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
+	FCombatantHitReactionSignature OnHitReaction;
 
 protected:
 	virtual void BeginPlay() override;
@@ -109,6 +130,22 @@ protected:
 	/** Scales incoming damage. Hook for armor, difficulty, or future passives. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "0.0"))
 	float DamageTakenMultiplier = 1.0f;
+	
+	/** Stability. Hits drain it; when it runs out, the hit breaks through. 0 = every hit breaks through. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Poise", meta = (ClampMin = "0.0"))
+	float MaxPoise = 100.0f;
+
+	/** Seconds without poise damage before poise starts recovering. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Poise", meta = (ClampMin = "0.0"))
+	float PoiseRegenDelay = 2.0f;
+
+	/** Poise recovered per second once recovering. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Poise", meta = (ClampMin = "0.0"))
+	float PoiseRegenRate = 50.0f;
+
+	/** After a break, seconds during which poise can't break again (hits only flinch). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat|Poise", meta = (ClampMin = "0.0"))
+	float StaggerImmunityDuration = 1.5f;
 
 private:
 	UFUNCTION()
@@ -150,4 +187,12 @@ private:
 
 	/** Walk speed before modifiers, captured at BeginPlay. */
 	float BaseMaxWalkSpeed = 0.0f;
+	
+	FHitReactionResult ResolveHitReaction(const FAbilityPayload& Payload);
+
+	/** Poise as of LastPoiseDamageTime. Recovery after that is computed on demand. */
+	float StoredPoise = 0.0f;
+
+	double LastPoiseDamageTime = -1.0e9;
+	double StaggerImmuneUntil = 0.0;
 };

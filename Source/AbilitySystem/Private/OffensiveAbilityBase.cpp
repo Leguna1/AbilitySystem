@@ -4,6 +4,7 @@
 #include "MotionWarpingComponent.h"
 #include "TargetingComponent.h"
 #include "WeaponManagerComponent.h"
+#include "AbilitySystemTags.h"
 
 void UOffensiveAbilityBase::ActivateAbility_Implementation()
 {
@@ -94,12 +95,26 @@ AWeaponBase* UOffensiveAbilityBase::GetEquippedWeapon() const
 }
 void UOffensiveAbilityBase::ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const
 {
+	ResolveStatusSpecs(OnHitStatuses, OutStatuses);
+}
+
+void UOffensiveAbilityBase::ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const
+{
 	OutStatuses.Reset();
 
-	for (const FStatusEffectSpec& Spec : OnHitStatuses)
+	for (const FStatusEffectSpec& Spec : Specs)
 	{
 		if (!Spec.StatusTag.IsValid() || !OwnerHasAllTags(Spec.RequiredOwnerTags))
 		{
+			continue;
+		}
+
+		const float Duration = GetRankedFloat(Spec.DurationByRank);
+
+		if (Duration <= 0.0f)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("%s: status %s has no duration and was skipped."),
+				*GetName(), *Spec.StatusTag.ToString());
 			continue;
 		}
 
@@ -108,6 +123,12 @@ void UOffensiveAbilityBase::ResolveOnHitStatuses(TArray<FStatusApplication>& Out
 		Status.Modifiers = Spec.Modifiers;
 		Status.GrantedTags = Spec.GrantedTags;
 		Status.Rank = FMath::Max(GetAbilityRank(), 1);
-		Status.Duration = FMath::Max(GetRankedFloat(Spec.DurationByRank), 0.0f);
+		Status.Duration = Duration;
 	}
+}
+FHitImpact UOffensiveAbilityBase::ResolveHitImpact() const
+{
+	FHitImpact Impact = HitImpact;
+	Impact.PoiseDamage = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_PoiseDamage, HitImpact.PoiseDamage), 0.0f);
+	return Impact;
 }

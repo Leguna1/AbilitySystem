@@ -161,6 +161,8 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const FArrowShotP
 	{
 		return false;
 	}
+	
+	++FlightSerial;
 
 	const FVector NormalizedDirection = Direction.GetSafeNormal();
 
@@ -495,6 +497,7 @@ void AArrowBase::HandleImpact(
 	Payload.Hit = SweepResult;
 	Payload.SourceAbilityTags = ShotParams.SourceAbilityTags;
 	Payload.Statuses = ShotParams.Statuses;
+	Payload.Impact = ShotParams.Impact;
 
 	// Deliver first: acceptance decides hit vs miss feedback, and whether the arrow can pierce.
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);

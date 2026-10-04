@@ -17,6 +17,8 @@ UCombatantComponent::UCombatantComponent()
 void UCombatantComponent::BeginPlay()
 {
 	Super::BeginPlay();
+	
+	StoredPoise = MaxPoise;
 
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
@@ -133,7 +135,15 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 			ApplyStatus(Status, Payload.Instigator.Get());
 		}
 	}
-	
+	if (!IsDead())
+	{
+		const FHitReactionResult Reaction = ResolveHitReaction(Payload);
+
+		if (Reaction.Reaction != EHitReactionType::None)
+		{
+			OnHitReaction.Broadcast(Reaction);
+		}
+	}
 	OnPayloadReceived.Broadcast(Payload, DamageApplied);
 
 	if (UCombatantComponent* InstigatorCombatant = FindCombatant(Payload.Instigator.Get()))
@@ -322,4 +332,100 @@ void UCombatantComponent::ApplyMovementSpeed()
 	);
 
 	Movement->MaxWalkSpeed = BaseMaxWalkSpeed * FMath::Max(Multiplier, 0.0f);
+}
+float UCombatantComponent::GetPoise() const
+{
+	const double RecoveringFor = GetWorldTime() - (LastPoiseDamageTime + PoiseRegenDelay);
+	const float Recovered = RecoveringFor > 0.0 ? static_cast<float>(RecoveringFor) * PoiseRegenRate : 0.0f;
+
+	return FMath::Min(StoredPoise + Recovered, MaxPoise);
+}
+
+bool UCombatantComponent::IsStaggerImmune() const
+{
+	return GetWorldTime() < StaggerImmuneUntil;
+}
+
+bool UCombatantComponent::HasCombatTag(const FGameplayTag Tag) const
+{
+	if (!Tag.IsValid())
+	{
+		return false;
+	}
+
+	if (HasStatusTag(Tag))
+	{
+		return true;
+	}
+
+	return IsValid(AbilityComponent) && AbilityComponent->HasOwnerTag(Tag);
+}
+
+FHitReactionResult UCombatantComponent::ResolveHitReaction(const FAbilityPayload& Payload)
+{	
+	FHitReactionResult Result;
+	const FHitImpact& Impact = Payload.Impact;
+
+	if (Impact.Reaction == EHitReactionType::None)
+	{
+		return Result;
+	}
+
+	const double Now = GetWorldTime();
+
+	// Bank any recovery so far, then drain.
+	StoredPoise = FMath::Max(GetPoise() - Impact.PoiseDamage, 0.0f);
+	LastPoiseDamageTime = Now;
+
+	const bool bBreaksPoise = Impact.bForceReaction || StoredPoise <= 0.0f;
+	const bool bCanBreak = !IsStaggerImmune() && !HasCombatTag(AbilitySystemTags::State_SuperArmor);
+
+	if (Impact.Reaction == EHitReactionType::Flinch || !bBreaksPoise || !bCanBreak)
+	{
+		Result.Reaction = EHitReactionType::Flinch;
+	}
+	else
+	{
+		Result.Reaction = Impact.Reaction;
+		Result.KnockbackSpeed = Impact.KnockbackSpeed;
+		Result.KnockbackLift = Impact.KnockbackLift;
+
+		// Poise refills after a break, and the target gets a moment before it can break again.
+		StoredPoise = MaxPoise;
+		StaggerImmuneUntil = Now + StaggerImmunityDuration;
+	}
+
+	// Direction: from the attacker toward this character, flattened.
+	const AActor* Owner = GetOwner();
+	AActor* InstigatorActor = Payload.Instigator.Get();
+
+	FVector HitDirection = IsValid(InstigatorActor)
+		? Owner->GetActorLocation() - InstigatorActor->GetActorLocation()
+		: -Owner->GetActorForwardVector();
+
+	HitDirection.Z = 0.0f;
+	HitDirection = HitDirection.GetSafeNormal();
+
+	if (HitDirection.IsNearlyZero())
+	{
+		HitDirection = -Owner->GetActorForwardVector();
+	}
+
+	// The side the hit came from is opposite to the way it travelled.
+	const FVector FromDirection = -HitDirection;
+	const float ForwardDot = FVector::DotProduct(FromDirection, Owner->GetActorForwardVector());
+	const float RightDot = FVector::DotProduct(FromDirection, Owner->GetActorRightVector());
+
+	if (FMath::Abs(ForwardDot) >= FMath::Abs(RightDot))
+	{
+		Result.Direction = ForwardDot >= 0.0f ? EHitDirection::Front : EHitDirection::Back;
+	}
+	else
+	{
+		Result.Direction = RightDot >= 0.0f ? EHitDirection::Right : EHitDirection::Left;
+	}
+
+	Result.HitDirection = HitDirection;
+	Result.Instigator = InstigatorActor;
+	return Result;
 }

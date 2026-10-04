@@ -96,6 +96,9 @@ public:
  * if the target is gone or dead. HomingAcceleration > 0 keeps steering afterwards.
  */
 	void ScheduleRedirectToActor(AActor* TargetActor, const FVector& FallbackPoint, float Delay, bool bDisableGravity, float HomingAcceleration);
+	
+	/** Increases with every Fire, so listeners can tell this flight from later ones. */
+	uint32 GetFlightSerial() const { return FlightSerial; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -190,4 +193,6 @@ private:
 	
 	TWeakObjectPtr<AActor> RedirectTargetActor;
 	float RedirectHomingAcceleration = 0.0f;
+	
+	uint32 FlightSerial = 0;
 };

@@ -4,6 +4,7 @@
 #include "Engine/HitResult.h"
 #include "UObject/Interface.h"
 #include "ModifierTypes.h"
+#include "HitReactionTypes.h"
 #include "PayloadReceiver.generated.h"
 
 /**
@@ -39,6 +40,10 @@ struct FAbilityPayload
 	/** Statuses applied to the receiver if it accepts the payload. */
 	UPROPERTY(BlueprintReadWrite, Category = "Payload")
 	TArray<FStatusApplication> Statuses;
+	
+	/** How hard this hit is. The receiver decides the actual reaction. */
+	UPROPERTY(BlueprintReadWrite, Category = "Payload")
+	FHitImpact Impact;
 	
 	// Future growth (uncomment/add as systems land):
 	// FGameplayTagContainer EffectTags;   // statuses to apply

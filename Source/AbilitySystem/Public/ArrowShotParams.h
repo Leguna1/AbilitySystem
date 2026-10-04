@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "ImpactGroupTypes.h"
 #include "ModifierTypes.h"
+#include "HitReactionTypes.h"
 #include "ArrowShotParams.generated.h"
 
 /** Per-shot values the firing ability hands every arrow it releases. The arrow keeps them for its whole flight. */
@@ -42,4 +43,8 @@ struct FArrowShotParams
 	/** Damage factor per target passed through: 0.5 = each next target takes half of the previous. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	float PierceDamageFactor = 0.5f;
+	
+	/** Impact every hit of this arrow carries. */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	FHitImpact Impact;
 };
