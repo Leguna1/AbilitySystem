@@ -24,4 +24,6 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_AttackSpeed, "Stat.AttackSpeed", "Montage play-rate multiplier (base 1).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MoveSpeed, "Stat.MoveSpeed", "Walk speed multiplier (base 1). Only unscoped modifiers apply.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combo_Finished, "Event.Combo.Finished", "Gameplay event: a combo's final step fired.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceCount, "Stat.PierceCount", "Extra targets an arrow passes through.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceDamage, "Stat.PierceDamage", "Damage factor applied per target passed through.");
 }

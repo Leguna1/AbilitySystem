@@ -34,4 +34,12 @@ struct FArrowShotParams
 	/** Statuses this arrow applies on hit. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	TArray<FStatusApplication> Statuses;
+	
+	/** Living targets this arrow passes through before stopping. */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	int32 PierceCount = 0;
+
+	/** Damage factor per target passed through: 0.5 = each next target takes half of the previous. */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	float PierceDamageFactor = 0.5f;
 };

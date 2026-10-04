@@ -63,6 +63,9 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 
 	ResolvedProjectileCount = ResolveProjectileCount();
 
+	ResolvedPierceCount = FMath::Max(GetModifiedInt(AbilitySystemTags::Stat_PierceCount, BasePierceCount), 0);
+	ResolvedPierceDamageFactor = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_PierceDamage, PierceDamageFactor), 0.0f);
+	
 	Super::ActivateAbility_Implementation();
 }
 
@@ -296,6 +299,8 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	ShotParams.DamageMultiplier = FMath::Max(ResolveProjectileDamageMultiplier(), 0.0f);
 	ShotParams.SourceAbilityTags = GetAbilityTags();
 	ResolveOnHitStatuses(ShotParams.Statuses);
+	ShotParams.PierceCount = ResolvedPierceCount;
+	ShotParams.PierceDamageFactor = ResolvedPierceDamageFactor;
 
 	// Open before release so every arrow can join; seal right after so the
 	// group closes once the last arrow resolves.

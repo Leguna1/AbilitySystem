@@ -159,6 +159,10 @@ bool AArrowBase::Fire_Implementation(const FVector& Direction, const FArrowShotP
 
 	ShotParams = InShotParams;
 	ShotParams.Strength = FMath::Clamp(InShotParams.Strength, 0.0f, 1.0f);
+	
+	PiercesRemaining = FMath::Max(ShotParams.PierceCount, 0);
+	CurrentPierceDamageFactor = 1.0f;
+	HitActors.Reset();
 
 	// Join before the arrow goes live, so even a point-blank impact counts toward the group.
 	JoinImpactGroup(ShotParams.ImpactGroup);
@@ -249,6 +253,9 @@ bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 	SpinElapsedTime = 0.0f;
 	
 	ShotParams = FArrowShotParams();
+	PiercesRemaining = FMath::Max(ShotParams.PierceCount, 0);
+	CurrentPierceDamageFactor = 1.0f;
+	HitActors.Reset();
 
 	if (IsValid(ProjectileMovement))
 	{
@@ -279,6 +286,7 @@ bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 void AArrowBase::ResetForPool()
 {
 	LeaveImpactGroup();
+	ReleaseStuckActor();
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
 
 	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
@@ -319,7 +327,11 @@ void AArrowBase::ResetForPool()
 	
 	bIsSpinning = false;
 	SpinElapsedTime = 0.0f;
+	
 	ShotParams = FArrowShotParams();
+	PiercesRemaining = FMath::Max(ShotParams.PierceCount, 0);
+	CurrentPierceDamageFactor = 1.0f;
+	HitActors.Reset();
 	
 	
 	SetActorTickEnabled(false);
@@ -415,6 +427,11 @@ void AArrowBase::HandleHitBoxBeginOverlap(
 	{
 		return;
 	}
+	
+	if (HitActors.Contains(OtherActor))
+	{
+		return;
+	}
 
 	HandleImpact(
 		OtherActor,
@@ -431,18 +448,61 @@ void AArrowBase::HandleImpact(
 {
 	if (bHasImpacted ||
 		!IsValid(HitActor) ||
-		!IsValid(ArrowData))
+		!IsValid(ArrowData) ||
+		HitActors.Contains(HitActor))
 	{
 		return;
 	}
 
+	// Recorded before delivery, so nothing during the hit (death, ragdoll) can hit it twice.
+	HitActors.Add(HitActor);
+
+	FVector ImpactLocation = GetActorLocation();
+
+	if (bFromSweep && !SweepResult.ImpactPoint.IsNearlyZero())
+	{
+		ImpactLocation = FVector(SweepResult.ImpactPoint);
+	}
+
+	// Each target passed through lowers the damage for the next one.
+	const float ImpactDamage = GetCalculatedDamage() * CurrentPierceDamageFactor;
+
+	FAbilityPayload Payload;
+	Payload.Damage = ImpactDamage;
+	Payload.Instigator = GetInstigator();
+	Payload.Causer = this;
+	Payload.Hit = SweepResult;
+	Payload.SourceAbilityTags = ShotParams.SourceAbilityTags;
+	Payload.Statuses = ShotParams.Statuses;
+
+	// Deliver first: acceptance decides hit vs miss feedback, and whether the arrow can pierce.
+	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
+
+	PlayImpactFeedback(bPayloadAccepted, ImpactLocation, HitComponent, SweepResult);
+
+	// Pierce: a living target that took the hit is passed through while pierces remain.
+	const bool bPierce =
+		bPayloadAccepted &&
+		PiercesRemaining > 0 &&
+		IsValid(HitActor->FindComponentByClass<UCombatantComponent>());
+
+	if (bPierce)
+	{
+		--PiercesRemaining;
+		CurrentPierceDamageFactor *= ShotParams.PierceDamageFactor;
+
+		OnArrowHit.Broadcast(this, HitActor, ImpactDamage, SweepResult);
+		return;
+	}
+
+	// Final impact: stop, stick and schedule recycling.
 	bHasImpacted = true;
 	bIsInFlight = false;
 	bIsSpinning = false;
 
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
-
 	StopOngoingFeedback();
+	LeaveImpactGroup();
 
 	if (IsValid(ProjectileMovement))
 	{
@@ -457,43 +517,25 @@ void AArrowBase::HandleImpact(
 
 	SetActorTickEnabled(false);
 
-	if (IsValid(HitComponent))
-	{
-		const FAttachmentTransformRules AttachmentRules(
-			EAttachmentRule::KeepWorld,
-			EAttachmentRule::KeepWorld,
-			EAttachmentRule::KeepWorld,
-			true
-		);
+	OnArrowHit.Broadcast(this, HitActor, ImpactDamage, SweepResult);
 
-		AttachToComponent(HitComponent, AttachmentRules);
+	// The hit itself removed the target: nothing left to stick to.
+	if (!IsValid(HitActor) || !IsValid(HitComponent))
+	{
+		ReturnToPool();
+		return;
 	}
 
-	FVector ImpactLocation = GetActorLocation();
+	const FAttachmentTransformRules AttachmentRules(
+		EAttachmentRule::KeepWorld,
+		EAttachmentRule::KeepWorld,
+		EAttachmentRule::KeepWorld,
+		true
+	);
 
-	if (bFromSweep && !SweepResult.ImpactPoint.IsNearlyZero())
-	{
-		ImpactLocation = FVector(SweepResult.ImpactPoint);
-	}
+	AttachToComponent(HitComponent, AttachmentRules);
 
-	const float ImpactDamage = GetCalculatedDamage();
-
-	// Deliver first: whether the target accepted the payload decides hit vs miss feedback.
-	FAbilityPayload Payload;
-	Payload.Damage = ImpactDamage;
-	Payload.Instigator = GetInstigator();
-	Payload.Causer = this;
-	Payload.Hit = SweepResult;
-	Payload.SourceAbilityTags = ShotParams.SourceAbilityTags;
-	Payload.Statuses = ShotParams.Statuses;
-
-	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
-
-	PlayImpactFeedback(bPayloadAccepted, ImpactLocation, HitComponent, SweepResult);
-	LeaveImpactGroup();
-
-	if (IsValid(HitComponent) &&
-		HitComponent->IsSimulatingPhysics())
+	if (HitComponent->IsSimulatingPhysics())
 	{
 		HitComponent->AddImpulseAtLocation(
 			Velocity * ArrowData->ImpactImpulseMultiplier,
@@ -501,15 +543,13 @@ void AArrowBase::HandleImpact(
 		);
 	}
 
-	// Observers (abilities tracking hits, combo systems) hear about every impact.
-	OnArrowHit.Broadcast(
-		this,
-		HitActor,
-		ImpactDamage,
-		SweepResult
-	);
+	// If the target is destroyed later (corpse cleanup), go back to the pool instead of floating.
+	StuckToActor = HitActor;
+	HitActor->OnDestroyed.AddUniqueDynamic(this, &AArrowBase::HandleStuckActorDestroyed);
 
 	ScheduleRecycle(ArrowData->ImpactLifespan);
+	
+	
 }
 
 void AArrowBase::StartOngoingFeedback()
@@ -725,4 +765,18 @@ void AArrowBase::HandleScheduledRedirect()
 	}
 
 	Redirect((RedirectTargetPoint - GetActorLocation()).GetSafeNormal());
+}
+void AArrowBase::HandleStuckActorDestroyed(AActor* DestroyedActor)
+{
+	ReturnToPool();
+}
+
+void AArrowBase::ReleaseStuckActor()
+{
+	if (AActor* StuckActor = StuckToActor.Get())
+	{
+		StuckActor->OnDestroyed.RemoveDynamic(this, &AArrowBase::HandleStuckActorDestroyed);
+	}
+
+	StuckToActor.Reset();
 }

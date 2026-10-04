@@ -162,4 +162,22 @@ private:
 	FTimerHandle RedirectTimerHandle;
 	FVector RedirectTargetPoint = FVector::ZeroVector;
 	bool bRedirectDisablesGravity = false;
+	
+	/** Pierces left this flight. */
+	int32 PiercesRemaining = 0;
+
+	/** Damage multiplier for the next target; drops by PierceDamageFactor per target passed through. */
+	float CurrentPierceDamageFactor = 1.0f;
+
+	/** Actors already hit this flight, so the arrow never hits one twice. */
+	TArray<TWeakObjectPtr<AActor>> HitActors;
+	
+	UFUNCTION()
+	void HandleStuckActorDestroyed(AActor* DestroyedActor);
+
+	/** Stops listening to the actor this arrow is stuck in. */
+	void ReleaseStuckActor();
+
+	/** Actor this arrow is stuck in, if any. */
+	TWeakObjectPtr<AActor> StuckToActor;
 };

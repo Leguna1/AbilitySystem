@@ -148,6 +148,14 @@ protected:
 	/** Arrows per release, by rank. Empty = one per configured socket pair. Always clamped to the socket count. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	FAbilityRankedInt ProjectileCountByRank;
+	
+	/** Living targets each arrow passes through, before Stat.PierceCount modifiers. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Pierce", meta = (ClampMin = "0"))
+	int32 BasePierceCount = 0;
+
+	/** Damage factor per target passed through, before Stat.PierceDamage modifiers. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Pierce", meta = (ClampMin = "0.0"))
+	float PierceDamageFactor = 0.5f;
 
 private:
 	bool HandleProjectileAnimationEvent(FGameplayTag EventTag);
@@ -174,4 +182,10 @@ private:
 
 	UPROPERTY(Transient)
 	int32 ResolvedProjectileCount = 0;
+	
+	UPROPERTY(Transient)
+	int32 ResolvedPierceCount = 0;
+
+	UPROPERTY(Transient)
+	float ResolvedPierceDamageFactor = 0.5f;
 };
