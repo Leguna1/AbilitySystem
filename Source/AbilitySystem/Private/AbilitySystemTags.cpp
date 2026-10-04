@@ -26,4 +26,5 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Event_Combo_Finished, "Event.Combo.Finished", "Gameplay event: a combo's final step fired.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceCount, "Stat.PierceCount", "Extra targets an arrow passes through.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PierceDamage, "Stat.PierceDamage", "Damage factor applied per target passed through.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_SeekChance, "Stat.SeekChance", "Chance (0..1) per projectile to seek an enemy.");
 }

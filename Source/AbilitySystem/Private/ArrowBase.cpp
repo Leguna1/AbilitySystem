@@ -15,7 +15,23 @@
 #include "TimerManager.h"
 #include "ImpactGroupSubsystem.h"
 #include "CombatantComponent.h"
+#include "TargetableInterface.h"
 
+namespace
+{
+	bool IsTargetDead(const AActor* Target)
+	{
+		const UCombatantComponent* Combatant = Target->FindComponentByClass<UCombatantComponent>();
+		return IsValid(Combatant) && Combatant->IsDead();
+	}
+
+	FVector ResolveAimPoint(AActor* Target)
+	{
+		return Target->GetClass()->ImplementsInterface(UTargetableInterface::StaticClass())
+			? ITargetableInterface::Execute_GetTargetAimLocation(Target)
+			: Target->GetActorLocation();
+	}
+}
 AArrowBase::AArrowBase()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -263,6 +279,8 @@ bool AArrowBase::ActivateFromPool(UArrowDataAsset* NewArrowData)
 		ProjectileMovement->Deactivate();
 		ProjectileMovement->Velocity = FVector::ZeroVector;
 		ProjectileMovement->ProjectileGravityScale = 0.0f;
+		ProjectileMovement->bIsHomingProjectile = false;
+		ProjectileMovement->HomingTargetComponent = nullptr;
 	}
 
 	if (IsValid(HitBox))
@@ -287,6 +305,7 @@ void AArrowBase::ResetForPool()
 {
 	LeaveImpactGroup();
 	ReleaseStuckActor();
+	RedirectTargetActor.Reset();
 	GetWorldTimerManager().ClearTimer(RecycleTimerHandle);
 
 	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
@@ -306,6 +325,8 @@ void AArrowBase::ResetForPool()
 		ProjectileMovement->Deactivate();
 		ProjectileMovement->Velocity = FVector::ZeroVector;
 		ProjectileMovement->ProjectileGravityScale = 0.0f;
+		ProjectileMovement->bIsHomingProjectile = false;
+		ProjectileMovement->HomingTargetComponent = nullptr;
 	}
 
 	if (IsValid(HitBox))
@@ -732,10 +753,17 @@ void AArrowBase::PlayImpactFeedback(const bool bHitTarget, const FVector& Impact
 }
 void AArrowBase::ScheduleRedirect(const FVector& TargetPoint, const float Delay, const bool bDisableGravity)
 {
+	ScheduleRedirectToActor(nullptr, TargetPoint, Delay, bDisableGravity, 0.0f);
+}
+
+void AArrowBase::ScheduleRedirectToActor(AActor* TargetActor, const FVector& FallbackPoint, const float Delay, const bool bDisableGravity, const float HomingAcceleration)
+{
 	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
 
-	RedirectTargetPoint = TargetPoint;
+	RedirectTargetActor = TargetActor;
+	RedirectTargetPoint = FallbackPoint;
 	bRedirectDisablesGravity = bDisableGravity;
+	RedirectHomingAcceleration = FMath::Max(HomingAcceleration, 0.0f);
 
 	if (Delay <= 0.0f)
 	{
@@ -764,7 +792,19 @@ void AArrowBase::HandleScheduledRedirect()
 		ProjectileMovement->ProjectileGravityScale = 0.0f;
 	}
 
-	Redirect((RedirectTargetPoint - GetActorLocation()).GetSafeNormal());
+	AActor* TargetActor = RedirectTargetActor.Get();
+	const bool bTargetAlive = IsValid(TargetActor) && !IsTargetDead(TargetActor);
+
+	// A living target is aimed at where it is now; otherwise the arrow keeps its landing point.
+	const FVector AimPoint = bTargetAlive ? ResolveAimPoint(TargetActor) : RedirectTargetPoint;
+	Redirect((AimPoint - GetActorLocation()).GetSafeNormal());
+
+	if (bTargetAlive && RedirectHomingAcceleration > 0.0f && IsValid(ProjectileMovement))
+	{
+		ProjectileMovement->HomingTargetComponent = TargetActor->GetRootComponent();
+		ProjectileMovement->HomingAccelerationMagnitude = RedirectHomingAcceleration;
+		ProjectileMovement->bIsHomingProjectile = true;
+	}
 }
 void AArrowBase::HandleStuckActorDestroyed(AActor* DestroyedActor)
 {

@@ -65,9 +65,38 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Targeting")
 	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
+	
+	/** Chance (0..1) per arrow to land on an enemy instead of a random point, before Stat.SeekChance modifiers. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BaseSeekChance = 0.0f;
+
+	/** Enemies within this distance of the volley's center can be sought. Independent of the landing radius. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking", meta = (ClampMin = "0.0"))
+	float SeekRadius = 800.0f;
+
+	/** Object channel the seek search looks for. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking")
+	TEnumAsByte<ECollisionChannel> SeekObjectChannel = ECC_Pawn;
+
+	/** Targets with any of these status tags are sought first (e.g. Status.Marked). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking")
+	FGameplayTagContainer PreferredTargetStatusTags;
+
+	/** Steering toward the sought enemy after the redirect, so moving targets are still hit. 0 = straight shot. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking", meta = (ClampMin = "0.0"))
+	float SeekHomingAcceleration = 4000.0f;
 
 private:
 	
 	UPROPERTY(Transient)
 	float ResolvedImpactRadius = 0.0f;
+	
+	/** Living, targetable enemies near Center: preferred status first, then closest. */
+	void FindSeekTargets(const FVector& Center, TArray<AActor*>& OutTargets) const;
+
+	/** The candidate with the fewest arrows so far; ties go to the earlier (preferred/closer) one. */
+	static AActor* PickSeekTarget(const TArray<AActor*>& Candidates, TArray<int32>& AssignedCounts);
+
+	UPROPERTY(Transient)
+	float ResolvedSeekChance = 0.0f;
 };

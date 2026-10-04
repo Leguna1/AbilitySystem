@@ -89,6 +89,13 @@ public:
  * flight. Runs on the arrow, so it survives the ability that fired it.
  */
 	void ScheduleRedirect(const FVector& TargetPoint, float Delay, bool bDisableGravity);
+	
+	/**
+ * Like ScheduleRedirect, but aims at TargetActor's aim point when the redirect
+ * happens, so a moving target is tracked until then. Falls back to FallbackPoint
+ * if the target is gone or dead. HomingAcceleration > 0 keeps steering afterwards.
+ */
+	void ScheduleRedirectToActor(AActor* TargetActor, const FVector& FallbackPoint, float Delay, bool bDisableGravity, float HomingAcceleration);
 
 protected:
 	virtual void BeginPlay() override;
@@ -180,4 +187,7 @@ private:
 
 	/** Actor this arrow is stuck in, if any. */
 	TWeakObjectPtr<AActor> StuckToActor;
+	
+	TWeakObjectPtr<AActor> RedirectTargetActor;
+	float RedirectHomingAcceleration = 0.0f;
 };
