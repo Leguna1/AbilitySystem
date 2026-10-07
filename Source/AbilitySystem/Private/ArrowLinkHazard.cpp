@@ -294,3 +294,19 @@ void AArrowLinkHazard::EndHazard()
 	OnHazardEnded();
 	Destroy();
 }
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult AArrowLinkHazard::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	if (Statuses.IsEmpty())
+	{
+		Context.AddWarning(NSLOCTEXT("ArrowLinkHazard", "NoStatuses", "No Statuses: the lines are purely visual."));
+	}
+
+	return CombineDataValidationResults(Result,
+		AbilityValidation::ValidateStatusSpecs(Statuses, TEXT("Statuses"), Context));
+}
+#endif

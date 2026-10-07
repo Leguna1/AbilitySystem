@@ -12,6 +12,7 @@
 #include "PassiveAbility.h"
 #include "CombatantComponent.h"
 #include "HitReactionAbility.h"
+#include "AbilitySystemLog.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -36,13 +37,13 @@ void UAbilityComponent::BeginPlay()
 		return;
 	}
 	
-	// Passives need the owning character, so their instances are created here,
-	// not at grant time during InitializeComponent.
-	for (const TSubclassOf<UAbility>& AbilityClass : GrantedAbilityClasses)
+	if (!IsValid(OwningCharacter))
 	{
-		CreatePassiveInstance(AbilityClass);
+		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires an ACharacter owner."));
+		return;
 	}
 
+	// Effects (passive bonuses, procs, statuses) live on the combatant, so it's needed before passives activate.
 	CombatantComponent = GetOwner()->FindComponentByClass<UCombatantComponent>();
 
 	if (IsValid(CombatantComponent))
@@ -52,6 +53,19 @@ void UAbilityComponent::BeginPlay()
 		CombatantComponent->OnKilled.AddDynamic(this, &UAbilityComponent::HandleOwnerKilled);
 		CombatantComponent->OnDied.AddDynamic(this, &UAbilityComponent::HandleOwnerDied);
 		CombatantComponent->OnHitReaction.AddDynamic(this, &UAbilityComponent::HandleOwnerHitReaction);
+		CombatantComponent->OnEffectsChanged.AddDynamic(this, &UAbilityComponent::HandleCombatantEffectsChanged);
+	}
+	else
+	{
+		UE_LOG(LogAbilitySystem, Error, TEXT("UAbilityComponent on %s requires a UCombatantComponent: passives, buffs and stat modifiers will not work."),
+			*GetNameSafe(GetOwner()));
+	}
+
+	// Passives need the owning character, so their instances are created here,
+	// not at grant time during InitializeComponent.
+	for (const TSubclassOf<UAbility>& AbilityClass : GrantedAbilityClasses)
+	{
+		CreatePassiveInstance(AbilityClass);
 	}
 	
 	if (!IsValid(InputBufferComponent))
@@ -91,10 +105,13 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 	{
 		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, false);
 	}
-
-	if (UWorld* World = GetWorld())
+	
+	for (UPassiveAbility* Passive : PassiveInstances)
 	{
-		World->GetTimerManager().ClearTimer(ModifierExpiryTimer);
+		if (IsValid(Passive))
+		{
+			Passive->DeactivatePassive();
+		}
 	}
 	
 	if (IsValid(CombatantComponent))
@@ -104,15 +121,10 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 		CombatantComponent->OnKilled.RemoveDynamic(this, &UAbilityComponent::HandleOwnerKilled);
 		CombatantComponent->OnDied.RemoveDynamic(this, &UAbilityComponent::HandleOwnerDied);
 		CombatantComponent->OnHitReaction.RemoveDynamic(this, &UAbilityComponent::HandleOwnerHitReaction);
+		CombatantComponent->OnEffectsChanged.RemoveDynamic(this, &UAbilityComponent::HandleCombatantEffectsChanged);
 	}
 
-	for (UPassiveAbility* Passive : PassiveInstances)
-	{
-		if (IsValid(Passive))
-		{
-			Passive->DeactivatePassive();
-		}
-	}
+	
 
 	PassiveInstances.Reset();
 	
@@ -885,14 +897,17 @@ bool UAbilityComponent::ActivateAbilityInstance(UActiveAbility* Ability)
 	ActiveAbility->SetCommitted(false);
 	ActiveAbility->SetTransitionOpen(false);
 	ActiveAbility->SetEarlyCancellationClosed(false);
-
+	
 	bAbilityTickEnabled = false;
 	SetComponentTickEnabled(false);
 
 	ApplyActiveAbilityTags();
 
+	
 	UActiveAbility* ActivatedAbility = ActiveAbility;
-
+	
+	
+	
 	DispatchAbilityCallback([this, ActivatedAbility]()
 	{
 		AbilityActivatedEvent.Broadcast(ActivatedAbility->GetAbilityId(), ActivatedAbility);
@@ -902,6 +917,8 @@ bool UAbilityComponent::ActivateAbilityInstance(UActiveAbility* Ability)
 		{
 			Passive->OnAbilityActivated(ActivatedAbility);
 		});
+		
+		ActivatedAbility->NotifyFragmentsStarted();
 		ActivatedAbility->ActivateAbility();
 	});
 	
@@ -961,7 +978,9 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 		ForEachActivePassive([EndingAbility, EndReason](UPassiveAbility* Passive)
 		{
 			Passive->OnAbilityEnded(EndingAbility, EndReason);
+			
 		});
+		EndingAbility->NotifyFragmentsEnded(EndReason);
 	});
 
 	EndingAbility->SetAbilityStatus(EAbilityStatus::Inactive);
@@ -1033,7 +1052,13 @@ FGameplayTagContainer UAbilityComponent::BuildOwnedTagsWithoutActiveAbility() co
 {
 	// Loose tags plus tags granted by active modifier entries (boosters, procs, states).
 	FGameplayTagContainer Result = BuildLooseOwnerTags();
-	ModifierContainer.AppendGrantedTags(Result, GetWorldTime());
+	
+	// Tags granted by effects (path passives, procs, statuses).
+	if (IsValid(CombatantComponent))
+	{
+		Result.AppendTags(CombatantComponent->GetEffectTags());
+	}
+	
 	return Result;
 }
 
@@ -1492,89 +1517,12 @@ void UAbilityComponent::HandleInput(const FGameplayTag InputTag, const bool bPre
 		HandleInputReleased(InputTag);
 	}
 }
-void UAbilityComponent::ApplyModifiers(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& Modifiers, const int32 Rank, const FGameplayTagContainer& GrantedTags, const float Duration)
-{
-	const double ExpiresAt = Duration > 0.0f ? GetWorldTime() + Duration : 0.0;
-
-	ModifierContainer.Apply(ResolveGrantSource(Source), EntryKey, Modifiers, FMath::Max(Rank, 1), GrantedTags, ExpiresAt, Duration);
-	HandleModifiersChanged();
-}
-
-bool UAbilityComponent::RemoveModifierEntry(const UObject* Source, const FName EntryKey)
-{
-	if (!ModifierContainer.Remove(ResolveGrantSource(Source), EntryKey))
-	{
-		return false;
-	}
-
-	HandleModifiersChanged();
-	return true;
-}
-
-bool UAbilityComponent::RemoveModifiersFromSource(const UObject* Source)
-{
-	if (!ModifierContainer.RemoveAll(ResolveGrantSource(Source)))
-	{
-		return false;
-	}
-
-	HandleModifiersChanged();
-	return true;
-}
-
-bool UAbilityComponent::HasModifierEntry(const UObject* Source, const FName EntryKey) const
-{
-	return ModifierContainer.Contains(ResolveGrantSource(Source), EntryKey);
-}
 
 float UAbilityComponent::GetModifiedValue(const FGameplayTag Stat, const float BaseValue, const FGameplayTagContainer& AbilityTags) const
 {
-	return ModifierContainer.Evaluate(Stat, BaseValue, AbilityTags, GetOwnedGameplayTags(), GetWorldTime());
-}
-
-void UAbilityComponent::HandleModifiersChanged()
-{
-	
-	ScheduleModifierExpiry();
-	
-	// Entries can grant tags, so owner-tag listeners refresh along with modifier listeners.
-	BroadcastOwnedTagsChanged();
-	ModifiersChangedEvent.Broadcast();
-}
-
-void UAbilityComponent::ScheduleModifierExpiry()
-{
-	UWorld* World = GetWorld();
-
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	FTimerManager& TimerManager = World->GetTimerManager();
-	TimerManager.ClearTimer(ModifierExpiryTimer);
-
-	const double NextExpiry = ModifierContainer.GetNextExpiryTime();
-
-	if (NextExpiry <= 0.0)
-	{
-		return;
-	}
-
-	const float Delay = FMath::Max(static_cast<float>(NextExpiry - World->GetTimeSeconds()), UE_KINDA_SMALL_NUMBER);
-	TimerManager.SetTimer(ModifierExpiryTimer, this, &UAbilityComponent::HandleModifierExpiry, Delay, false);
-}
-
-void UAbilityComponent::HandleModifierExpiry()
-{
-	if (ModifierContainer.PruneExpired(GetWorldTime()))
-	{
-		HandleModifiersChanged();
-	}
-	else
-	{
-		ScheduleModifierExpiry();
-	}
+	return IsValid(CombatantComponent)
+		? CombatantComponent->GetModifiedValue(Stat, BaseValue, AbilityTags)
+		: BaseValue;
 }
 
 double UAbilityComponent::GetWorldTime() const
@@ -1723,22 +1671,6 @@ void UAbilityComponent::BroadcastGameplayEvent(const FGameplayTag EventTag, UAct
 		Passive->OnGameplayEvent(EventTag, Source);
 	});
 }
-bool UAbilityComponent::SetModifierEntryStacks(const UObject* Source, const FName EntryKey, const int32 Stacks)
-{
-	if (!ModifierContainer.SetStacks(ResolveGrantSource(Source), EntryKey, Stacks))
-	{
-		return false;
-	}
-
-	// No stats changed, but listeners such as the effects bar want the new count.
-	ModifiersChangedEvent.Broadcast();
-	return true;
-}
-
-void UAbilityComponent::GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const
-{
-	ModifierContainer.GetDisplayInfo(OutEffects, GetWorldTime(), false);
-}
 bool UAbilityComponent::TriggerHitReaction(const FHitReactionResult& Reaction)
 {
 	if (Reaction.Reaction < EHitReactionType::Stagger ||
@@ -1778,4 +1710,10 @@ bool UAbilityComponent::TriggerHitReaction(const FHitReactionResult& Reaction)
 void UAbilityComponent::HandleOwnerHitReaction(const FHitReactionResult& Result)
 {
 	TriggerHitReaction(Result);
+}
+void UAbilityComponent::HandleCombatantEffectsChanged()
+{
+	// Effects grant tags and change stats: refresh tag listeners and ability-side stat listeners.
+	BroadcastOwnedTagsChanged();
+	ModifiersChangedEvent.Broadcast();
 }

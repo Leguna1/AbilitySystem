@@ -7,6 +7,7 @@
 #include "PassiveAbility.generated.h"
 
 class UActiveAbility;
+class UCombatantComponent;
 
 /**
  * An always-on ability. Granted like any ability; one persistent instance
@@ -74,6 +75,10 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Passive|Abilities")
 	void OnGameplayEvent(FGameplayTag EventTag, UActiveAbility* Source);
 	virtual void OnGameplayEvent_Implementation(FGameplayTag EventTag, UActiveAbility* Source);
+	
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
 	/**
@@ -109,5 +114,6 @@ private:
 
 	bool bPassiveActive = false;
 	
-	
+	/** Where this passive's effects live: the owner's combatant component. */
+	UCombatantComponent* GetEffectTarget() const;
 };

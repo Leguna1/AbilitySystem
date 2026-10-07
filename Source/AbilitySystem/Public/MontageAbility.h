@@ -43,7 +43,7 @@ protected:
 	 * Suggested tag:
 	 * Event.Ability.Transition.Open
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Transition")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage|Notify")
 	FGameplayTag OpenTransitionEventTag;
 
 	/**
@@ -53,7 +53,7 @@ protected:
 	 * Suggested tag:
 	 * Event.Ability.EarlyCancellation.Close
 	 */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Early Cancellation")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage|Notify")
 	FGameplayTag CloseEarlyCancellationEventTag;
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Montage")
@@ -126,7 +126,7 @@ protected:
 	void ApplyRootMotionDistanceWarp() const;
 	
 	/** From this event on, movement input ends the ability (recovery cancel). Empty = movement never cancels. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Movement Cancel")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage|Notify")
 	FGameplayTag MovementCancelEventTag;
 
 	/** Blend-out used when movement ends the ability. Short keeps it responsive. */

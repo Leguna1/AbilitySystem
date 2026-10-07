@@ -21,6 +21,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Primed")
 	int32 GetRemainingCharges() const { return RemainingCharges; }
+	
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Primed")

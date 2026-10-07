@@ -31,12 +31,6 @@ void UCombatantComponent::BeginPlay()
 		}
 	}
 
-	// The owner's buffs (Swiftness etc.) change walk speed too.
-	if (IsValid(AbilityComponent))
-	{
-		AbilityComponent->ModifiersChangedEvent.AddDynamic(this, &UCombatantComponent::HandleOwnerModifiersChanged);
-	}
-
 	ApplyMovementSpeed();
 
 	if (!IsValid(ResourceComponent))
@@ -59,13 +53,9 @@ void UCombatantComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	if (UWorld* World = GetWorld())
 	{
-		World->GetTimerManager().ClearTimer(StatusExpiryTimer);
+		World->GetTimerManager().ClearTimer(EffectExpiryTimer);
 	}
 	
-	if (IsValid(AbilityComponent))
-	{
-		AbilityComponent->ModifiersChangedEvent.RemoveDynamic(this, &UCombatantComponent::HandleOwnerModifiersChanged);
-	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -96,24 +86,14 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 
 	if (IsValid(ResourceComponent))
 	{
-		// The owner's modifiers (defensive passives) adjust the base multiplier.
-		const float TakenMultiplier = IsValid(AbilityComponent)
-			? AbilityComponent->GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, FGameplayTagContainer())
-			: DamageTakenMultiplier;
-
-		// The target's statuses (e.g. Marked), scoped against the attacking ability's tags.
-		const float StatusTakenMultiplier = StatusContainer.Evaluate(
-			AbilitySystemTags::Stat_DamageTaken,
-			TakenMultiplier,
-			Payload.SourceAbilityTags,
-			GetStatusTags(),
-			GetWorldTime()
-		);
+		
+		// Defensive buffs and statuses alike, scoped against the attacking ability's tags.
+		const float TakenMultiplier = GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, Payload.SourceAbilityTags);
 		
 		const float Variance = GetDefault<UAbilitySystemSettings>()->DamageVariance;
 
 		const float Damage = FMath::Max(
-			Payload.Damage * FMath::Max(StatusTakenMultiplier, 0.0f) * FMath::FRandRange(1.0f - Variance, 1.0f + Variance),
+			Payload.Damage * FMath::Max(TakenMultiplier, 0.0f) * FMath::FRandRange(1.0f - Variance, 1.0f + Variance),
 			0.0f
 		);
 		
@@ -174,8 +154,11 @@ bool UCombatantComponent::IsInvulnerable() const
 
 void UCombatantComponent::HandleOwnerDeath()
 {
-	StatusContainer.Reset();
-	HandleStatusesChanged();
+	// The dead lose every timed effect (statuses, procs); learned passives' permanent bonuses stay.
+	if (EffectContainer.RemoveTimed())
+	{
+		HandleEffectsChanged();
+	}
 	
 	AActor* Killer = PendingInstigator.Get();
 
@@ -209,102 +192,17 @@ UCombatantComponent* UCombatantComponent::FindCombatant(const AActor* Actor)
 {
 	return IsValid(Actor) ? Actor->FindComponentByClass<UCombatantComponent>() : nullptr;
 }
-void UCombatantComponent::ApplyStatus(const FStatusApplication& Status, const UObject* Source)
-{
-	if (!Status.StatusTag.IsValid() || IsDead())
-	{
-		return;
-	}
 
-	FGameplayTagContainer Tags = Status.GrantedTags;
-	Tags.AddTag(Status.StatusTag);
-
-	const double ExpiresAt = Status.Duration > 0.0f ? GetWorldTime() + Status.Duration : 0.0;
-
-	StatusContainer.Apply(
-		IsValid(Source) ? Source : this,
-		Status.StatusTag.GetTagName(),
-		Status.Modifiers,
-		FMath::Max(Status.Rank, 1),
-		Tags,
-		ExpiresAt,
-		Status.Duration
-	);
-
-	HandleStatusesChanged();
-}
-
-bool UCombatantComponent::HasStatusTag(const FGameplayTag Tag) const
-{
-	return Tag.IsValid() && GetStatusTags().HasTag(Tag);
-}
-
-FGameplayTagContainer UCombatantComponent::GetStatusTags() const
-{
-	FGameplayTagContainer Tags;
-	StatusContainer.AppendGrantedTags(Tags, GetWorldTime());
-	return Tags;
-}
-
-void UCombatantComponent::HandleStatusesChanged()
-{
-	ApplyMovementSpeed();
-	ScheduleStatusExpiry();
-	OnStatusesChanged.Broadcast();
-}
-
-void UCombatantComponent::ScheduleStatusExpiry()
-{
-	UWorld* World = GetWorld();
-
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	FTimerManager& TimerManager = World->GetTimerManager();
-	TimerManager.ClearTimer(StatusExpiryTimer);
-
-	const double NextExpiry = StatusContainer.GetNextExpiryTime();
-
-	if (NextExpiry <= 0.0)
-	{
-		return;
-	}
-
-	const float Delay = FMath::Max(static_cast<float>(NextExpiry - World->GetTimeSeconds()), UE_KINDA_SMALL_NUMBER);
-	TimerManager.SetTimer(StatusExpiryTimer, this, &UCombatantComponent::HandleStatusExpiry, Delay, false);
-}
-
-void UCombatantComponent::HandleStatusExpiry()
-{
-	if (StatusContainer.PruneExpired(GetWorldTime()))
-	{
-		HandleStatusesChanged();
-	}
-	else
-	{
-		ScheduleStatusExpiry();
-	}
-}
 
 double UCombatantComponent::GetWorldTime() const
 {
 	const UWorld* World = GetWorld();
 	return IsValid(World) ? World->GetTimeSeconds() : 0.0;
 }
-void UCombatantComponent::GetActiveStatuses(TArray<FActiveEffectInfo>& OutStatuses) const
-{
-	StatusContainer.GetDisplayInfo(OutStatuses, GetWorldTime(), true);
-}
+
 void UCombatantComponent::SetBaseMaxWalkSpeed(const float NewBaseSpeed)
 {
 	BaseMaxWalkSpeed = FMath::Max(NewBaseSpeed, 0.0f);
-	ApplyMovementSpeed();
-}
-
-void UCombatantComponent::HandleOwnerModifiersChanged()
-{
 	ApplyMovementSpeed();
 }
 
@@ -318,18 +216,8 @@ void UCombatantComponent::ApplyMovementSpeed()
 		return;
 	}
 
-	// Movement isn't an ability, so only unscoped modifiers apply in both layers.
-	float Multiplier = IsValid(AbilityComponent)
-		? AbilityComponent->GetModifiedValue(AbilitySystemTags::Stat_MoveSpeed, 1.0f, FGameplayTagContainer())
-		: 1.0f;
-
-	Multiplier = StatusContainer.Evaluate(
-		AbilitySystemTags::Stat_MoveSpeed,
-		Multiplier,
-		FGameplayTagContainer(),
-		GetStatusTags(),
-		GetWorldTime()
-	);
+	// Movement isn't an ability, so only unscoped effects apply.
+	const float Multiplier = GetModifiedValue(AbilitySystemTags::Stat_MoveSpeed, 1.0f, FGameplayTagContainer());
 
 	Movement->MaxWalkSpeed = BaseMaxWalkSpeed * FMath::Max(Multiplier, 0.0f);
 }
@@ -353,7 +241,7 @@ bool UCombatantComponent::HasCombatTag(const FGameplayTag Tag) const
 		return false;
 	}
 
-	if (HasStatusTag(Tag))
+	if (HasEffectTag(Tag))
 	{
 		return true;
 	}
@@ -428,4 +316,146 @@ FHitReactionResult UCombatantComponent::ResolveHitReaction(const FAbilityPayload
 	Result.HitDirection = HitDirection;
 	Result.Instigator = InstigatorActor;
 	return Result;
+}
+void UCombatantComponent::ApplyEffect(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& Modifiers, const int32 Rank, const FGameplayTagContainer& GrantedTags, const float Duration)
+{
+	const double ExpiresAt = Duration > 0.0f ? GetWorldTime() + Duration : 0.0;
+
+	EffectContainer.Apply(IsValid(Source) ? Source : this, EntryKey, Modifiers, FMath::Max(Rank, 1), GrantedTags, ExpiresAt, Duration);
+	HandleEffectsChanged();
+}
+
+bool UCombatantComponent::RemoveEffect(const UObject* Source, const FName EntryKey)
+{
+	if (!EffectContainer.Remove(IsValid(Source) ? Source : this, EntryKey))
+	{
+		return false;
+	}
+
+	HandleEffectsChanged();
+	return true;
+}
+
+bool UCombatantComponent::RemoveEffectsFromSource(const UObject* Source)
+{
+	if (!EffectContainer.RemoveAll(IsValid(Source) ? Source : this))
+	{
+		return false;
+	}
+
+	HandleEffectsChanged();
+	return true;
+}
+
+bool UCombatantComponent::HasEffect(const UObject* Source, const FName EntryKey) const
+{
+	return EffectContainer.Contains(IsValid(Source) ? Source : this, EntryKey);
+}
+
+bool UCombatantComponent::SetEffectStacks(const UObject* Source, const FName EntryKey, const int32 Stacks)
+{
+	if (!EffectContainer.SetStacks(IsValid(Source) ? Source : this, EntryKey, Stacks))
+	{
+		return false;
+	}
+
+	// No stats changed, but listeners such as the effects bar want the new count.
+	OnEffectsChanged.Broadcast();
+	return true;
+}
+
+void UCombatantComponent::ApplyStatus(const FStatusApplication& Status, const UObject* Source)
+{
+	if (!Status.StatusTag.IsValid() || IsDead())
+	{
+		return;
+	}
+
+	FGameplayTagContainer Tags = Status.GrantedTags;
+	Tags.AddTag(Status.StatusTag);
+
+	const double ExpiresAt = Status.Duration > 0.0f ? GetWorldTime() + Status.Duration : 0.0;
+
+	EffectContainer.Apply(
+		IsValid(Source) ? Source : this,
+		Status.StatusTag.GetTagName(),
+		Status.Modifiers,
+		FMath::Max(Status.Rank, 1),
+		Tags,
+		ExpiresAt,
+		Status.Duration,
+		Status.Display
+	);
+
+	HandleEffectsChanged();
+}
+
+float UCombatantComponent::GetModifiedValue(const FGameplayTag Stat, const float BaseValue, const FGameplayTagContainer& AbilityTags) const
+{
+	return EffectContainer.Evaluate(Stat, BaseValue, AbilityTags, GetOwnerTagsForEvaluation(), GetWorldTime());
+}
+
+FGameplayTagContainer UCombatantComponent::GetEffectTags() const
+{
+	FGameplayTagContainer Tags;
+	EffectContainer.AppendGrantedTags(Tags, GetWorldTime());
+	return Tags;
+}
+
+bool UCombatantComponent::HasEffectTag(const FGameplayTag Tag) const
+{
+	return Tag.IsValid() && GetEffectTags().HasTag(Tag);
+}
+
+void UCombatantComponent::GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const
+{
+	EffectContainer.GetDisplayInfo(OutEffects, GetWorldTime(), false);
+}
+
+FGameplayTagContainer UCombatantComponent::GetOwnerTagsForEvaluation() const
+{
+	// The ability component's owned tags already include effect tags (it reads them from here).
+	return IsValid(AbilityComponent) ? AbilityComponent->GetOwnedGameplayTags() : GetEffectTags();
+}
+
+void UCombatantComponent::HandleEffectsChanged()
+{
+	ApplyMovementSpeed();
+	ScheduleEffectExpiry();
+	OnEffectsChanged.Broadcast();
+}
+
+void UCombatantComponent::ScheduleEffectExpiry()
+{
+	UWorld* World = GetWorld();
+
+	if (!IsValid(World))
+	{
+		return;
+	}
+
+	FTimerManager& TimerManager = World->GetTimerManager();
+	TimerManager.ClearTimer(EffectExpiryTimer);
+
+	const double NextExpiry = EffectContainer.GetNextExpiryTime();
+
+	if (NextExpiry <= 0.0)
+	{
+		return;
+	}
+
+	const float Delay = FMath::Max(static_cast<float>(NextExpiry - World->GetTimeSeconds()), UE_KINDA_SMALL_NUMBER);
+	TimerManager.SetTimer(EffectExpiryTimer, this, &UCombatantComponent::HandleEffectExpiry, Delay, false);
+}
+
+void UCombatantComponent::HandleEffectExpiry()
+{
+	if (EffectContainer.PruneExpired(GetWorldTime()))
+	{
+		HandleEffectsChanged();
+	}
+	else
+	{
+		ScheduleEffectExpiry();
+	}
 }

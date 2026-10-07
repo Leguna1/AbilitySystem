@@ -16,6 +16,10 @@ class ABILITYSYSTEM_API UOnHitStatusPassive : public UPassiveAbility
 
 public:
 	virtual void OnDamageDealt_Implementation(AActor* Target, const FAbilityPayload& Payload, float DamageApplied) override;
+	
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
 	/** Hits from abilities with any of these tags trigger it (e.g. Ability.Bow.BullsEye). Empty = every hit. */

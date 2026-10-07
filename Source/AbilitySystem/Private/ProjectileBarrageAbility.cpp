@@ -6,7 +6,6 @@
 #include "TargetingComponent.h"
 #include "TimerManager.h"
 #include "AbilitySystemTags.h"
-#include "ArrowLinkHazard.h"
 #include "CombatantComponent.h"
 #include "Engine/OverlapResult.h"
 
@@ -87,7 +86,6 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 	}
 
 	const FVector TargetCenter = ResolveBarrageTargetCenter();
-	AArrowLinkHazard* Hazard = SpawnHazard(TargetCenter);
 
 	// Gathered once per release; stays empty when this volley doesn't seek.
 	TArray<AActor*> SeekCandidates;
@@ -108,11 +106,6 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 		{
 			continue;
 		}
-		if (IsValid(Hazard))
-		{
-			Hazard->RegisterProjectile(Arrow);
-		}
-
 		// Safety net for arrows that never reach their point.
 		if (BarrageFlightLifespan > 0.0f)
 		{
@@ -282,7 +275,7 @@ void UProjectileBarrageAbility::FindSeekTargets(const FVector& Center, TArray<AA
 		}
 
 		const UCombatantComponent* Combatant = Candidate.FindComponentByClass<UCombatantComponent>();
-		return IsValid(Combatant) && Combatant->GetStatusTags().HasAny(PreferredTags);
+		return IsValid(Combatant) && Combatant->GetEffectTags().HasAny(PreferredTags);
 	};
 
 	// Preferred (e.g. marked) first, then closest to the volley's center.
@@ -320,39 +313,4 @@ AActor* UProjectileBarrageAbility::PickSeekTarget(const TArray<AActor*>& Candida
 
 	++AssignedCounts[BestIndex];
 	return Candidates[BestIndex];
-}
-AArrowLinkHazard* UProjectileBarrageAbility::SpawnHazard(const FVector& Center) const
-{
-	UWorld* World = GetWorld();
-	ACharacter* Character = GetOwningCharacter();
-
-	if (!HazardClass || !IsValid(World) || !IsValid(Character) || !OwnerHasAllTags(HazardRequiredOwnerTags))
-	{
-		return nullptr;
-	}
-
-	FActorSpawnParameters SpawnParams;
-	SpawnParams.Owner = Character;
-	SpawnParams.Instigator = Character;
-	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AArrowLinkHazard* Hazard = World->SpawnActor<AArrowLinkHazard>(HazardClass, Center, FRotator::ZeroRotator, SpawnParams);
-
-	if (!IsValid(Hazard))
-	{
-		return nullptr;
-	}
-
-	FArrowLinkHazardParams Params;
-	ResolveStatusSpecs(HazardStatuses, Params.Statuses);
-	Params.Duration = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_HazardDuration, HazardDuration), 0.1f);
-	Params.LinkDistance = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_LinkDistance, HazardLinkDistance), 0.0f);
-
-	// Every arrow has landed or expired by the end of its flight lifespan.
-	Params.CollectionTime = BarrageFlightLifespan > 0.0f
-		? BarrageFlightLifespan
-		: RedirectDelay + BarrageImpactStagger + 3.0f;
-
-	Hazard->InitializeHazard(Params);
-	return Hazard;
 }

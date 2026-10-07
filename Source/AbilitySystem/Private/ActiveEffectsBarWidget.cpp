@@ -1,22 +1,22 @@
 #include "ActiveEffectsBarWidget.h"
 
-#include "AbilityComponent.h"
 #include "ActiveEffectWidget.h"
+#include "CombatantComponent.h"
 #include "Components/PanelWidget.h"
 #include "TimerManager.h"
 
-void UActiveEffectsBarWidget::InitializeEffectsBar(UAbilityComponent* InAbilityComponent)
+void UActiveEffectsBarWidget::InitializeEffectsBar(UCombatantComponent* InCombatantComponent)
 {
-	if (IsValid(AbilityComponent))
+	if (IsValid(CombatantComponent))
 	{
-		AbilityComponent->ModifiersChangedEvent.RemoveDynamic(this, &UActiveEffectsBarWidget::HandleModifiersChanged);
+		CombatantComponent->OnEffectsChanged.RemoveDynamic(this, &UActiveEffectsBarWidget::HandleEffectsChanged);
 	}
 
-	AbilityComponent = InAbilityComponent;
+	CombatantComponent = InCombatantComponent;
 
-	if (IsValid(AbilityComponent))
+	if (IsValid(CombatantComponent))
 	{
-		AbilityComponent->ModifiersChangedEvent.AddDynamic(this, &UActiveEffectsBarWidget::HandleModifiersChanged);
+		CombatantComponent->OnEffectsChanged.AddDynamic(this, &UActiveEffectsBarWidget::HandleEffectsChanged);
 	}
 
 	SyncEffects();
@@ -24,9 +24,9 @@ void UActiveEffectsBarWidget::InitializeEffectsBar(UAbilityComponent* InAbilityC
 
 void UActiveEffectsBarWidget::NativeDestruct()
 {
-	if (IsValid(AbilityComponent))
+	if (IsValid(CombatantComponent))
 	{
-		AbilityComponent->ModifiersChangedEvent.RemoveDynamic(this, &UActiveEffectsBarWidget::HandleModifiersChanged);
+		CombatantComponent->OnEffectsChanged.RemoveDynamic(this, &UActiveEffectsBarWidget::HandleEffectsChanged);
 	}
 
 	if (UWorld* World = GetWorld())
@@ -37,7 +37,7 @@ void UActiveEffectsBarWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
-void UActiveEffectsBarWidget::HandleModifiersChanged()
+void UActiveEffectsBarWidget::HandleEffectsChanged()
 {
 	SyncEffects();
 }
@@ -46,9 +46,9 @@ void UActiveEffectsBarWidget::SyncEffects()
 {
 	TArray<FActiveEffectInfo> Effects;
 
-	if (IsValid(AbilityComponent))
+	if (IsValid(CombatantComponent))
 	{
-		AbilityComponent->GetActiveEffects(Effects);
+		CombatantComponent->GetActiveEffects(Effects);
 	}
 
 	// Remove widgets whose effect has ended.

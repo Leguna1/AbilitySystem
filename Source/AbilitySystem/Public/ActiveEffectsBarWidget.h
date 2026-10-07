@@ -4,16 +4,16 @@
 #include "Blueprint/UserWidget.h"
 #include "ActiveEffectsBarWidget.generated.h"
 
-class UAbilityComponent;
+class UCombatantComponent;
 class UActiveEffectWidget;
 class UPanelWidget;
 
 /**
- * Shows the owner's active effects (buffs, procs, boosters). Rebuilds on
- * ModifiersChangedEvent and polls countdowns while any effect is timed.
+ * Shows the active effects on a character: buffs, procs and statuses.
+ * Rebuilds on OnEffectsChanged and polls countdowns while any effect is timed.
  *
  * Setup: a panel named "EffectContainer" (BindWidget), EffectWidgetClass set,
- * then call InitializeEffectsBar with the ability component.
+ * then call InitializeEffectsBar with the character's combatant component.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UActiveEffectsBarWidget : public UUserWidget
@@ -22,7 +22,7 @@ class ABILITYSYSTEM_API UActiveEffectsBarWidget : public UUserWidget
 
 public:
 	UFUNCTION(BlueprintCallable, Category = "Effect|UI")
-	void InitializeEffectsBar(UAbilityComponent* InAbilityComponent);
+	void InitializeEffectsBar(UCombatantComponent* InCombatantComponent);
 
 protected:
 	virtual void NativeDestruct() override;
@@ -39,12 +39,12 @@ protected:
 
 private:
 	UFUNCTION()
-	void HandleModifiersChanged();
+	void HandleEffectsChanged();
 
 	void SyncEffects();
 
 	UPROPERTY(Transient)
-	TObjectPtr<UAbilityComponent> AbilityComponent;
+	TObjectPtr<UCombatantComponent> CombatantComponent;
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UActiveEffectWidget>> EffectWidgets;

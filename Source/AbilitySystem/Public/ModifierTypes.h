@@ -6,6 +6,27 @@
 #include "UObject/ObjectKey.h"
 #include "ModifierTypes.generated.h"
 
+
+
+class UTexture2D;
+
+/** How an effect looks in the UI. */
+USTRUCT(BlueprintType)
+struct FEffectDisplay
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display")
+	FText DisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display", meta = (MultiLine = "true"))
+	FText Description;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Display")
+	TObjectPtr<UTexture2D> Icon;
+
+	bool IsSet() const { return !DisplayName.IsEmpty() || Icon != nullptr; }
+};
 UENUM(BlueprintType)
 enum class EModifierOperation : uint8
 {
@@ -49,6 +70,10 @@ struct FStatusEffectSpec
 	/** Identity of the status, always granted to the target while active. Re-applying refreshes it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status", meta = (Categories = "Status"))
 	FGameplayTag StatusTag;
+	
+	/** Name, description and icon shown on effect bars. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Status")
+	FEffectDisplay Display;
 
 	/**
 	 * Modifiers on the target, at the applying ability's rank. Their scope is
@@ -78,6 +103,9 @@ struct FStatusApplication
 
 	UPROPERTY(BlueprintReadWrite, Category = "Status")
 	FGameplayTag StatusTag;
+	
+	UPROPERTY(BlueprintReadWrite, Category = "Status")
+	FEffectDisplay Display;
 
 	UPROPERTY(BlueprintReadWrite, Category = "Status")
 	TArray<FStatModifier> Modifiers;
@@ -124,6 +152,10 @@ struct FModifierEntry
 
 	UPROPERTY()
 	FName EntryKey;
+	
+	/** Optional look for UI. Empty = use the source ability's. */
+	UPROPERTY()
+	FEffectDisplay Display;
 
 	UPROPERTY()
 	TArray<FResolvedStatModifier> Modifiers;
@@ -188,13 +220,17 @@ struct FActiveEffectInfo
  * Plain struct so any component can host one (abilities, combatants).
  * Queries ignore expired entries even before they are pruned.
  */
+
 USTRUCT()
 struct ABILITYSYSTEM_API FStatModifierContainer
 {
 	GENERATED_BODY()
 
+	
 	/** Adds or replaces the entry for Source + EntryKey. ExpiresAt <= 0 = until removed. Stacks survive a refresh. */
-	void Apply(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& InModifiers, int32 Rank, const FGameplayTagContainer& InGrantedTags, double ExpiresAt, float Duration);
+	void Apply(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& InModifiers, int32 Rank,
+	const FGameplayTagContainer& InGrantedTags, double ExpiresAt, float Duration,
+	const FEffectDisplay& InDisplay = FEffectDisplay());
 
 	/** True if the stack count changed. */
 	bool SetStacks(const UObject* Source, FName EntryKey, int32 Stacks);
@@ -223,6 +259,12 @@ struct ABILITYSYSTEM_API FStatModifierContainer
  * Unkeyed entries (a passive's permanent bonus) are skipped unless bIncludeUnkeyed.
  */
 	void GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, double Now, bool bIncludeUnkeyed) const;
+	
+	/** Removes every entry with a duration; permanent entries stay. True if anything was removed. */
+	bool RemoveTimed()
+	{
+		return Entries.RemoveAll([](const FModifierEntry& Entry) { return Entry.ExpiresAt > 0.0; }) > 0;
+	}
 
 private:
 	int32 FindEntry(const FObjectKey& SourceKey, FName EntryKey) const;

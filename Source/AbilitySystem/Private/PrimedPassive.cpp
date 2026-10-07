@@ -56,3 +56,14 @@ void UPrimedPassive::OnPassiveDeactivated_Implementation()
 	RemainingCharges = 0;
 	Super::OnPassiveDeactivated_Implementation();
 }
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult UPrimedPassive::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	return CombineDataValidationResults(Result,
+		AbilityValidation::ValidateModifiers(BonusModifiers, TEXT("Bonus Modifiers"), Context));
+}
+#endif

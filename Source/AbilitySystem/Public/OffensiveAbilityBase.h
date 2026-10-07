@@ -4,6 +4,7 @@
 #include "HitReactionTypes.h"
 #include "MontageAbility.h"
 #include "ModifierTypes.h"
+#include "PayloadReceiver.h"
 #include "OffensiveAbilityBase.generated.h"
 
 /**
@@ -20,6 +21,16 @@ class ABILITYSYSTEM_API UOffensiveAbilityBase : public UMontageAbility
 public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
+	
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+	
+	/** What every hit of this execution carries: source tags, impact, and anything features add. */
+	FHitSpec BuildHitSpec() const;
+
+	/** Resolves Specs at this execution's rank. Entries whose owner tags aren't met, or without a duration, are skipped. */
+	void ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const;
 
 protected:
 	/**
@@ -57,16 +68,6 @@ protected:
 
 	template <typename T>
 	T* GetEquippedWeaponAs() const { return Cast<T>(GetEquippedWeapon()); }
-	
-	/** Statuses this ability's hits apply. Resolved at the ability's rank when it fires or strikes. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|On Hit")
-	TArray<FStatusEffectSpec> OnHitStatuses;
-
-	/** OnHitStatuses whose attacker requirements are met, resolved at this execution's rank. */
-	void ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const;
-
-	/** Resolves Specs at this execution's rank. Entries whose owner tags aren't met, or without a duration, are skipped. */
-	void ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const;
 	
 	/** How hard this ability's hits are. Poise damage is scaled by Stat.PoiseDamage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|Impact")

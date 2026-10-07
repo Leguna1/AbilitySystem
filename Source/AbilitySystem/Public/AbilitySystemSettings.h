@@ -30,4 +30,8 @@ public:
 	/** Every delivered hit is scaled by a random factor in [1 - this, 1 + this]. 0 = no variance. */
 	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "0.5"))
 	float DamageVariance = 0.07f;
+	
+	/** Damage kept per target an arrow passes through (0.5 = half), before Stat.PierceDamage modifiers. A Pierce feature can override it. */
+	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "2.0"))
+	float DefaultPierceDamageFactor = 0.5f;
 };

@@ -4,6 +4,7 @@
 #include "AbilityTypes.h"
 #include "GameplayTagContainer.h"
 #include "UObject/Object.h"
+#include "AbilitySystemLog.h"
 #include "Ability.generated.h"
 
 class ACharacter;
@@ -27,6 +28,15 @@ public:
 	virtual void InitializeAbility(UAbilityComponent* InAbilityComponent, ACharacter* InOwningCharacter);
 
 	virtual UWorld* GetWorld() const override;
+	
+	virtual void PostInitProperties() override;
+	virtual void PostLoad() override;
+
+#if WITH_EDITOR
+	virtual void PreEditChange(FProperty* PropertyAboutToChange) override;
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& PropertyChangedEvent) override;
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 	/* -------------------- Identity -------------------- */
 
@@ -66,6 +76,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	ACharacter* GetOwningCharacter() const { return OwningCharacter; }
+	
+	/** BaseValue with every modifier on Stat that applies to this ability's tags. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
+	float GetModifiedFloat(FGameplayTag Stat, float BaseValue) const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
+	int32 GetModifiedInt(FGameplayTag Stat, int32 BaseValue) const;
 
 protected:
 	UFUNCTION(BlueprintPure, Category = "Ability|Rank")
@@ -94,9 +111,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display")
 	TObjectPtr<UTexture2D> Icon;
 
+	/** Unique id of this ability, e.g. Ability.Bow.ChargedShot. Cooldowns, ranks and the skill tree key on it. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability")
 	FGameplayTag AbilityId;
 
+	/**
+	 * Tags describing this ability, used by modifier scopes, transitions and triggers
+	 * (e.g. Ability.Weapon.Bow, Ability.Type.Special). The Ability Id is always included automatically.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Tags")
 	FGameplayTagContainer AbilityTags;
 
@@ -108,12 +130,7 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rank", meta = (ClampMin = "1"))
 	int32 MaxRank = 1;
 	
-	/** BaseValue with every modifier on Stat that applies to this ability's tags. */
-	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
-	float GetModifiedFloat(FGameplayTag Stat, float BaseValue) const;
-
-	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
-	int32 GetModifiedInt(FGameplayTag Stat, int32 BaseValue) const;
+	
 
 private:
 	UPROPERTY(Transient)
@@ -124,4 +141,11 @@ private:
 
 	UPROPERTY(Transient)
 	int32 AbilityRank = 0;
+	
+	/** Keeps AbilityId inside AbilityTags, so scopes and triggers can always match an ability by its id. */
+	void EnsureIdInTags();
+
+#if WITH_EDITORONLY_DATA
+	FGameplayTag PreviousAbilityId;
+#endif
 };

@@ -52,8 +52,32 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Hazard")
 	const TArray<FVector>& GetLinkPoints() const { return Points; }
+	
+	const TArray<FStatusEffectSpec>& GetStatusSpecs() const { return Statuses; }
+	float GetBaseDuration() const { return Duration; }
+	float GetBaseLinkDistance() const { return LinkDistance; }
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
+	
+	/**
+ * Applied to whoever touches a line, refreshed every pulse. Values are read at the
+ * firing ability's rank, or at Rank Source Ability Id's rank if set (e.g. the Storm Volley path).
+ */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hazard|Effect")
+	TArray<FStatusEffectSpec> Statuses;
+
+	/** Seconds the lines last, counted from the first landing. Passives can change it (Stat.HazardDuration). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hazard|Effect", meta = (ClampMin = "0.1"))
+	float Duration = 4.0f;
+
+	/** Arrows landing within this distance link up. Passives can change it (Stat.LinkDistance). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Hazard|Links", meta = (ClampMin = "0.0"))
+	float LinkDistance = 400.0f;
+	
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Hazard")

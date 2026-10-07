@@ -1,7 +1,9 @@
 #include "ModifierTypes.h"
 #include "Ability.h"
 
-void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, const TArray<FStatModifier>& InModifiers, const int32 Rank, const FGameplayTagContainer& InGrantedTags, const double ExpiresAt, float Duration)
+void FStatModifierContainer::Apply(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& InModifiers, int32 Rank, const
+                                   FGameplayTagContainer& InGrantedTags,
+                                   double ExpiresAt, float Duration, const FEffectDisplay& InDisplay)
 {
 	const FObjectKey SourceKey(Source);
 	int32 Index = FindEntry(SourceKey, EntryKey);
@@ -31,9 +33,12 @@ void FStatModifierContainer::Apply(const UObject* Source, const FName EntryKey, 
 		Resolved.RequiredOwnerTags = Modifier.RequiredOwnerTags;
 	}
 
+	Entry.Display = InDisplay;
 	Entry.GrantedTags = InGrantedTags;
 	Entry.ExpiresAt = ExpiresAt;
 	Entry.Duration = FMath::Max(Duration, 0.0f);
+	
+	
 }
 
 bool FStatModifierContainer::Remove(const UObject* Source, const FName EntryKey)
@@ -188,7 +193,14 @@ void FStatModifierContainer::GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, 
 			? static_cast<float>(FMath::Max(Entry.ExpiresAt - Now, 0.0))
 			: -1.0f;
 
-		if (const UAbility* SourceAbility = Cast<UAbility>(SourceObject))
+		if (Entry.Display.IsSet())
+		{
+			// Statuses carry their own look; they come from characters and hazards, not abilities.
+			Info.DisplayName = Entry.Display.DisplayName.IsEmpty() ? FText::FromName(Entry.EntryKey) : Entry.Display.DisplayName;
+			Info.Description = Entry.Display.Description;
+			Info.Icon = Entry.Display.Icon;
+		}
+		else if (const UAbility* SourceAbility = Cast<UAbility>(SourceObject))
 		{
 			Info.DisplayName = SourceAbility->GetDisplayName();
 			Info.Description = SourceAbility->GetDescription();
@@ -196,7 +208,6 @@ void FStatModifierContainer::GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, 
 		}
 		else
 		{
-			// Statuses come from characters, not abilities: fall back to the status name.
 			Info.DisplayName = FText::FromName(Entry.EntryKey);
 		}
 	}

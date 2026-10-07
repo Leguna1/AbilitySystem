@@ -15,7 +15,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCombatantDamageDealtSignature, A
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantDiedSignature, AActor*, Killer);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantKilledSignature, AActor*, Victim);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantRevivedSignature);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantStatusesChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantEffectsChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantHitReactionSignature, const FHitReactionResult&, Result);
 
 /**
@@ -78,24 +78,51 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
 	FCombatantRevivedSignature OnRevived;
 	
-	/** Applies or refreshes a status. Keyed by status tag + source, so re-applying refreshes. */
-	UFUNCTION(BlueprintCallable, Category = "Combat|Status")
+		/* -------------------- Effects -------------------- */
+
+	/**
+	 * Adds or replaces Source's effect under EntryKey (null source = this component).
+	 * Modifiers are read at Rank; GrantedTags are owner tags while it lasts.
+	 * Duration <= 0 = until removed. Buffs, procs and statuses all live here.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
+	void ApplyEffect(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& Modifiers, int32 Rank, const FGameplayTagContainer& GrantedTags, float Duration = 0.0f);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
+	bool RemoveEffect(const UObject* Source, FName EntryKey);
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
+	bool RemoveEffectsFromSource(const UObject* Source);
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Effects")
+	bool HasEffect(const UObject* Source, FName EntryKey) const;
+
+	/** Sets the UI stack count of an active effect (e.g. remaining charges). */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
+	bool SetEffectStacks(const UObject* Source, FName EntryKey, int32 Stacks);
+
+	/** Applies or refreshes a status: an effect from Source keyed by its status tag, so re-applying refreshes. */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
 	void ApplyStatus(const FStatusApplication& Status, const UObject* Source);
 
-	UFUNCTION(BlueprintPure, Category = "Combat|Status")
-	bool HasStatusTag(FGameplayTag Tag) const;
+	/** (Base + all Adds) x (1 + all Percents) of every effect on Stat that applies to AbilityTags and the owner's tags. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Effects")
+	float GetModifiedValue(FGameplayTag Stat, float BaseValue, const FGameplayTagContainer& AbilityTags) const;
 
-	/** Tags granted by active statuses. */
-	UFUNCTION(BlueprintPure, Category = "Combat|Status")
-	FGameplayTagContainer GetStatusTags() const;
+	/** Tags granted by active effects: buffs, procs and statuses. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Effects")
+	FGameplayTagContainer GetEffectTags() const;
 
-	/** Statuses were applied, refreshed, expired or cleared. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Effects")
+	bool HasEffectTag(FGameplayTag Tag) const;
+
+	/** Every active keyed effect (procs and statuses) with display data. Passives' permanent bonuses are left out. */
+	UFUNCTION(BlueprintCallable, Category = "Combat|Effects")
+	void GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const;
+
+	/** Effects were applied, refreshed, removed or expired. */
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
-	FCombatantStatusesChangedSignature OnStatusesChanged;
-	
-	/** Every active status with its remaining time, for debugging and target UI. */
-	UFUNCTION(BlueprintCallable, Category = "Combat|Status")
-	void GetActiveStatuses(TArray<FActiveEffectInfo>& OutStatuses) const;
+	FCombatantEffectsChangedSignature OnEffectsChanged;
 	
 	/**
  * Walk speed before buffs and statuses. Enemy logic that switches speeds
@@ -115,7 +142,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
 	bool IsStaggerImmune() const;
 
-	/** The owner's ability-component tags plus its status tags. */
+	/** The owner's ability-component tags plus its effect tags. */
 	UFUNCTION(BlueprintPure, Category = "Combat")
 	bool HasCombatTag(FGameplayTag Tag) const;
 
@@ -167,22 +194,25 @@ private:
 
 	bool bInvulnerable = false;
 	
-	UFUNCTION()
-	void HandleStatusExpiry();
-
-	void HandleStatusesChanged();
-	void ScheduleStatusExpiry();
 	double GetWorldTime() const;
-
-	UPROPERTY(Transient)
-	FStatModifierContainer StatusContainer;
-
-	FTimerHandle StatusExpiryTimer;
+	
 	
 	UFUNCTION()
-	void HandleOwnerModifiersChanged();
+	void HandleEffectExpiry();
 
-	/** Base walk speed x the owner's move-speed buffs x its move-speed statuses. */
+	void HandleEffectsChanged();
+	void ScheduleEffectExpiry();
+
+	/** Everything that can satisfy an effect's owner-tag condition. */
+	FGameplayTagContainer GetOwnerTagsForEvaluation() const;
+
+	/** Every effect on this character: passive bonuses, procs, and statuses from others. */
+	UPROPERTY(Transient)
+	FStatModifierContainer EffectContainer;
+
+	FTimerHandle EffectExpiryTimer;
+
+	/** Base walk speed x every move-speed effect. */
 	void ApplyMovementSpeed();
 
 	/** Walk speed before modifiers, captured at BeginPlay. */

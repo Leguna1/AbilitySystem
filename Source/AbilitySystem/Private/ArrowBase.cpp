@@ -495,9 +495,7 @@ void AArrowBase::HandleImpact(
 	Payload.Instigator = GetInstigator();
 	Payload.Causer = this;
 	Payload.Hit = SweepResult;
-	Payload.SourceAbilityTags = ShotParams.SourceAbilityTags;
-	Payload.Statuses = ShotParams.Statuses;
-	Payload.Impact = ShotParams.Impact;
+	ShotParams.Hit.ApplyTo(Payload);
 
 	// Deliver first: acceptance decides hit vs miss feedback, and whether the arrow can pierce.
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);

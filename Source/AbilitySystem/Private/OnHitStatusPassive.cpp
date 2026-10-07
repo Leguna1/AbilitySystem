@@ -28,6 +28,8 @@ void UOnHitStatusPassive::OnDamageDealt_Implementation(AActor* Target, const FAb
 
 		FStatusApplication Status;
 		Status.StatusTag = Spec.StatusTag;
+		
+		Status.Display = Spec.Display;
 		Status.Modifiers = Spec.Modifiers;
 		Status.GrantedTags = Spec.GrantedTags;
 		Status.Rank = FMath::Max(GetAbilityRank(), 1);
@@ -37,3 +39,15 @@ void UOnHitStatusPassive::OnDamageDealt_Implementation(AActor* Target, const FAb
 		TargetCombatant->ApplyStatus(Status, GetOwningCharacter());
 	}
 }
+
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult UOnHitStatusPassive::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	return CombineDataValidationResults(Result,
+		AbilityValidation::ValidateStatusSpecs(Statuses, TEXT("Statuses"), Context));
+}
+#endif

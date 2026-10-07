@@ -15,6 +15,10 @@ class ABILITYSYSTEM_API UChanceBuffPassive : public UPassiveAbility
 
 public:
 	virtual void OnGameplayEvent_Implementation(FGameplayTag EventTag, UActiveAbility* Source) override;
+	
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
 	/** Event that rolls for the buff, e.g. Event.Combo.Finished. */

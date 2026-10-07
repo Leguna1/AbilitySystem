@@ -49,6 +49,31 @@ struct FAbilityPayload
 	// FGameplayTagContainer EffectTags;   // statuses to apply
 	// FVector KnockbackImpulse;           // directional force
 };
+/** What each hit of an attack carries to its target besides damage. Built once by the attacking ability. */
+USTRUCT(BlueprintType)
+struct FHitSpec
+{
+	GENERATED_BODY()
+
+	/** Tags of the attacking ability, so the receiver and passives know what hit them. */
+	UPROPERTY(BlueprintReadWrite, Category = "Hit")
+	FGameplayTagContainer SourceAbilityTags;
+
+	/** How hard the hit is (poise damage, reaction). */
+	UPROPERTY(BlueprintReadWrite, Category = "Hit")
+	FHitImpact Impact;
+
+	/** Statuses the hit applies if it's accepted. */
+	UPROPERTY(BlueprintReadWrite, Category = "Hit")
+	TArray<FStatusApplication> Statuses;
+
+	void ApplyTo(FAbilityPayload& Payload) const
+	{
+		Payload.SourceAbilityTags = SourceAbilityTags;
+		Payload.Impact = Impact;
+		Payload.Statuses = Statuses;
+	}
+};
 
 UINTERFACE(BlueprintType, MinimalAPI)
 class UPayloadReceiver : public UInterface

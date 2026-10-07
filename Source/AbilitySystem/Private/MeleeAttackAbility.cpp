@@ -120,9 +120,7 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	Payload.Instigator = GetOwningCharacter();
 	Payload.Causer = BoundSword.Get();
 	Payload.Hit = Hit;
-	Payload.SourceAbilityTags = GetAbilityTags();
-	ResolveOnHitStatuses(Payload.Statuses);
-	Payload.Impact = ResolveHitImpact();
+	BuildHitSpec().ApplyTo(Payload);
 
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 

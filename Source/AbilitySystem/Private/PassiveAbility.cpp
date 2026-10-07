@@ -2,13 +2,14 @@
 
 #include "AbilityComponent.h"
 #include "ActiveAbility.h"
+#include "CombatantComponent.h"
 
 void UPassiveAbility::ActivatePassive()
 {
-	UAbilityComponent* Component = GetAbilityComponent();
+	UCombatantComponent* Target = GetEffectTarget();
 
 	// Rank 0 = granted but locked.
-	if (bPassiveActive || GetAbilityRank() <= 0 || !IsValid(Component))
+	if (bPassiveActive || GetAbilityRank() <= 0 || !IsValid(Target))
 	{
 		return;
 	}
@@ -16,7 +17,7 @@ void UPassiveAbility::ActivatePassive()
 	bPassiveActive = true;
 
 	// The permanent entry (key None): this passive's own modifiers and tags.
-	Component->ApplyModifiers(this, NAME_None, Modifiers, GetAbilityRank(), GrantedTags, 0.0f);
+	Target->ApplyEffect(this, NAME_None, Modifiers, GetAbilityRank(), GrantedTags, 0.0f);
 
 	OnPassiveActivated();
 }
@@ -33,31 +34,33 @@ void UPassiveAbility::DeactivatePassive()
 	bPassiveActive = false;
 
 	// Removes the permanent entry and any running timed effects in one call.
-	if (UAbilityComponent* Component = GetAbilityComponent())
+	if (UCombatantComponent* Target = GetEffectTarget())
 	{
-		Component->RemoveModifiersFromSource(this);
+		Target->RemoveEffectsFromSource(this);
 	}
 }
-
+UCombatantComponent* UPassiveAbility::GetEffectTarget() const
+{
+	const UAbilityComponent* Component = GetAbilityComponent();
+	return IsValid(Component) ? Component->GetCombatantComponent() : nullptr;
+}
 void UPassiveAbility::ApplyTimedEffect(const FName EntryKey, const TArray<FStatModifier>& EffectModifiers, const FGameplayTagContainer& EffectTags, const float Duration)
 {
-	UAbilityComponent* Component = GetAbilityComponent();
+	UCombatantComponent* Target = GetEffectTarget();
 
-	if (!bPassiveActive || EntryKey.IsNone() || !IsValid(Component))
+	if (!bPassiveActive || EntryKey.IsNone() || !IsValid(Target))
 	{
 		return;
 	}
 
-	Component->ApplyModifiers(this, EntryKey, EffectModifiers, GetAbilityRank(), EffectTags, Duration);
+	Target->ApplyEffect(this, EntryKey, EffectModifiers, GetAbilityRank(), EffectTags, Duration);
 }
 
 void UPassiveAbility::RemoveTimedEffect(const FName EntryKey)
 {
-	UAbilityComponent* Component = GetAbilityComponent();
-
-	if (!EntryKey.IsNone() && IsValid(Component))
+	if (UCombatantComponent* Target = GetEffectTarget(); Target && !EntryKey.IsNone())
 	{
-		Component->RemoveModifierEntry(this, EntryKey);
+		Target->RemoveEffect(this, EntryKey);
 	}
 }
 
@@ -102,15 +105,24 @@ void UPassiveAbility::OnGameplayEvent_Implementation(FGameplayTag EventTag, UAct
 
 bool UPassiveAbility::HasTimedEffect(const FName EntryKey) const
 {
-	const UAbilityComponent* Component = GetAbilityComponent();
-	return IsValid(Component) && Component->HasModifierEntry(this, EntryKey);
+	const UCombatantComponent* Target = GetEffectTarget();
+	return IsValid(Target) && Target->HasEffect(this, EntryKey);
 }
 void UPassiveAbility::SetTimedEffectStacks(const FName EntryKey, const int32 Stacks)
 {
-	UAbilityComponent* Component = GetAbilityComponent();
-
-	if (!EntryKey.IsNone() && IsValid(Component))
+	if (UCombatantComponent* Target = GetEffectTarget(); Target && !EntryKey.IsNone())
 	{
-		Component->SetModifierEntryStacks(this, EntryKey, Stacks);
+		Target->SetEffectStacks(this, EntryKey, Stacks);
 	}
 }
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult UPassiveAbility::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	return CombineDataValidationResults(Result,
+		AbilityValidation::ValidateModifiers(Modifiers, TEXT("Modifiers"), Context));
+}
+#endif

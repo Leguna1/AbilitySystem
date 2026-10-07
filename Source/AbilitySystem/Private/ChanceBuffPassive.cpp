@@ -22,3 +22,14 @@ void UChanceBuffPassive::OnGameplayEvent_Implementation(const FGameplayTag Event
 	// Same entry key every time: a proc while active refreshes the duration instead of stacking.
 	ApplyTimedEffect(BuffEntryKey, BuffModifiers, BuffTags, GetRankedFloat(DurationByRank));
 }
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult UChanceBuffPassive::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	return CombineDataValidationResults(Result,
+		AbilityValidation::ValidateModifiers(BuffModifiers, TEXT("Buff Modifiers"), Context));
+}
+#endif

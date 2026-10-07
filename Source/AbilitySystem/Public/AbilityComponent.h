@@ -229,29 +229,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void HandleInput(FGameplayTag InputTag, bool bPressed);
 	
-	/* -------------------- Modifiers -------------------- */
-
-	/**
-	 * Adds or replaces Source's entry under EntryKey (null source = this component).
-	 * Magnitudes are read at Rank. Duration <= 0 = until removed.
-	 * GrantedTags are owner tags for as long as the entry is active.
-	 */
-	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
-	void ApplyModifiers(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& Modifiers, int32 Rank, const FGameplayTagContainer& GrantedTags, float Duration = 0.0f);
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
-	bool RemoveModifierEntry(const UObject* Source, FName EntryKey);
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
-	bool RemoveModifiersFromSource(const UObject* Source);
-
-	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
-	bool HasModifierEntry(const UObject* Source, FName EntryKey) const;
-
-	/** (Base + all Adds) x (1 + all Percents), for modifiers scoped to AbilityTags whose owner-tag conditions hold. */
+	
+	/** Forwards to the combatant component, where every effect on this character lives. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
 	float GetModifiedValue(FGameplayTag Stat, float BaseValue, const FGameplayTagContainer& AbilityTags) const;
 
+	/** Relays the combatant's OnEffectsChanged for ability-side listeners (e.g. hotbar cost display). */
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FModifiersChangedEventSignature ModifiersChangedEvent;
 	
@@ -263,14 +246,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
 	void BroadcastGameplayEvent(FGameplayTag EventTag, UActiveAbility* Source);
 	
-	/** Sets the UI stack count of an active entry (e.g. remaining charges). */
-	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
-	bool SetModifierEntryStacks(const UObject* Source, FName EntryKey, int32 Stacks);
-
-	/** Every active effect (keyed entries) with display data, in application order. */
-	UFUNCTION(BlueprintCallable, Category = "Ability|Modifiers")
-	void GetActiveEffects(TArray<FActiveEffectInfo>& OutEffects) const;
-	
 	/** Interrupts the active ability and plays the hit reaction. Stagger or stronger only. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Hit Reaction")
 	bool TriggerHitReaction(const FHitReactionResult& Reaction);
@@ -278,6 +253,9 @@ public:
 	/** The reaction being started; read by UHitReactionAbility when it activates. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Hit Reaction")
 	const FHitReactionResult& GetPendingHitReaction() const { return PendingHitReaction; }
+	
+	UFUNCTION(BlueprintPure, Category = "Ability")
+	UCombatantComponent* GetCombatantComponent() const { return CombatantComponent; }
 
 
 protected:
@@ -400,17 +378,7 @@ private:
 	void HandleInputPressed(FGameplayTag InputTag);
 	void HandleInputReleased(FGameplayTag InputTag);
 	
-	UFUNCTION()
-	void HandleModifierExpiry();
-
-	void HandleModifiersChanged();
-	void ScheduleModifierExpiry();
 	double GetWorldTime() const;
-
-	UPROPERTY(Transient)
-	FStatModifierContainer ModifierContainer;
-
-	FTimerHandle ModifierExpiryTimer;
 	
 	float ResolveFocusCost(const UActiveAbility* Ability) const;
 	float ResolveCooldownDuration(const UActiveAbility* Ability) const;
@@ -450,5 +418,8 @@ private:
 
 	UPROPERTY(Transient)
 	FHitReactionResult PendingHitReaction;
+	
+	UFUNCTION()
+	void HandleCombatantEffectsChanged();
 	
 };

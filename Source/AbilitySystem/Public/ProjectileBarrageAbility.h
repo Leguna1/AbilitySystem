@@ -4,7 +4,6 @@
 #include "RangedAttackAbility.h"
 #include "ProjectileBarrageAbility.generated.h"
 
-class AArrowLinkHazard;
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UProjectileBarrageAbility : public URangedAttackAbility
@@ -87,25 +86,6 @@ protected:
 	/** Steering toward the sought enemy after the redirect, so moving targets are still hit. 0 = straight shot. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking", meta = (ClampMin = "0.0"))
 	float SeekHomingAcceleration = 4000.0f;
-	
-	/** Spawned per release while the owner has HazardRequiredOwnerTags (e.g. the Storm Volley path). Landed arrows feed it. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Hazard")
-	TSubclassOf<AArrowLinkHazard> HazardClass;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Hazard")
-	FGameplayTagContainer HazardRequiredOwnerTags;
-
-	/** Applied by the hazard's lines, resolved at this ability's rank. Entries may require their own owner tags. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Hazard")
-	TArray<FStatusEffectSpec> HazardStatuses;
-
-	/** Seconds the lines last, before Stat.HazardDuration modifiers. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Hazard", meta = (ClampMin = "0.1"))
-	float HazardDuration = 4.0f;
-
-	/** Max distance between linked arrows, before Stat.LinkDistance modifiers. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Hazard", meta = (ClampMin = "0.0"))
-	float HazardLinkDistance = 400.0f;
 
 private:
 	
@@ -121,6 +101,4 @@ private:
 	UPROPERTY(Transient)
 	float ResolvedSeekChance = 0.0f;
 	
-	/** Spawns this release's hazard if the owner qualifies. Null otherwise. */
-	AArrowLinkHazard* SpawnHazard(const FVector& Center) const;
 };

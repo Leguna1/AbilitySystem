@@ -2,8 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "ImpactGroupTypes.h"
-#include "ModifierTypes.h"
-#include "HitReactionTypes.h"
+#include "PayloadReceiver.h"
 #include "ArrowShotParams.generated.h"
 
 /** Per-shot values the firing ability hands every arrow it releases. The arrow keeps them for its whole flight. */
@@ -28,14 +27,6 @@ struct FArrowShotParams
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	FImpactGroupHandle ImpactGroup;
 	
-	/** Tags of the firing ability, passed on to every payload this arrow delivers. */
-	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
-	FGameplayTagContainer SourceAbilityTags;
-
-	/** Statuses this arrow applies on hit. */
-	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
-	TArray<FStatusApplication> Statuses;
-	
 	/** Living targets this arrow passes through before stopping. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	int32 PierceCount = 0;
@@ -44,7 +35,7 @@ struct FArrowShotParams
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	float PierceDamageFactor = 0.5f;
 	
-	/** Impact every hit of this arrow carries. */
+	/** What each hit of this arrow carries besides damage. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
-	FHitImpact Impact;
+	FHitSpec Hit;
 };

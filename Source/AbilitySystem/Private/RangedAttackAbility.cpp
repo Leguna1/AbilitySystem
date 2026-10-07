@@ -6,6 +6,8 @@
 #include "GameFramework/Character.h"
 #include "TargetingComponent.h"
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
+#include "AbilitySystemSettings.h"
+#include "ProjectileFragment.h"
 
 bool URangedAttackAbility::CanActivateAbility_Implementation() const
 {
@@ -62,9 +64,6 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 	);
 
 	ResolvedProjectileCount = ResolveProjectileCount();
-
-	ResolvedPierceCount = FMath::Max(GetModifiedInt(AbilitySystemTags::Stat_PierceCount, BasePierceCount), 0);
-	ResolvedPierceDamageFactor = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_PierceDamage, PierceDamageFactor), 0.0f);
 	
 	Super::ActivateAbility_Implementation();
 }
@@ -297,12 +296,22 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	ShotParams.Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
 	ShotParams.bTargetedShot = bHasTarget;
 	ShotParams.DamageMultiplier = FMath::Max(ResolveProjectileDamageMultiplier(), 0.0f);
-	ShotParams.SourceAbilityTags = GetAbilityTags();
-	ResolveOnHitStatuses(ShotParams.Statuses);
-	ShotParams.PierceCount = ResolvedPierceCount;
-	ShotParams.PierceDamageFactor = ResolvedPierceDamageFactor;
-	ShotParams.Impact = ResolveHitImpact();
+	ShotParams.Hit = BuildHitSpec();
 
+	// Pierce from stats alone (e.g. a passive); a Pierce feature supplies base values instead.
+	ShotParams.PierceCount = FMath::Max(GetModifiedInt(AbilitySystemTags::Stat_PierceCount, 0), 0);
+	ShotParams.PierceDamageFactor = FMath::Max(
+		GetModifiedFloat(AbilitySystemTags::Stat_PierceDamage, GetDefault<UAbilitySystemSettings>()->DefaultPierceDamageFactor),
+		0.0f);
+
+	// ... the rest of the ShotParams lines ...
+
+	// Features get the final say over the shot.
+	ForEachFragment<UProjectileFragment>([this, &ShotParams](const UProjectileFragment& Fragment)
+	{
+		Fragment.ModifyShotParams(*this, ShotParams);
+	});
+	
 	// Open before release so every arrow can join; seal right after so the
 	// group closes once the last arrow resolves.
 	UImpactGroupSubsystem* ImpactGroups = bGroupProjectileImpacts
@@ -344,6 +353,9 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	bProjectileReleased = true;
 
 	OnProjectileReleased(ShotParams.Strength);
+	NotifyFragmentsProjectilesReleased();
+	
+	
 	return true;
 }
 
@@ -415,4 +427,26 @@ FGameplayTag URangedAttackAbility::GetCostEventTag() const
 {
 	const FGameplayTag Configured = Super::GetCostEventTag();
 	return Configured.IsValid() ? Configured : ReleaseProjectileEventTag;
+}
+void URangedAttackAbility::NotifyFragmentsProjectilesReleased()
+{
+	TArray<AArrowBase*> Released;
+
+	for (int32 Index = 0; Index < GetReleasedProjectileCount(); ++Index)
+	{
+		if (AArrowBase* Arrow = GetReleasedProjectile(Index))
+		{
+			Released.Add(Arrow);
+		}
+	}
+
+	if (Released.IsEmpty())
+	{
+		return;
+	}
+
+	ForEachFragment<UProjectileFragment>([this, &Released](const UProjectileFragment& Fragment)
+	{
+		Fragment.OnProjectilesReleased(*this, Released);
+	});
 }

@@ -2,11 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "Ability.h"
+#include "AbilityFragment.h"
 #include "ActiveAbility.generated.h"
 
 class UAnimSequenceBase;
 class UMotionWarpingComponent;
 class UTargetingComponent;
+class UAbilityFragment;
 
 /**
  * An ability the character activates: input, cost and cooldown, commit,
@@ -188,6 +190,42 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Tags")
 	const FGameplayTagContainer& GetCancelAbilitiesWithTags() const { return CancelAbilitiesWithTags; }
+	
+	/* -------------------- Features -------------------- */
+
+	const TArray<TObjectPtr<UAbilityFragment>>& GetFragments() const { return Fragments; }
+
+	/** First fragment of type T, or null. */
+	template <typename T>
+	const T* FindFragment() const
+	{
+		for (const UAbilityFragment* Fragment : Fragments)
+		{
+			if (const T* Typed = Cast<T>(Fragment))
+			{
+				return Typed;
+			}
+		}
+
+		return nullptr;
+	}
+
+	/** Calls Visitor for every fragment of type T. */
+	template <typename T>
+	void ForEachFragment(TFunctionRef<void(const T&)> Visitor) const
+	{
+		for (const UAbilityFragment* Fragment : Fragments)
+		{
+			if (const T* Typed = Cast<T>(Fragment))
+			{
+				Visitor(*Typed);
+			}
+		}
+	}
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 protected:
 	/* -------------------- Requests -------------------- */
@@ -293,6 +331,10 @@ protected:
 	/** Tells the owner's passives that something happened (e.g. Event.Combo.Finished). */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
 	void SendGameplayEvent(FGameplayTag EventTag);
+	
+	/** Optional features for this ability. Click + and pick one to add it, e.g. Pierce or Apply Status on Hit. */
+	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Features")
+	TArray<TObjectPtr<UAbilityFragment>> Fragments;
 
 private:
 	friend class UAbilityComponent;
@@ -301,6 +343,9 @@ private:
 	void SetCommitted(bool bNewCommitted) { bCommitted = bNewCommitted; }
 	void SetTransitionOpen(bool bNewTransitionOpen) { bTransitionOpen = bNewTransitionOpen; }
 	void SetEarlyCancellationClosed(bool bNewClosed) { bEarlyCancellationClosed = bNewClosed; }
+	
+	void NotifyFragmentsStarted();
+	void NotifyFragmentsEnded(EAbilityEndReason EndReason);
 
 	UPROPERTY(Transient)
 	EAbilityStatus AbilityStatus = EAbilityStatus::Inactive;
@@ -319,4 +364,5 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UMotionWarpingComponent> MotionWarpingComponent;
+	
 };

@@ -1,6 +1,11 @@
 #include "ActiveAbility.h"
-
 #include "AbilityComponent.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
+#define LOCTEXT_NAMESPACE "ActiveAbility"
 
 void UActiveAbility::InitializeAbility(UAbilityComponent* InAbilityComponent, ACharacter* InOwningCharacter)
 {
@@ -202,3 +207,69 @@ void UActiveAbility::SendGameplayEvent(const FGameplayTag EventTag)
 		Component->BroadcastGameplayEvent(EventTag, this);
 	}
 }
+void UActiveAbility::NotifyFragmentsStarted()
+{
+	for (const UAbilityFragment* Fragment : Fragments)
+	{
+		if (IsValid(Fragment))
+		{
+			Fragment->OnExecutionStarted(*this);
+		}
+	}
+}
+
+void UActiveAbility::NotifyFragmentsEnded(const EAbilityEndReason EndReason)
+{
+	for (const UAbilityFragment* Fragment : Fragments)
+	{
+		if (IsValid(Fragment))
+		{
+			Fragment->OnExecutionEnded(*this, EndReason);
+		}
+	}
+}
+
+#if WITH_EDITOR
+
+EDataValidationResult UActiveAbility::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	const bool bPaysOnEvent =
+		CostTrigger == EAbilityCostTrigger::OnAnimationEvent ||
+		CostTrigger == EAbilityCostTrigger::OnEveryAnimationEvent;
+
+	if (bPaysOnEvent && !GetCostEventTag().IsValid())
+	{
+		Context.AddError(LOCTEXT("NoCostEvent",
+			"Cost Trigger pays on an animation event, but no Cost Event Tag is set and this ability has no default. Set Cost Event Tag."));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	TArray<const UClass*> SeenTypes;
+
+	for (int32 Index = 0; Index < Fragments.Num(); ++Index)
+	{
+		const UAbilityFragment* Fragment = Fragments[Index];
+
+		if (!IsValid(Fragment))
+		{
+			Context.AddWarning(FText::Format(LOCTEXT("EmptyFeature", "Features [{0}] is empty. Pick a feature or remove the entry."), Index));
+			continue;
+		}
+
+		if (!Fragment->AllowsMultiple() && SeenTypes.Contains(Fragment->GetClass()))
+		{
+			Context.AddError(FText::Format(LOCTEXT("DuplicateFeature", "{0} is added more than once. Keep one."),
+				Fragment->GetClass()->GetDisplayNameText()));
+			Result = EDataValidationResult::Invalid;
+		}
+
+		SeenTypes.Add(Fragment->GetClass());
+		Result = CombineDataValidationResults(Result, Fragment->IsDataValid(Context));
+	}
+
+	return Result;
+}
+
+#endif

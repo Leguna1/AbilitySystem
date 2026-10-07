@@ -5,6 +5,7 @@
 #include "TargetingComponent.h"
 #include "WeaponManagerComponent.h"
 #include "AbilitySystemTags.h"
+#include "AttackFragment.h"
 
 void UOffensiveAbilityBase::ActivateAbility_Implementation()
 {
@@ -93,10 +94,6 @@ AWeaponBase* UOffensiveAbilityBase::GetEquippedWeapon() const
 
 	return IsValid(WeaponManager) ? WeaponManager->GetEquippedWeapon() : nullptr;
 }
-void UOffensiveAbilityBase::ResolveOnHitStatuses(TArray<FStatusApplication>& OutStatuses) const
-{
-	ResolveStatusSpecs(OnHitStatuses, OutStatuses);
-}
 
 void UOffensiveAbilityBase::ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const
 {
@@ -118,8 +115,10 @@ void UOffensiveAbilityBase::ResolveStatusSpecs(const TArray<FStatusEffectSpec>& 
 			continue;
 		}
 
+		
 		FStatusApplication& Status = OutStatuses.AddDefaulted_GetRef();
 		Status.StatusTag = Spec.StatusTag;
+		Status.Display = Spec.Display;
 		Status.Modifiers = Spec.Modifiers;
 		Status.GrantedTags = Spec.GrantedTags;
 		Status.Rank = FMath::Max(GetAbilityRank(), 1);
@@ -131,4 +130,35 @@ FHitImpact UOffensiveAbilityBase::ResolveHitImpact() const
 	FHitImpact Impact = HitImpact;
 	Impact.PoiseDamage = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_PoiseDamage, HitImpact.PoiseDamage), 0.0f);
 	return Impact;
+}
+#if WITH_EDITOR
+#include "AbilityValidation.h"
+
+EDataValidationResult UOffensiveAbilityBase::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	if (HitImpact.Reaction != EHitReactionType::None &&
+		HitImpact.PoiseDamage <= 0.0f &&
+		!HitImpact.bForceReaction)
+	{
+		Context.AddWarning(NSLOCTEXT("OffensiveAbility", "NoPoise",
+			"Hit Impact has a reaction but 0 Poise Damage, so hits can only ever flinch. Set Poise Damage, or Reaction to None."));
+	}
+
+	return Result;
+}
+#endif
+FHitSpec UOffensiveAbilityBase::BuildHitSpec() const
+{
+	FHitSpec Hit;
+	Hit.SourceAbilityTags = GetAbilityTags();
+	Hit.Impact = ResolveHitImpact();
+
+	ForEachFragment<UAttackFragment>([this, &Hit](const UAttackFragment& Fragment)
+	{
+		Fragment.ModifyHitSpec(*this, Hit);
+	});
+
+	return Hit;
 }
