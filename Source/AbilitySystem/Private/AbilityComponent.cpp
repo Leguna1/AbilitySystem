@@ -13,6 +13,7 @@
 #include "CombatantComponent.h"
 #include "HitReactionAbility.h"
 #include "AbilitySystemLog.h"
+#include "AttributeComponent.h"
 
 UAbilityComponent::UAbilityComponent()
 {
@@ -30,6 +31,7 @@ void UAbilityComponent::BeginPlay()
 	TargetingComponent = GetOwner()->FindComponentByClass<UTargetingComponent>();
 	MotionWarpingComponent = GetOwner()->FindComponentByClass<UMotionWarpingComponent>();
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
+	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
 
 	if (!IsValid(OwningCharacter))
 	{

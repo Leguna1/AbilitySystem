@@ -64,6 +64,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Hit Reaction")
 	const FHitReactionResult& GetHitReaction() const { return HitReaction; }
+	
+	UHitReactionAbility();
 
 protected:
 	/** Picks the montage for this reaction. Default: StaggerMontages by direction. */

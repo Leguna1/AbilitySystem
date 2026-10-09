@@ -6,8 +6,7 @@
 #include "AbilitySystemSettings.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
-#include "GameFramework/Character.h"
-#include "GameFramework/CharacterMovementComponent.h"
+
 
 UCombatantComponent::UCombatantComponent()
 {
@@ -23,15 +22,6 @@ void UCombatantComponent::BeginPlay()
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
 	
-	if (const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner()))
-	{
-		if (const UCharacterMovementComponent* Movement = OwnerCharacter->GetCharacterMovement())
-		{
-			BaseMaxWalkSpeed = Movement->MaxWalkSpeed;
-		}
-	}
-
-	ApplyMovementSpeed();
 
 	if (!IsValid(ResourceComponent))
 	{
@@ -200,27 +190,6 @@ double UCombatantComponent::GetWorldTime() const
 	return IsValid(World) ? World->GetTimeSeconds() : 0.0;
 }
 
-void UCombatantComponent::SetBaseMaxWalkSpeed(const float NewBaseSpeed)
-{
-	BaseMaxWalkSpeed = FMath::Max(NewBaseSpeed, 0.0f);
-	ApplyMovementSpeed();
-}
-
-void UCombatantComponent::ApplyMovementSpeed()
-{
-	const ACharacter* OwnerCharacter = Cast<ACharacter>(GetOwner());
-	UCharacterMovementComponent* Movement = IsValid(OwnerCharacter) ? OwnerCharacter->GetCharacterMovement() : nullptr;
-
-	if (!IsValid(Movement) || BaseMaxWalkSpeed <= 0.0f)
-	{
-		return;
-	}
-
-	// Movement isn't an ability, so only unscoped effects apply.
-	const float Multiplier = GetModifiedValue(AbilitySystemTags::Stat_MoveSpeed, 1.0f, FGameplayTagContainer());
-
-	Movement->MaxWalkSpeed = BaseMaxWalkSpeed * FMath::Max(Multiplier, 0.0f);
-}
 float UCombatantComponent::GetPoise() const
 {
 	const double RecoveringFor = GetWorldTime() - (LastPoiseDamageTime + PoiseRegenDelay);
@@ -420,7 +389,6 @@ FGameplayTagContainer UCombatantComponent::GetOwnerTagsForEvaluation() const
 
 void UCombatantComponent::HandleEffectsChanged()
 {
-	ApplyMovementSpeed();
 	ScheduleEffectExpiry();
 	OnEffectsChanged.Broadcast();
 }

@@ -2,7 +2,11 @@
 
 #include "AbilityComponent.h"
 #include "AbilitySystemTags.h"
-
+UHitReactionAbility::UHitReactionAbility()
+{
+	// A stagger lasts as long as it lasts, whatever buffs or debuffs the character has.
+	bAffectedByAttackSpeed = false;
+}
 void UHitReactionAbility::ActivateAbility_Implementation()
 {
 	Super::ActivateAbility_Implementation();

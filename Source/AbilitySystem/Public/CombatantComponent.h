@@ -124,12 +124,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
 	FCombatantEffectsChangedSignature OnEffectsChanged;
 	
-	/**
- * Walk speed before buffs and statuses. Enemy logic that switches speeds
- * (patrol, chase) should set this instead of MaxWalkSpeed, so slows still apply.
- */
-	UFUNCTION(BlueprintCallable, Category = "Combat|Movement")
-	void SetBaseMaxWalkSpeed(float NewBaseSpeed);
 	
 	/** Current poise, including any recovery since the last poise damage. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
@@ -211,12 +205,6 @@ private:
 	FStatModifierContainer EffectContainer;
 
 	FTimerHandle EffectExpiryTimer;
-
-	/** Base walk speed x every move-speed effect. */
-	void ApplyMovementSpeed();
-
-	/** Walk speed before modifiers, captured at BeginPlay. */
-	float BaseMaxWalkSpeed = 0.0f;
 	
 	FHitReactionResult ResolveHitReaction(const FAbilityPayload& Payload);
 

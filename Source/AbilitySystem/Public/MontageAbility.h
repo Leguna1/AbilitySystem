@@ -31,6 +31,10 @@ public:
 	virtual bool AcceptsAnimationEvent(const UAnimSequenceBase* SourceAnimation) const override;
 	
 	virtual void OnMovementInputReceived_Implementation(FVector2D MovementInput) override;
+	
+	/** Montages play faster or slower with the owner's attack speed. Off for movement and reactions. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Animation")
+	bool bAffectedByAttackSpeed = true;
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Montage")

@@ -1,11 +1,13 @@
 #include "MontageAbility.h"
 
+#include "AbilityComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "MotionWarpingComponent.h"
 #include "AbilitySystemTags.h"
+#include "AttributeComponent.h"
 
 void UMontageAbility::ActivateAbility_Implementation()
 {
@@ -46,8 +48,15 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 
 	ActiveMontage = nullptr;
 
-	// Attack-speed modifiers scale every montage this ability plays (each combo step reads it anew).
-	const float EffectivePlayRate = PlayRate * FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_AttackSpeed, 1.0f), 0.1f);
+	const UAbilityComponent* Component = GetAbilityComponent();
+	const UAttributeComponent* Attributes = IsValid(Component) ? Component->GetAttributeComponent() : nullptr;
+
+	// Attack speed is a character attribute; characters without one play at the montage's own rate.
+	const float AttackSpeed = bAffectedByAttackSpeed && IsValid(Attributes)
+		? Attributes->GetAttributeValue(AbilitySystemTags::Stat_AttackSpeed, 1.0f)
+		: 1.0f;
+
+	const float EffectivePlayRate = PlayRate * FMath::Max(AttackSpeed, 0.1f);
 
 	const float Duration = AnimInstance->Montage_Play(
 		Montage,

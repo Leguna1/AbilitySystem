@@ -7,7 +7,6 @@
 #include "GameplayTagContainer.h"
 #include "InputBufferTypes.h"
 #include "UObject/ObjectKey.h"
-#include "ModifierTypes.h"
 #include "HitReactionTypes.h"
 #include "AbilityComponent.generated.h"
 
@@ -21,6 +20,7 @@ class UAnimSequenceBase;
 class UCombatantComponent;
 class UPassiveAbility;
 class UHitReactionAbility;
+class UAttributeComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityActivatedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCommittedEventSignature, FGameplayTag, AbilityId, UActiveAbility*, Ability);
@@ -258,6 +258,9 @@ public:
 	UCombatantComponent* GetCombatantComponent() const { return CombatantComponent; }
 
 
+	UFUNCTION(BlueprintPure, Category = "Ability")
+	UAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
+	
 protected:
 	virtual void BeginPlay() override;
 	virtual void InitializeComponent() override;
@@ -421,5 +424,8 @@ private:
 	
 	UFUNCTION()
 	void HandleCombatantEffectsChanged();
+	
+	UPROPERTY(Transient)
+	TObjectPtr<UAttributeComponent> AttributeComponent;
 	
 };

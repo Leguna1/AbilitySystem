@@ -32,6 +32,8 @@ public:
 
 	/** Dodge warps along its computed dodge direction, not actor-forward. */
 	virtual FVector GetRootMotionWarpDirection_Implementation() const override;
+	
+	
 
 protected:
 	/**

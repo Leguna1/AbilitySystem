@@ -12,6 +12,8 @@ UDirectionalDodgeAbility::UDirectionalDodgeAbility()
 	bCanActivateFromHeldInput = false;
 	bRequireInputHeldAtResolution = false;
 	CostTrigger = EAbilityCostTrigger::OnActivate;
+	// A stagger lasts as long as it lasts, whatever buffs or debuffs the character has.
+	bAffectedByAttackSpeed = false;
 }
 
 bool UDirectionalDodgeAbility::CanActivateAbility_Implementation() const

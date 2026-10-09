@@ -31,13 +31,19 @@ EDataValidationResult AbilityValidation::ValidateModifiers(
 			Result = EDataValidationResult::Invalid;
 		}
 
-		// Movement isn't an ability, so movement speed is always evaluated without ability tags.
-		if (Modifier.Stat == AbilitySystemTags::Stat_MoveSpeed && !Modifier.AbilityScope.IsEmpty())
+		// Character attributes are evaluated without ability tags, so a scope never matches.
+		const bool bCharacterAttribute =
+			Modifier.Stat == AbilitySystemTags::Stat_MoveSpeed ||
+			Modifier.Stat == AbilitySystemTags::Stat_AttackSpeed;
+
+		if (bCharacterAttribute && !Modifier.AbilityScope.IsEmpty())
 		{
-			Context.AddError(FText::Format(LOCTEXT("ScopedMoveSpeed",
-				"{0}: movement speed is not tied to an ability, so a scoped modifier never applies. Clear Ability Scope."), Where));
+			Context.AddError(FText::Format(LOCTEXT("ScopedAttribute",
+				"{0}: {1} is a character attribute, so a scoped modifier never applies. Clear Ability Scope."),
+				Where, FText::FromName(Modifier.Stat.GetTagName())));
 			Result = EDataValidationResult::Invalid;
 		}
+		
 	}
 
 	return Result;
@@ -84,6 +90,8 @@ EDataValidationResult AbilityValidation::ValidateStatusSpecs(
 	return Result;
 }
 
+
 #undef LOCTEXT_NAMESPACE
 
 #endif
+
