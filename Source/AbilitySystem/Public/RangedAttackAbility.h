@@ -4,12 +4,32 @@
 #include "OffensiveAbilityBase.h"
 #include "ImpactGroupTypes.h"
 #include "AbilitySystemTags.h"
+#include "ArrowShotParams.h"
 #include "RangedAttackAbility.generated.h"
 
-class AArrowBase;
+class AProjectileBase;
 class ABowBase;
-class UArrowDataAsset;
+class UProjectileDataAsset;
 
+/** Where a ranged ability's projectiles come from. */
+UENUM(BlueprintType)
+enum class EProjectileLaunchSource : uint8
+{
+	/** Arrows are taken in hand, nocked on the equipped bow and released from it. Needs a drawn bow. */
+	Bow UMETA(DisplayName = "Bow (Nocked Arrows)"),
+
+	/**
+	 * Projectiles appear at a launch point and fly: the equipped weapon's launch sockets
+	 * (a staff tip, a blade), else sockets on the character (a hand). No weapon needed.
+	 */
+	LaunchPoint UMETA(DisplayName = "Launch Point")
+};
+
+/**
+ * Fires projectiles: arrows from a bow, bolts from a staff or a hand, energy waves from a blade.
+ * The montage's events drive it (prepare and nock for bows, then release). Projectiles come
+ * from the world's projectile pool and are aimed at the ability target when there is one.
+ */
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API URangedAttackAbility : public UOffensiveAbilityBase
 {
@@ -20,8 +40,12 @@ public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAnimationEvent_Implementation(FGameplayTag EventTag) override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
-	
+
 	virtual FGameplayTag GetCostEventTag() const override;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	ABowBase* GetBow() const { return Bow; }
@@ -34,10 +58,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	bool IsProjectileNocked() const { return bProjectileNocked; }
-	
-	/** Arrows this execution prepares and releases, fixed at activation (rank + modifiers, clamped to sockets). */
+
+	/** Projectiles this execution releases, fixed at activation (rank + modifiers; bows clamp to their sockets). */
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	int32 GetProjectileCount() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
+	EProjectileLaunchSource GetLaunchSource() const { return LaunchSource; }
 
 protected:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Ranged")
@@ -65,7 +92,7 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	FVector ResolveProjectileDirection() const;
 	virtual FVector ResolveProjectileDirection_Implementation() const;
-	
+
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	FVector ResolveProjectileDirectionForIndex(int32 ProjectileIndex) const;
 	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const;
@@ -73,22 +100,23 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	float ResolveProjectileStrength() const;
 	virtual float ResolveProjectileStrength_Implementation() const;
-	
-	/** The ability's damage multiplier for each arrow it releases. Default 1. */
+
+	/** The ability's damage multiplier for each projectile it releases. Default 1. */
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
 	float ResolveProjectileDamageMultiplier() const;
 	virtual float ResolveProjectileDamageMultiplier_Implementation() const;
 
 	/**
-	 * Determines whether this ranged ability should use the current automatic
-	 * target when releasing its projectile.
-	 *
-	 * Override and return false for abilities with custom aiming behavior,
-	 * such as Volley Shot.
+	 * Whether projectiles are aimed at the ability target (the player's targeting, or the AI's target).
+	 * Override and return false for abilities with custom aiming behavior, such as Volley Shot.
 	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged|Targeting")
 	bool ShouldUseCurrentTarget() const;
 	virtual bool ShouldUseCurrentTarget_Implementation() const;
+
+	/** Where projectile ProjectileIndex starts: weapon launch socket, else character socket, else in front of the eyes. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
+	FTransform ResolveLaunchTransform(int32 ProjectileIndex) const;
 
 	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Ranged")
 	void OnProjectilePrepared();
@@ -105,56 +133,85 @@ protected:
 	UFUNCTION(BlueprintNativeEvent, Category = "Ability|Ranged")
 	void OnRangedAttackFinished(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
 	virtual void OnRangedAttackFinished_Implementation(EAbilityEndReason EndReason, bool bHadPreparedProjectile, bool bReleasedProjectile);
-	
+
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
 	int32 GetReleasedProjectileCount() const { return ReleasedProjectiles.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Ranged")
-	AArrowBase* GetReleasedProjectile(int32 ProjectileIndex) const;
+	AProjectileBase* GetReleasedProjectile(int32 ProjectileIndex) const;
+
+	/* -------------------- Projectile -------------------- */
+
+	/** What is fired: an arrow, a bolt, an orb. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
+	TObjectPtr<UProjectileDataAsset> ProjectileData;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
-	TObjectPtr<UArrowDataAsset> ArrowData;
+	EProjectileLaunchSource LaunchSource = EProjectileLaunchSource::Bow;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Hand")
+	/** Hand sockets the arrows are held at before nocking, one per arrow. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow",
+		meta = (EditCondition = "LaunchSource == EProjectileLaunchSource::Bow", EditConditionHides))
 	TArray<FName> ProjectileHandSocketNames;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow")
+	/** Bow sockets the arrows are nocked at, one per hand socket. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Bow",
+		meta = (EditCondition = "LaunchSource == EProjectileLaunchSource::Bow", EditConditionHides))
 	TArray<FName> ProjectileBowSocketNames;
-	
+
+	/**
+	 * Character mesh sockets projectiles launch from (a hand, a staff-tip socket), cycled per projectile.
+	 * Used only when the equipped weapon has no launch sockets. Empty = in front of the eyes.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile|Launch Point",
+		meta = (EditCondition = "LaunchSource == EProjectileLaunchSource::LaunchPoint", EditConditionHides))
+	TArray<FName> CharacterLaunchSocketNames;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DefaultProjectileStrength = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events")
+	/* -------------------- Events -------------------- */
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events",
+		meta = (EditCondition = "LaunchSource == EProjectileLaunchSource::Bow", EditConditionHides))
 	FGameplayTag PrepareProjectileEventTag;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events",
+		meta = (EditCondition = "LaunchSource == EProjectileLaunchSource::Bow", EditConditionHides))
 	FGameplayTag NockProjectileEventTag;
 
+	/** Anim event that fires the projectiles. Required. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events")
 	FGameplayTag ReleaseProjectileEventTag;
-	
+
+	/* -------------------- Impact audio -------------------- */
+
 	/** Merge this ability's impact sounds: e.g. one hit and one miss sound per fan volley instead of one per arrow. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio")
 	bool bGroupProjectileImpacts = false;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio", meta = (EditCondition = "bGroupProjectileImpacts"))
 	FImpactGroupSettings ProjectileImpactGroup;
-	
-	/** The ability's damage multiplier per rank, applied on top of the arrow data's damage. */
+
+	/* -------------------- Rank -------------------- */
+
+	/** The ability's damage multiplier per rank, applied on top of the projectile data's damage. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	FAbilityRankedFloat DamageMultiplierByRank = FAbilityRankedFloat(1.0f);
 
-	/** Arrows per release, by rank. Empty = one per configured socket pair. Always clamped to the socket count. */
+	/** Projectiles per release, by rank. Empty = one per bow socket pair (Bow) or one (Launch Point). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
 	FAbilityRankedInt ProjectileCountByRank;
 
 private:
 	bool HandleProjectileAnimationEvent(FGameplayTag EventTag);
-	
+
+	/** Spawns, places and fires one projectile per start point. Fills ReleasedProjectiles. */
+	bool LaunchFromPoints(const TArray<FTransform>& StartTransforms, const TArray<FVector>& Directions, const FArrowShotParams& ShotParams);
+
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<AArrowBase>> ReleasedProjectiles;
-	
+	TArray<TObjectPtr<AProjectileBase>> ReleasedProjectiles;
+
 	UPROPERTY(Transient)
 	bool bProjectilePrepared = false;
 
@@ -163,10 +220,10 @@ private:
 
 	UPROPERTY(Transient)
 	bool bProjectileReleased = false;
-	
+
 	UPROPERTY(Transient)
 	TObjectPtr<ABowBase> Bow;
-	
+
 	int32 ResolveProjectileCount() const;
 
 	UPROPERTY(Transient)
@@ -174,7 +231,7 @@ private:
 
 	UPROPERTY(Transient)
 	int32 ResolvedProjectileCount = 0;
-	
-	/** Hands the arrows of the last release to projectile features. */
+
+	/** Hands the projectiles of the last release to projectile features. */
 	void NotifyFragmentsProjectilesReleased();
 };

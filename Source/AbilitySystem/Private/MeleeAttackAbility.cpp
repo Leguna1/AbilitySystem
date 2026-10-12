@@ -6,6 +6,7 @@
 #include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 #include "GameFramework/Character.h"
 #include "AbilitySystemTags.h"
+#include "MeleeTraceComponent.h"
 
 
 
@@ -19,6 +20,12 @@ bool UMeleeAttackAbility::CanActivateAbility_Implementation() const
 	if (!Super::CanActivateAbility_Implementation())
 	{
 		return false;
+	}
+
+	if (HitSource == EMeleeHitSource::Body)
+	{
+		const ACharacter* Character = GetOwningCharacter();
+		return IsValid(Character) && IsValid(Character->FindComponentByClass<UMeleeTraceComponent>());
 	}
 
 	const ASwordBase* Sword = GetEquippedWeaponAs<ASwordBase>();
@@ -38,12 +45,18 @@ void UMeleeAttackAbility::ActivateAbility_Implementation()
 	GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageByRank)),
 	0.0f);
 	
+	if (HitSource == EMeleeHitSource::Body)
+	{
+		BindBodyTrace();
+	}
+	
 	Super::ActivateAbility_Implementation();
 }
 void UMeleeAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
 	// Ending mid-swing (cancel/interrupt) must not leave the hit box live.
 	ReleaseBoundSword();
+	ReleaseBodyTrace();
 
 	Super::OnAbilityEnded_Implementation(EndReason);
 }
@@ -104,6 +117,20 @@ void UMeleeAttackAbility::ReleaseBoundSword()
 }
 void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit)
 {
+	ProcessMeleeHit(HitActor, Hit, BoundSword.Get());
+}
+
+void UMeleeAttackAbility::HandleBodyHit(AActor* HitActor, const FHitResult& Hit, FName ShapeName, UAnimSequenceBase* SourceAnimation)
+{
+	// A blending-out montage from the previous attack can't land hits for this one.
+	if (AcceptsAnimationEvent(SourceAnimation))
+	{
+		ProcessMeleeHit(HitActor, Hit, GetOwningCharacter());
+	}
+}
+
+void UMeleeAttackAbility::ProcessMeleeHit(AActor* HitActor, const FHitResult& Hit, AActor* Causer)
+{
 	if (!IsValid(HitActor))
 	{
 		return;
@@ -118,7 +145,7 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 	FAbilityPayload Payload;
 	Payload.Damage = ResolvedDamage;
 	Payload.Instigator = GetOwningCharacter();
-	Payload.Causer = BoundSword.Get();
+	Payload.Causer = Causer;
 	Payload.Hit = Hit;
 	BuildHitSpec().ApplyTo(Payload);
 
@@ -130,11 +157,76 @@ void UMeleeAttackAbility::HandleSwordHit(AActor* HitActor, const FHitResult& Hit
 		Report.Group = SwingGroup;
 		Report.Result = bPayloadAccepted ? EImpactResult::Hit : EImpactResult::Miss;
 		Report.Location = ImpactLocation;
-		Report.Rotation = IsValid(BoundSword) ? BoundSword->GetActorRotation() : FRotator::ZeroRotator;
+		Report.Rotation = IsValid(Causer) ? Causer->GetActorRotation() : FRotator::ZeroRotator;
 		Report.OwnHitFeedback = SwingHitFeedback;
 		Report.Hit = Hit;
 		Report.HitComponent = Hit.GetComponent();
 
 		ImpactFeedback->PlayImpact(Report);
+	}
+}
+
+void UMeleeAttackAbility::BindBodyTrace()
+{
+	const ACharacter* Character = GetOwningCharacter();
+	BodyTrace = IsValid(Character) ? Character->FindComponentByClass<UMeleeTraceComponent>() : nullptr;
+
+	if (!IsValid(BodyTrace))
+	{
+		RequestCancelAbility();
+		return;
+	}
+
+	BodyTrace->OnTraceStarted.AddDynamic(this, &UMeleeAttackAbility::HandleBodyTraceStarted);
+	BodyTrace->OnTraceEnded.AddDynamic(this, &UMeleeAttackAbility::HandleBodyTraceEnded);
+	BodyTrace->OnMeleeHit.AddDynamic(this, &UMeleeAttackAbility::HandleBodyHit);
+}
+
+void UMeleeAttackAbility::ReleaseBodyTrace()
+{
+	if (!IsValid(BodyTrace))
+	{
+		return;
+	}
+
+	// Ending mid-swing must not leave the fists live.
+	BodyTrace->EndAllTraces();
+
+	BodyTrace->OnTraceStarted.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyTraceStarted);
+	BodyTrace->OnTraceEnded.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyTraceEnded);
+	BodyTrace->OnMeleeHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyHit);
+	BodyTrace = nullptr;
+}
+
+void UMeleeAttackAbility::HandleBodyTraceStarted(UAnimSequenceBase* SourceAnimation)
+{
+	if (!AcceptsAnimationEvent(SourceAnimation))
+	{
+		return;
+	}
+
+	// The strike becoming active is the point of no return, as with a sword swing.
+	if (!IsCommitted() && !RequestCommit())
+	{
+		RequestCancelAbility();
+		return;
+	}
+
+	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+	{
+		SwingGroup = ImpactGroups->OpenGroup(SwingImpactGroup);
+	}
+}
+
+void UMeleeAttackAbility::HandleBodyTraceEnded(UAnimSequenceBase* SourceAnimation)
+{
+	if (SwingGroup.IsValid())
+	{
+		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+		{
+			ImpactGroups->SealGroup(SwingGroup);
+		}
+
+		SwingGroup = FImpactGroupHandle();
 	}
 }

@@ -14,7 +14,7 @@ class ABILITYSYSTEM_API USpawnHazardFragment : public UProjectileFragment
 	GENERATED_BODY()
 
 public:
-	virtual void OnProjectilesReleased(URangedAttackAbility& Ability, TConstArrayView<AArrowBase*> Projectiles) const override;
+	virtual void OnProjectilesReleased(URangedAttackAbility& Ability, TConstArrayView<AProjectileBase*> Projectiles) const override;
 
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;

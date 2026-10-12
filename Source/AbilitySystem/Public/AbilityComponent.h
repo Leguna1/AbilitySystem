@@ -5,14 +5,12 @@
 #include "AbilityTypes.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
-#include "InputBufferTypes.h"
 #include "UObject/ObjectKey.h"
 #include "HitReactionTypes.h"
 #include "AbilityComponent.generated.h"
 
 class ACharacter;
 class UAbility;
-class UInputBufferComponent;
 class UMotionWarpingComponent;
 class UResourceComponent;
 class UTargetingComponent;
@@ -29,6 +27,19 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOwnedTagsChangedEventSignature, FGa
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGrantedAbilitiesChangedEventSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityRankChangedEventSignature, FGameplayTag, AbilityId, int32, OldRank, int32, NewRank);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FModifiersChangedEventSignature);
+
+/** Activation timing news for whoever requests abilities on a schedule (the player's input buffer). */
+UENUM(BlueprintType)
+enum class EActivationWindowEvent : uint8
+{
+	/** A new activation may succeed now (an ability ended, a transition or input checkpoint opened): retry waiting requests. */
+	Opened,
+
+	/** Waiting requests must be dropped (staggered, killed): presses made before must not fire afterwards. */
+	Flushed
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FActivationWindowEventSignature, EActivationWindowEvent, WindowEvent);
 
 /** Parallel-array cooldown store keyed by ability id (no TMap by project convention). */
 USTRUCT()
@@ -71,8 +82,6 @@ public:
 	UAbilityComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
-	
-	
 
 	/** Grants AbilityClass on behalf of Source (null = this component). A class stays granted while any source holds it. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Granted")
@@ -107,24 +116,39 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Granted")
 	const UAbility* GetAbilityDefaults(TSubclassOf<UAbility> AbilityClass) const;
 
+	/**
+	 * Requests an ability by id. The one way abilities start, for the player's input buffer and AI alike.
+	 * With an ability already active: the same ability runs its next step if it handles repeats (combos),
+	 * otherwise the request replaces the active one when transition, early-cancel or interrupt rules allow.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Ability")
 	bool TryActivateAbility(FGameplayTag AbilityId);
 
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	bool ResolveBufferedAbilityInput();
-
-	/** Cancels the active ability. Death, stuns and hit reactions pass false so a buffered attack can't fire through them. */
+	/**
+	 * Cancels the active ability. bOpenActivationWindow = false for death, stuns and hit reactions,
+	 * so a buffered request can't fire straight through them.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Ability")
-	void CancelActiveAbility(bool bResolveBufferedInput = true);
+	void CancelActiveAbility(bool bOpenActivationWindow = true);
+
+	/** Activation timing for schedulers such as the player's input buffer. AI doesn't need it. */
+	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
+	FActivationWindowEventSignature ActivationWindowEvent;
+
+	/* -------------------- Input notifications -------------------- */
+	// Tells the active ability about input (hold to charge, release to fire). No buffering happens here.
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
+	void NotifyInputPressed(FGameplayTag InputTag);
+
+	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
+	void NotifyInputReleased(FGameplayTag InputTag);
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
 	void MovementInputReceived(FVector2D MovementInput);
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
 	bool IsInputHeld(FGameplayTag InputTag) const;
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	void ClearBufferedInputs();
 
 	/** SourceAnimation lets the active ability reject events from animations that aren't its own (e.g. a blending-out montage). */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
@@ -196,9 +220,6 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UResourceComponent* GetResourceComponent() const { return ResourceComponent; }
 
-	UFUNCTION(BlueprintPure, Category = "Ability|Input")
-	UInputBufferComponent* GetInputBufferComponent() const { return InputBufferComponent; }
-	
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UTargetingComponent* GetTargetingComponent() const { return TargetingComponent; }
 
@@ -208,7 +229,7 @@ public:
 	
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Input")
-	FVector2D GetMovementInput() const;
+	FVector2D GetMovementInput() const { return CurrentMovementInput; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FAbilityActivatedEventSignature AbilityActivatedEvent;
@@ -224,11 +245,6 @@ public:
 	
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FGrantedAbilitiesChangedEventSignature GrantedAbilitiesChangedEvent;
-	
-	/** Single entry point for ability input: true on press, false on release. */
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	void HandleInput(FGameplayTag InputTag, bool bPressed);
-	
 	
 	/** Forwards to the combatant component, where every effect on this character lives. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Modifiers")
@@ -257,9 +273,15 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	UCombatantComponent* GetCombatantComponent() const { return CombatantComponent; }
 
-
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	UAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
+	
+	/**
+ * Drops anything waiting to activate (e.g. the player's buffered presses). For moments that make
+ * earlier requests stale: death, a stagger, a weapon swap.
+ */
+	UFUNCTION(BlueprintCallable, Category = "Ability")
+	void FlushActivationRequests();
 	
 protected:
 	virtual void BeginPlay() override;
@@ -272,21 +294,19 @@ protected:
 	TSubclassOf<UHitReactionAbility> HitReactionAbilityClass;
 
 private:
-	struct FAbilityInputCandidate
-	{
-		TSubclassOf<UAbility> AbilityClass;
-		FBufferedInput BufferedInput;
-		int32 Priority = 0;
-	};
-
 	bool CommitAbility(UActiveAbility* RequestingAbility);
 	void EndAbility(UActiveAbility* RequestingAbility, EAbilityEndReason EndReason);
 	void SetAbilityTickEnabled(UActiveAbility* RequestingAbility, bool bEnabled);
 	void SetAbilityTransitionOpen(UActiveAbility* RequestingAbility, bool bOpen);
 	void SetAbilityEarlyCancellationClosed(UActiveAbility* RequestingAbility, bool bClosed) const;
 
-	void BuildAbilityInputCandidates(TArray<FAbilityInputCandidate>& OutCandidates);
-	bool ExecuteAbilityInputCandidate(const FAbilityInputCandidate& Candidate);
+	/** The active ability says "a follow-up may start now" (e.g. a combo's input checkpoint). */
+	void RequestActivationWindow(UActiveAbility* RequestingAbility);
+
+	/** Broadcasts Opened now, or right after the current ability callback returns. */
+	void OpenActivationWindow();
+	void BroadcastActivationWindow(EActivationWindowEvent WindowEvent);
+
 	bool ExecuteRepeatedAbilityRequest(UActiveAbility* Ability);
 	bool ReplaceActiveAbility(TSubclassOf<UAbility> IncomingAbilityClass);
 
@@ -295,7 +315,7 @@ private:
 	/** Null for passive classes: only active abilities have executions. */
 	UActiveAbility* CreateExecutionInstance(TSubclassOf<UAbility> AbilityClass);
 	bool ActivateAbilityInstance(UActiveAbility* Ability);
-	void EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bResolveBufferedInput = true);
+	void EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bOpenActivationWindow = true);
 
 	struct FAbilityGrantSources
 	{
@@ -322,7 +342,6 @@ private:
 	void BroadcastOwnedTagsChanged() const;
 
 	static const UAbility* GetAbilityCDO(TSubclassOf<UAbility> AbilityClass);
-	float GetLongestBufferDurationForInput(FGameplayTag InputTag) const;
 
 	int32 FindCooldownIndex(FGameplayTag AbilityId) const;
 	void StartCooldown(FGameplayTag AbilityId, float Duration);
@@ -340,9 +359,6 @@ private:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<ACharacter> OwningCharacter;
 
-	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UInputBufferComponent> InputBufferComponent;
-	
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|References", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UTargetingComponent> TargetingComponent;
 
@@ -374,12 +390,15 @@ private:
 
 	bool bAbilityTickEnabled = false;
 	bool bDispatchingAbilityCallback = false;
-	bool bResolvingBufferedInput = false;
 	bool bEndingAbility = false;
-	bool bResolveBufferedInputAfterCallback = false;
-	
-	void HandleInputPressed(FGameplayTag InputTag);
-	void HandleInputReleased(FGameplayTag InputTag);
+	bool bOpenWindowAfterCallback = false;
+
+	/** Inputs currently held, as told by NotifyInputPressed/Released. */
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Input", meta = (AllowPrivateAccess = "true"))
+	FGameplayTagContainer HeldInputTags;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ability|Input", meta = (AllowPrivateAccess = "true"))
+	FVector2D CurrentMovementInput = FVector2D::ZeroVector;
 	
 	double GetWorldTime() const;
 	

@@ -6,6 +6,7 @@
 #include "AbilitySystemSettings.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
+#include "GenericTeamAgentInterface.h"
 
 
 UCombatantComponent::UCombatantComponent()
@@ -126,9 +127,16 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 
 bool UCombatantComponent::CanReceivePayload(const FAbilityPayload& Payload) const
 {
+	const AActor* InstigatorActor = Payload.Instigator.Get();
+
+	// Friendly fire is off: same-team hits (a pack member's punch, an ally's arrow) are refused.
+	const bool bFriendly = IsValid(InstigatorActor) &&
+		FGenericTeamId::GetAttitude(InstigatorActor, GetOwner()) == ETeamAttitude::Friendly;
+
 	return !IsDead() &&
 		!IsInvulnerable() &&
-		Payload.Instigator.Get() != GetOwner();
+		!bFriendly &&
+		InstigatorActor != GetOwner();
 }
 
 bool UCombatantComponent::IsDead() const
@@ -156,7 +164,7 @@ void UCombatantComponent::HandleOwnerDeath()
 	{
 		// Tag first: nothing started from the cancel callbacks may activate.
 		AbilityComponent->AddLooseOwnerTag(AbilitySystemTags::State_Dead);
-		AbilityComponent->ClearBufferedInputs();
+		AbilityComponent->FlushActivationRequests();
 		AbilityComponent->CancelActiveAbility(false);
 	}
 

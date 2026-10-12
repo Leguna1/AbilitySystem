@@ -1,17 +1,21 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "ArrowBase.h"
 #include "GameFramework/Actor.h"
 #include "WeaponBase.h"
+#include "ArrowShotParams.h"
 #include "BowBase.generated.h"
 
-class AArrowBase;
-class UArrowDataAsset;
+class AProjectileBase;
+class UProjectileDataAsset;
 class USkeletalMeshComponent;
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBowArrowFiredSignature, AArrowBase*, Arrow, float, ShotStrength);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnBowArrowFiredSignature, AProjectileBase*, Arrow, float, ShotStrength);
 
+/**
+ * A bow: string draw visuals, and arrows held in the hand and nocked on the string
+ * before release. The arrows themselves come from the world's projectile pool.
+ */
 UCLASS()
 class ABILITYSYSTEM_API ABowBase : public AWeaponBase
 {
@@ -21,7 +25,7 @@ public:
 	ABowBase();
 
 	virtual void Tick(float DeltaTime) override;
-	
+
 	UFUNCTION(BlueprintCallable, Category = "Bow|Animation")
 	void BeginDrawVisuals();
 
@@ -35,7 +39,7 @@ public:
 	USkeletalMeshComponent* GetBowMesh() const { return BowMesh; }
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
-	bool PrepareArrows(UArrowDataAsset* ArrowData, int32 ArrowCount);
+	bool PrepareArrows(UProjectileDataAsset* ArrowData, int32 ArrowCount);
 
 	UFUNCTION(BlueprintCallable, Category = "Bow|Arrow")
 	bool AttachPreparedArrowToWielder(int32 ArrowIndex, FName SocketName);
@@ -50,39 +54,32 @@ public:
 	void DiscardPreparedArrows();
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetPreparedArrow(int32 ArrowIndex) const;
+	AProjectileBase* GetPreparedArrow(int32 ArrowIndex) const;
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	int32 GetPreparedArrowCount() const { return PreparedArrows.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	bool HasPreparedArrows() const { return !PreparedArrows.IsEmpty(); }
-	
+
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
 	int32 GetReleasedArrowCount() const { return ReleasedArrows.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Arrow")
-	AArrowBase* GetReleasedArrow(const int32 ArrowIndex) const;
+	AProjectileBase* GetReleasedArrow(int32 ArrowIndex) const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Bow|Events")
 	FOnBowArrowFiredSignature OnArrowFired;
-
-	UFUNCTION(BlueprintPure, Category = "Bow|Pool")
-	int32 GetSpawnedArrowCount() const { return AllSpawnedArrows.Num(); }
-
-	UFUNCTION(BlueprintPure, Category = "Bow|Pool")
-	int32 GetAvailableArrowCount() const { return AvailableArrows.Num(); }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
 	float GetDrawAlpha() const { return DrawAlpha; }
 
 	UFUNCTION(BlueprintPure, Category = "Bow|Animation")
 	FVector GetStringTargetLocation() const { return StringTargetLocation; }
-	
-	
 
 protected:
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
+	virtual void OnHolstered_Implementation() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Bow|Components")
 	TObjectPtr<USkeletalMeshComponent> BowMesh;
@@ -101,29 +98,20 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Bow|Animation")
 	FName DrawHandSocketName = TEXT("BowString");
-	
-	virtual void OnHolstered_Implementation() override;
 
 private:
-	AArrowBase* CreateArrow(TSubclassOf<AArrowBase> ArrowClass);
-	AArrowBase* AcquireAvailableArrow(TSubclassOf<AArrowBase> ArrowClass);
-	
-	void DestroyArrowPool();
+	/** Listens for the arrow going back to the pool, so the bow drops its reference. */
+	void TrackArrow(AProjectileBase* Arrow);
+	void UntrackArrow(AProjectileBase* Arrow);
 
 	UFUNCTION()
-	void HandleArrowReadyToRecycle(AArrowBase* Arrow);
+	void HandleArrowReadyToRecycle(AProjectileBase* Arrow);
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<AArrowBase>> PreparedArrows;
+	TArray<TObjectPtr<AProjectileBase>> PreparedArrows;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<AArrowBase>> ReleasedArrows;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<AArrowBase>> AllSpawnedArrows;
-
-	UPROPERTY(Transient)
-	TArray<TObjectPtr<AArrowBase>> AvailableArrows;
+	TArray<TObjectPtr<AProjectileBase>> ReleasedArrows;
 
 	bool bDrawVisualsActive = false;
 };

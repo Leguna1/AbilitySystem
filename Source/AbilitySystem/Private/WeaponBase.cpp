@@ -1,5 +1,6 @@
 #include "WeaponBase.h"
 
+#include "Components/MeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "WeaponDataAsset.h"
@@ -96,4 +97,29 @@ void AWeaponBase::ApplyHolsteredPlacement()
 
 	SetActorHiddenInGame(!bOnHolster);
 	SetActorEnableCollision(false);
+}
+UMeshComponent* AWeaponBase::GetWeaponMesh() const
+{
+	return FindComponentByClass<UMeshComponent>();
+}
+
+bool AWeaponBase::GetLaunchTransform(const int32 ProjectileIndex, FTransform& OutTransform) const
+{
+	const UMeshComponent* WeaponMesh = GetWeaponMesh();
+
+	if (LaunchSocketNames.IsEmpty() || !IsValid(WeaponMesh))
+	{
+		return false;
+	}
+
+	const FName SocketName = LaunchSocketNames[FMath::Abs(ProjectileIndex) % LaunchSocketNames.Num()];
+
+	if (!WeaponMesh->DoesSocketExist(SocketName))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: launch socket %s not found on the weapon mesh."), *GetName(), *SocketName.ToString());
+		return false;
+	}
+
+	OutTransform = WeaponMesh->GetSocketTransform(SocketName);
+	return true;
 }

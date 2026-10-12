@@ -7,7 +7,7 @@
 #include "RangedAttackAbility.h"
 #include "Misc/DataValidation.h"
 
-void USpawnHazardFragment::OnProjectilesReleased(URangedAttackAbility& Ability, TConstArrayView<AArrowBase*> Projectiles) const
+void USpawnHazardFragment::OnProjectilesReleased(URangedAttackAbility& Ability, TConstArrayView<AProjectileBase*> Projectiles) const
 {
 	UWorld* World = Ability.GetWorld();
 	ACharacter* Character = Ability.GetOwningCharacter();
@@ -46,9 +46,9 @@ void USpawnHazardFragment::OnProjectilesReleased(URangedAttackAbility& Ability, 
 
 	Hazard->InitializeHazard(Params);
 
-	for (AArrowBase* Arrow : Projectiles)
+	for (AProjectileBase* Projectile : Projectiles)
 	{
-		Hazard->RegisterProjectile(Arrow);
+		Hazard->RegisterProjectile(Projectile);
 	}
 }
 

@@ -1,6 +1,6 @@
 #include "ProjectileBarrageAbility.h"
 
-#include "ArrowBase.h"
+#include "ProjectileBase.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "TargetingComponent.h"
@@ -100,7 +100,7 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 
 	for (int32 Index = 0; Index < ProjectileCount; ++Index)
 	{
-		AArrowBase* Arrow = GetReleasedProjectile(Index);
+		AProjectileBase* Arrow = GetReleasedProjectile(Index);
 
 		if (!IsValid(Arrow))
 		{
@@ -194,7 +194,7 @@ FVector UProjectileBarrageAbility::ResolveBarrageImpactPoint_Implementation(cons
 
 	for (int32 Index = 0; Index < GetReleasedProjectileCount(); ++Index)
 	{
-		if (AArrowBase* Arrow = GetReleasedProjectile(Index))
+		if (AProjectileBase* Arrow = GetReleasedProjectile(Index))
 		{
 			QueryParams.AddIgnoredActor(Arrow);
 		}

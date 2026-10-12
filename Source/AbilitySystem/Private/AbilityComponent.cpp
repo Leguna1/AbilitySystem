@@ -2,7 +2,6 @@
 
 #include "ActiveAbility.h"
 #include "GameFramework/Character.h"
-#include "InputBufferComponent.h"
 #include "MotionWarpingComponent.h"
 #include "ResourceComponent.h"
 #include "TargetingComponent.h"
@@ -27,18 +26,11 @@ void UAbilityComponent::BeginPlay()
 	Super::BeginPlay();
 
 	OwningCharacter = Cast<ACharacter>(GetOwner());
-	InputBufferComponent = GetOwner()->FindComponentByClass<UInputBufferComponent>();
 	TargetingComponent = GetOwner()->FindComponentByClass<UTargetingComponent>();
 	MotionWarpingComponent = GetOwner()->FindComponentByClass<UMotionWarpingComponent>();
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
 	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
 
-	if (!IsValid(OwningCharacter))
-	{
-		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires an ACharacter owner."));
-		return;
-	}
-	
 	if (!IsValid(OwningCharacter))
 	{
 		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires an ACharacter owner."));
@@ -70,12 +62,6 @@ void UAbilityComponent::BeginPlay()
 		CreatePassiveInstance(AbilityClass);
 	}
 	
-	if (!IsValid(InputBufferComponent))
-	{
-		UE_LOG(LogTemp, Error, TEXT("UAbilityComponent requires UInputBufferComponent on %s."), *GetNameSafe(GetOwner()));
-		return;
-	}
-
 	if (!IsValid(MotionWarpingComponent))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("UAbilityComponent could not find UMotionWarpingComponent on %s."), *GetNameSafe(GetOwner()));
@@ -291,7 +277,8 @@ bool UAbilityComponent::TryActivateAbility(FGameplayTag AbilityId)
 
 	if (IsValid(ActiveAbility))
 	{
-		if (ActiveAbility->GetClass() == AbilityClass)
+		// The same ability again: its next step if it handles repeats (combos), otherwise a fresh execution replacing it.
+		if (ActiveAbility->GetClass() == AbilityClass && ActiveAbility->CanHandleRepeatedActivationRequest())
 		{
 			return ExecuteRepeatedAbilityRequest(ActiveAbility);
 		}
@@ -309,61 +296,25 @@ bool UAbilityComponent::TryActivateAbility(FGameplayTag AbilityId)
 	return ActivateAbilityInstance(NewAbility);
 }
 
-bool UAbilityComponent::ResolveBufferedAbilityInput()
-{
-	if (!IsValid(InputBufferComponent) || bResolvingBufferedInput || bEndingAbility)
-	{
-		return false;
-	}
-
-	bResolvingBufferedInput = true;
-
-	TArray<FAbilityInputCandidate> Candidates;
-	BuildAbilityInputCandidates(Candidates);
-
-	bool bExecuted = false;
-
-	for (const FAbilityInputCandidate& Candidate : Candidates)
-	{
-		if (!ExecuteAbilityInputCandidate(Candidate))
-		{
-			continue;
-		}
-
-		InputBufferComponent->ConsumeInput(Candidate.BufferedInput);
-		bExecuted = true;
-		break;
-	}
-
-	bResolvingBufferedInput = false;
-	return bExecuted;
-}
-
-void UAbilityComponent::CancelActiveAbility(const bool bResolveBufferedInput)
+void UAbilityComponent::CancelActiveAbility(const bool bOpenActivationWindow)
 {
 	if (IsValid(ActiveAbility))
 	{
-		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, bResolveBufferedInput);
+		EndActiveAbilityInternal(EAbilityEndReason::Cancelled, bOpenActivationWindow);
 	}
 }
 
-void UAbilityComponent::HandleInputPressed(const FGameplayTag InputTag)
+void UAbilityComponent::NotifyInputPressed(const FGameplayTag InputTag)
 {
-	if (!IsValid(InputBufferComponent) || !InputTag.IsValid())
+	if (!InputTag.IsValid())
 	{
 		return;
 	}
 
-	const float BufferDuration = GetLongestBufferDurationForInput(InputTag);
-
-	if (!InputBufferComponent->InputPressed(InputTag, BufferDuration))
-	{
-		return;
-	}
+	HeldInputTags.AddTag(InputTag);
 
 	if (!IsValid(ActiveAbility) || bEndingAbility)
 	{
-		ResolveBufferedAbilityInput();
 		return;
 	}
 
@@ -373,47 +324,16 @@ void UAbilityComponent::HandleInputPressed(const FGameplayTag InputTag)
 	{
 		InputAbility->OnInputPressed(InputTag);
 	});
-
-	if (!IsValid(ActiveAbility) ||
-		bEndingAbility ||
-		bResolvingBufferedInput)
-	{
-		return;
-	}
-
-	/*
-	 * Repeated input belonging to the active ability remains controlled by
-	 * that ability's InputCheckPoint logic. This prevents combo steps from
-	 * advancing immediately when the attack button is pressed.
-	 */
-	if (ActiveAbility->GetActivationInputTag().MatchesTagExact(InputTag))
-	{
-		return;
-	}
-
-	/*
-	 * A different ability input should be evaluated immediately while the
-	 * active ability still permits early cancellation.
-	 */
-	if (!ActiveAbility->IsEarlyCancellationClosed() &&
-		!ActiveAbility->IsCommitted() &&
-		!ActiveAbility->GetAllowedEarlyCancellationAbilityTags().IsEmpty())
-	{
-		ResolveBufferedAbilityInput();
-	}
 }
 
-void UAbilityComponent::HandleInputReleased(FGameplayTag InputTag)
+void UAbilityComponent::NotifyInputReleased(const FGameplayTag InputTag)
 {
-	if (!IsValid(InputBufferComponent) || !InputTag.IsValid())
+	if (!InputTag.IsValid())
 	{
 		return;
 	}
 
-	if (!InputBufferComponent->InputReleased(InputTag))
-	{
-		return;
-	}
+	HeldInputTags.RemoveTag(InputTag);
 
 	if (!IsValid(ActiveAbility) || bEndingAbility)
 	{
@@ -428,12 +348,9 @@ void UAbilityComponent::HandleInputReleased(FGameplayTag InputTag)
 	});
 }
 
-void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
+void UAbilityComponent::MovementInputReceived(const FVector2D MovementInput)
 {
-	if (IsValid(InputBufferComponent))
-	{
-		InputBufferComponent->SetMovementInput(MovementInput);
-	}
+	CurrentMovementInput = MovementInput.GetClampedToMaxSize(1.0f);
 
 	if (!IsValid(ActiveAbility) || bEndingAbility)
 	{
@@ -441,30 +358,45 @@ void UAbilityComponent::MovementInputReceived(FVector2D MovementInput)
 	}
 
 	UActiveAbility* InputAbility = ActiveAbility;
+	const FVector2D ClampedInput = CurrentMovementInput;
 
-	DispatchAbilityCallback([InputAbility, MovementInput]()
+	DispatchAbilityCallback([InputAbility, ClampedInput]()
 	{
-		InputAbility->OnMovementInputReceived(MovementInput);
+		InputAbility->OnMovementInputReceived(ClampedInput);
 	});
 }
 
-FVector2D UAbilityComponent::GetMovementInput() const
+bool UAbilityComponent::IsInputHeld(const FGameplayTag InputTag) const
 {
-	return IsValid(InputBufferComponent)
-		? InputBufferComponent->GetMovementInput()
-		: FVector2D::ZeroVector;
-}
-bool UAbilityComponent::IsInputHeld(FGameplayTag InputTag) const
-{
-	return IsValid(InputBufferComponent) && InputBufferComponent->IsInputHeld(InputTag);
+	return InputTag.IsValid() && HeldInputTags.HasTagExact(InputTag);
 }
 
-void UAbilityComponent::ClearBufferedInputs()
+void UAbilityComponent::RequestActivationWindow(UActiveAbility* RequestingAbility)
 {
-	if (IsValid(InputBufferComponent))
+	if (IsValid(RequestingAbility) &&
+		RequestingAbility == ActiveAbility &&
+		RequestingAbility->GetAbilityStatus() == EAbilityStatus::Active &&
+		!bEndingAbility)
 	{
-		InputBufferComponent->ClearBufferedInputs();
+		OpenActivationWindow();
 	}
+}
+
+void UAbilityComponent::OpenActivationWindow()
+{
+	// Inside an ability callback, listeners would start a new ability mid-callback: wait until it returns.
+	if (bDispatchingAbilityCallback)
+	{
+		bOpenWindowAfterCallback = true;
+		return;
+	}
+
+	BroadcastActivationWindow(EActivationWindowEvent::Opened);
+}
+
+void UAbilityComponent::BroadcastActivationWindow(const EActivationWindowEvent WindowEvent)
+{
+	ActivationWindowEvent.Broadcast(WindowEvent);
 }
 
 void UAbilityComponent::HandleAbilityEvent(FGameplayTag EventTag, const UAnimSequenceBase* SourceAnimation)
@@ -619,101 +551,6 @@ void UAbilityComponent::SetAbilityTickEnabled(UActiveAbility* RequestingAbility,
 
 	bAbilityTickEnabled = bEnabled;
 	SetComponentTickEnabled(bAbilityTickEnabled);
-}
-
-void UAbilityComponent::BuildAbilityInputCandidates(TArray<FAbilityInputCandidate>& OutCandidates)
-{
-	OutCandidates.Reset();
-
-	if (!IsValid(InputBufferComponent))
-	{
-		return;
-	}
-
-	TArray<FBufferedInput> BufferedInputs;
-	InputBufferComponent->GetInputCandidates(BufferedInputs, true);
-
-	for (const FBufferedInput& BufferedInput : BufferedInputs)
-	{
-		for (const TSubclassOf<UAbility> AbilityClass : GrantedAbilityClasses)
-		{
-			// Passives fail the cast and never become input candidates.
-			const UActiveAbility* AbilityCDO = Cast<UActiveAbility>(GetAbilityCDO(AbilityClass));
-
-			if (!IsValid(AbilityCDO) ||
-				!AbilityCDO->GetActivationInputTag().IsValid() ||
-				!AbilityCDO->GetActivationInputTag().MatchesTagExact(BufferedInput.InputTag))
-			{
-				continue;
-			}
-			if (GetAbilityRank(AbilityClass) <= 0)
-			{
-				continue;
-			}
-
-			if (BufferedInput.Source == EBufferedInputSource::Held &&
-				!AbilityCDO->CanActivateFromHeldInput())
-			{
-				continue;
-			}
-
-			if (AbilityCDO->RequiresInputHeldAtResolution() &&
-				!InputBufferComponent->IsInputHeld(BufferedInput.InputTag))
-			{
-				continue;
-			}
-
-			FAbilityInputCandidate& Candidate = OutCandidates.AddDefaulted_GetRef();
-			Candidate.AbilityClass = AbilityClass;
-			Candidate.BufferedInput = BufferedInput;
-			Candidate.Priority = AbilityCDO->GetActivationPriority();
-		}
-	}
-
-	OutCandidates.Sort([](const FAbilityInputCandidate& A, const FAbilityInputCandidate& B)
-	{
-		if (A.Priority != B.Priority)
-		{
-			return A.Priority > B.Priority;
-		}
-
-		return A.BufferedInput.Sequence < B.BufferedInput.Sequence;
-	});
-}
-
-bool UAbilityComponent::ExecuteAbilityInputCandidate(const FAbilityInputCandidate& Candidate)
-{
-	if (!Candidate.AbilityClass)
-	{
-		return false;
-	}
-
-	if (!IsValid(ActiveAbility))
-	{
-		UActiveAbility* NewAbility = CreateExecutionInstance(Candidate.AbilityClass);
-
-		if (!IsValid(NewAbility) || !CanActivateAbilityInstance(NewAbility, false))
-		{
-			return false;
-		}
-
-		return ActivateAbilityInstance(NewAbility);
-	}
-
-	if (ActiveAbility->GetClass() == Candidate.AbilityClass)
-	{
-		// Combo abilities can consume their own input internally without
-		// replacing the active execution.
-		if (ActiveAbility->CanHandleRepeatedActivationRequest())
-		{
-			return ExecuteRepeatedAbilityRequest(ActiveAbility);
-		}
-
-		// Other abilities may transition into a fresh execution of themselves.
-		return ReplaceActiveAbility(Candidate.AbilityClass);
-	}
-
-	return ReplaceActiveAbility(Candidate.AbilityClass);
 }
 
 bool UAbilityComponent::ExecuteRepeatedAbilityRequest(UActiveAbility* Ability)
@@ -943,7 +780,7 @@ bool UAbilityComponent::ActivateAbilityInstance(UActiveAbility* Ability)
 	return ActiveAbility == ActivatedAbility;
 }
 
-void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bResolveBufferedInput)
+void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bool bOpenActivationWindow)
 {
 	if (!IsValid(ActiveAbility) || bEndingAbility)
 	{
@@ -951,7 +788,7 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	}
 
 	bEndingAbility = true;
-	bResolveBufferedInputAfterCallback = false;
+	bOpenWindowAfterCallback = false;
 
 	UActiveAbility* EndingAbility = ActiveAbility;
 	const FGameplayTag EndingAbilityId = EndingAbility->GetAbilityId();
@@ -990,9 +827,9 @@ void UAbilityComponent::EndActiveAbilityInternal(EAbilityEndReason EndReason, bo
 	ActiveAbility = nullptr;
 	bEndingAbility = false;
 
-	if (bResolveBufferedInput && !bResolvingBufferedInput && IsValid(InputBufferComponent))
+	if (bOpenActivationWindow)
 	{
-		ResolveBufferedAbilityInput();
+		OpenActivationWindow();
 	}
 	
 }
@@ -1021,18 +858,13 @@ void UAbilityComponent::DispatchAbilityCallback(const TFunctionRef<void()>& Call
 		return;
 	}
 
-	if (!bResolveBufferedInputAfterCallback ||
-		bEndingAbility ||
-		bResolvingBufferedInput)
+	if (!bOpenWindowAfterCallback || bEndingAbility)
 	{
 		return;
 	}
 
-	bResolveBufferedInputAfterCallback = false;
-
-	const bool bResolved = ResolveBufferedAbilityInput();
-
-	UE_LOG(LogTemp, Verbose, TEXT("[Transition] Deferred resolution result=%d"), bResolved);
+	bOpenWindowAfterCallback = false;
+	BroadcastActivationWindow(EActivationWindowEvent::Opened);
 }
 
 FGameplayTagContainer UAbilityComponent::BuildLooseOwnerTags() const
@@ -1361,25 +1193,6 @@ bool UAbilityComponent::ApplyEventCost(UActiveAbility* Ability, const FGameplayT
 	return bPaid;
 }
 
-float UAbilityComponent::GetLongestBufferDurationForInput(FGameplayTag InputTag) const
-{
-	float LongestDuration = 0.0f;
-
-	for (const TSubclassOf<UAbility> AbilityClass : GrantedAbilityClasses)
-	{
-		const UActiveAbility* AbilityCDO = Cast<UActiveAbility>(GetAbilityCDO(AbilityClass));
-
-		if (!IsValid(AbilityCDO) ||
-			!AbilityCDO->GetActivationInputTag().MatchesTagExact(InputTag))
-		{
-			continue;
-		}
-
-		LongestDuration = FMath::Max(LongestDuration, AbilityCDO->GetInputBufferDuration());
-	}
-
-	return LongestDuration;
-}
 void UAbilityComponent::SetAbilityTransitionOpen(UActiveAbility* RequestingAbility, const bool bOpen)
 {
 	if (!IsValid(RequestingAbility) ||
@@ -1393,32 +1206,12 @@ void UAbilityComponent::SetAbilityTransitionOpen(UActiveAbility* RequestingAbili
 
 	RequestingAbility->SetTransitionOpen(bOpen);
 
-	UE_LOG(
-		LogTemp,
-		Verbose,
-		TEXT("[Transition] %s | Ability=%s | Dispatching=%d | Resolving=%d"),
-		bOpen ? TEXT("OPENED") : TEXT("CLOSED"),
-		*GetNameSafe(RequestingAbility),
-		bDispatchingAbilityCallback,
-		bResolvingBufferedInput
-	);
+	UE_LOG(LogTemp, Verbose, TEXT("[Transition] %s | Ability=%s"),
+		bOpen ? TEXT("OPENED") : TEXT("CLOSED"), *GetNameSafe(RequestingAbility));
 
-	if (!bOpen)
+	if (bOpen)
 	{
-		return;
-	}
-
-	if (bDispatchingAbilityCallback)
-	{
-		bResolveBufferedInputAfterCallback = true;
-		UE_LOG(LogTemp, Verbose, TEXT("[Transition] Resolution deferred until callback returns."));
-		return;
-	}
-
-	if (!bResolvingBufferedInput)
-	{
-		const bool bResolved = ResolveBufferedAbilityInput();
-		UE_LOG(LogTemp, Verbose, TEXT("[Transition] Immediate resolution result=%d"), bResolved);
+		OpenActivationWindow();
 	}
 }
 int32 UAbilityComponent::FindRankIndex(const FGameplayTag AbilityId) const
@@ -1508,18 +1301,6 @@ int32 UAbilityComponent::SetLearnedRank(const TSubclassOf<UAbility> AbilityClass
 	AbilityRankChangedEvent.Broadcast(AbilityId, OldRank, NewRank);
 	return NewRank;
 }
-void UAbilityComponent::HandleInput(const FGameplayTag InputTag, const bool bPressed)
-{
-	if (bPressed)
-	{
-		HandleInputPressed(InputTag);
-	}
-	else
-	{
-		HandleInputReleased(InputTag);
-	}
-}
-
 float UAbilityComponent::GetModifiedValue(const FGameplayTag Stat, const float BaseValue, const FGameplayTagContainer& AbilityTags) const
 {
 	return IsValid(CombatantComponent)
@@ -1693,7 +1474,7 @@ bool UAbilityComponent::TriggerHitReaction(const FHitReactionResult& Reaction)
 	PendingHitReaction = Reaction;
 
 	// Presses made before the hit must not fire out of the stagger.
-	ClearBufferedInputs();
+	BroadcastActivationWindow(EActivationWindowEvent::Flushed);
 
 	// A hit always wins: no transition, early-cancel or block rules apply.
 	if (IsValid(ActiveAbility))
@@ -1718,4 +1499,8 @@ void UAbilityComponent::HandleCombatantEffectsChanged()
 	// Effects grant tags and change stats: refresh tag listeners and ability-side stat listeners.
 	BroadcastOwnedTagsChanged();
 	ModifiersChangedEvent.Broadcast();
+}
+void UAbilityComponent::FlushActivationRequests()
+{
+	BroadcastActivationWindow(EActivationWindowEvent::Flushed);
 }

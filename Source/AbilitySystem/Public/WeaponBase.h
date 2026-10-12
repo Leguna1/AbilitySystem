@@ -5,6 +5,7 @@
 #include "WeaponBase.generated.h"
 
 class ACharacter;
+class UMeshComponent;
 class USkeletalMeshComponent;
 class UWeaponDataAsset;
 
@@ -48,7 +49,26 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Weapon")
 	bool IsWielderOwned(const AActor* Actor) const;
 
+	/* -------------------- Projectiles -------------------- */
+
+	/**
+	 * Where projectile ProjectileIndex leaves this weapon (a staff tip, a blade), cycling through
+	 * Launch Socket Names. False when the weapon has no launch sockets.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Projectiles")
+	bool GetLaunchTransform(int32 ProjectileIndex, FTransform& OutTransform) const;
+
+	UFUNCTION(BlueprintPure, Category = "Weapon|Projectiles")
+	bool HasLaunchSockets() const { return !LaunchSocketNames.IsEmpty(); }
+
+	/** The mesh launch sockets are looked up on. Default: the first mesh component on the weapon. */
+	virtual UMeshComponent* GetWeaponMesh() const;
+
 protected:
+	/** Sockets on the weapon mesh that projectiles launch from (e.g. StaffTip). Empty = not a launcher. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Projectiles")
+	TArray<FName> LaunchSocketNames;
+
 	UFUNCTION(BlueprintNativeEvent, Category = "Weapon")
 	void OnDrawn();
 	virtual void OnDrawn_Implementation();

@@ -5,7 +5,7 @@
 #include "ModifierTypes.h"
 #include "ArrowLinkHazard.generated.h"
 
-class AArrowBase;
+class AProjectileBase;
 class UNiagaraSystem;
 
 /** What a volley hands its hazard. */
@@ -48,7 +48,7 @@ public:
 	void InitializeHazard(const FArrowLinkHazardParams& InParams);
 
 	/** Feeds this arrow's landing into the hazard (its current flight only). */
-	void RegisterProjectile(AArrowBase* Arrow);
+	void RegisterProjectile(AProjectileBase* Arrow);
 
 	UFUNCTION(BlueprintPure, Category = "Hazard")
 	const TArray<FVector>& GetLinkPoints() const { return Points; }
@@ -155,14 +155,14 @@ private:
 	};
 
 	UFUNCTION()
-	void HandleArrowHit(AArrowBase* Arrow, AActor* HitActor, float Damage, const FHitResult& Hit);
+	void HandleArrowHit(AProjectileBase* Arrow, AActor* HitActor, float Damage, const FHitResult& Hit);
 
 	void AddLinkPoint(const FVector& LandingLocation);
 	void CreateSegment(const FVector& Start, const FVector& End);
 	void Pulse();
 	void HandleCollectionTimeout();
 	void StopCollecting();
-	void UnbindArrow(AArrowBase* Arrow);
+	void UnbindArrow(AProjectileBase* Arrow);
 	void EndHazard();
 
 	FArrowLinkHazardParams Params;
@@ -170,7 +170,7 @@ private:
 	TArray<FLinkSegment> Segments;
 
 	/** Arrows still expected to land, with the flight serial they were registered for. */
-	TMap<TWeakObjectPtr<AArrowBase>, uint32> TrackedArrows;
+	TMap<TWeakObjectPtr<AProjectileBase>, uint32> TrackedArrows;
 
 	FTimerHandle CollectionTimerHandle;
 	FTimerHandle PulseTimerHandle;

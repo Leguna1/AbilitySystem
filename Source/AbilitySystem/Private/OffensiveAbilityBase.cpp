@@ -2,7 +2,6 @@
 
 #include "GameFramework/Character.h"
 #include "MotionWarpingComponent.h"
-#include "TargetingComponent.h"
 #include "WeaponManagerComponent.h"
 #include "AbilitySystemTags.h"
 #include "AttackFragment.h"
@@ -36,10 +35,9 @@ void UOffensiveAbilityBase::OnAbilityEnded_Implementation(const EAbilityEndReaso
 bool UOffensiveAbilityBase::ConfigureTargetFacingWarp()
 {
 	if (!bUseTargetFacingWarp ||
-		TargetFacingWarpName.IsNone() ||
-		!IsValid(GetMotionWarpingComponent()) ||
-		!IsValid(GetTargetingComponent()) ||
-		!GetTargetingComponent()->HasTarget())
+	TargetFacingWarpName.IsNone() ||
+	!IsValid(GetMotionWarpingComponent()) ||
+	!HasAbilityTarget())
 	{
 		return false;
 	}
@@ -52,7 +50,7 @@ bool UOffensiveAbilityBase::ConfigureTargetFacingWarp()
 	}
 
 	const FVector CharacterLocation = Character->GetActorLocation();
-	const FVector TargetLocation = GetTargetingComponent()->GetCurrentTargetAimLocation();
+	const FVector TargetLocation = GetAbilityTargetAimLocation();
 
 	FVector FlatDirection = TargetLocation - CharacterLocation;
 	FlatDirection.Z = 0.0f;
@@ -68,6 +66,8 @@ bool UOffensiveAbilityBase::ConfigureTargetFacingWarp()
 		CharacterLocation,
 		FlatDirection.Rotation()
 	);
+	
+	
 
 	return true;
 }

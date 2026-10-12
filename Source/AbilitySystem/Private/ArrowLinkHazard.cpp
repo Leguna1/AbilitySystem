@@ -1,6 +1,6 @@
 #include "ArrowLinkHazard.h"
 
-#include "ArrowBase.h"
+#include "ProjectileBase.h"
 #include "CombatantComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
@@ -27,7 +27,7 @@ void AArrowLinkHazard::InitializeHazard(const FArrowLinkHazardParams& InParams)
 	);
 }
 
-void AArrowLinkHazard::RegisterProjectile(AArrowBase* Arrow)
+void AArrowLinkHazard::RegisterProjectile(AProjectileBase* Arrow)
 {
 	if (!IsValid(Arrow) || bEnded)
 	{
@@ -35,7 +35,8 @@ void AArrowLinkHazard::RegisterProjectile(AArrowBase* Arrow)
 	}
 
 	TrackedArrows.Add(Arrow, Arrow->GetFlightSerial());
-	Arrow->OnArrowHit.AddUniqueDynamic(this, &AArrowLinkHazard::HandleArrowHit);
+	Arrow->OnProjectileHit.AddUniqueDynamic(this, &AArrowLinkHazard::HandleArrowHit);
+	
 }
 
 void AArrowLinkHazard::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -46,7 +47,7 @@ void AArrowLinkHazard::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-void AArrowLinkHazard::HandleArrowHit(AArrowBase* Arrow, AActor* HitActor, float Damage, const FHitResult& Hit)
+void AArrowLinkHazard::HandleArrowHit(AProjectileBase* Arrow, AActor* HitActor, float Damage, const FHitResult& Hit)
 {
 	const uint32* RegisteredSerial = TrackedArrows.Find(Arrow);
 	const bool bSameFlight = RegisteredSerial && IsValid(Arrow) && *RegisteredSerial == Arrow->GetFlightSerial();
@@ -262,10 +263,10 @@ void AArrowLinkHazard::HandleCollectionTimeout()
 
 void AArrowLinkHazard::StopCollecting()
 {
-	TArray<TWeakObjectPtr<AArrowBase>> Arrows;
+	TArray<TWeakObjectPtr<AProjectileBase>> Arrows;
 	TrackedArrows.GetKeys(Arrows);
 
-	for (const TWeakObjectPtr<AArrowBase>& Arrow : Arrows)
+	for (const TWeakObjectPtr<AProjectileBase>& Arrow : Arrows)
 	{
 		UnbindArrow(Arrow.Get());
 	}
@@ -273,11 +274,11 @@ void AArrowLinkHazard::StopCollecting()
 	TrackedArrows.Reset();
 }
 
-void AArrowLinkHazard::UnbindArrow(AArrowBase* Arrow)
+void AArrowLinkHazard::UnbindArrow(AProjectileBase* Arrow)
 {
 	if (IsValid(Arrow))
 	{
-		Arrow->OnArrowHit.RemoveDynamic(this, &AArrowLinkHazard::HandleArrowHit);
+		Arrow->OnProjectileHit.RemoveDynamic(this, &AArrowLinkHazard::HandleArrowHit);
 	}
 
 	TrackedArrows.Remove(Arrow);

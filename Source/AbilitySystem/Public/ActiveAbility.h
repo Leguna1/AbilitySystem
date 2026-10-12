@@ -191,6 +191,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Tags")
 	const FGameplayTagContainer& GetCancelAbilitiesWithTags() const { return CancelAbilitiesWithTags; }
 	
+	/* -------------------- Target -------------------- */
+
+	/** Who this ability is aimed at: the Targeting Component's target (player), else the owner's controller (AI). Null = none. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Targeting")
+	AActor* GetAbilityTarget() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|Targeting")
+	bool HasAbilityTarget() const { return IsValid(GetAbilityTarget()); }
+
+	/** Where to aim at the ability target: its aim point (Targetable Interface), else its location. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Targeting")
+	FVector GetAbilityTargetAimLocation() const;
+	
 	/* -------------------- Features -------------------- */
 
 	const TArray<TObjectPtr<UAbilityFragment>>& GetFragments() const { return Fragments; }
@@ -242,11 +255,9 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Ability|Requests")
 	bool RequestAbility(FGameplayTag RequestedAbilityId);
 
+	/** Tells the input layer a follow-up may start now (e.g. a combo's input checkpoint). */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	bool RequestResolveBufferedInput();
-
-	UFUNCTION(BlueprintCallable, Category = "Ability|Input")
-	void ClearBufferedInputs();
+	void OpenActivationWindow();
 
 	UFUNCTION(BlueprintCallable, Category = "Ability|Transition")
 	void OpenTransition();

@@ -1,13 +1,25 @@
 #include "RangedAttackAbility.h"
 
-#include "ArrowBase.h"
-#include "ArrowDataAsset.h"
-#include "BowBase.h"
-#include "GameFramework/Character.h"
-#include "TargetingComponent.h"
-#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
 #include "AbilitySystemSettings.h"
+#include "BowBase.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/Character.h"
+#include "ImpactGroupSubsystem.h"
+#include "ProjectileBase.h"
+#include "ProjectileDataAsset.h"
 #include "ProjectileFragment.h"
+#include "ProjectilePoolSubsystem.h"
+#include "WeaponBase.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
+namespace
+{
+	/** Upper bound for Launch Point releases, so a runaway modifier can't spawn hundreds. */
+	constexpr int32 MaxLaunchPointProjectiles = 32;
+}
 
 bool URangedAttackAbility::CanActivateAbility_Implementation() const
 {
@@ -19,10 +31,18 @@ bool URangedAttackAbility::CanActivateAbility_Implementation() const
 	const ACharacter* Character = GetOwningCharacter();
 
 	if (!IsValid(Character) ||
-		!IsValid(ArrowData) ||
-		!ArrowData->ArrowClass ||
-		!IsValid(ArrowData->ArrowMesh) ||
-		ProjectileHandSocketNames.IsEmpty() ||
+		!IsValid(ProjectileData) ||
+		!ProjectileData->ProjectileClass)
+	{
+		return false;
+	}
+
+	if (LaunchSource == EProjectileLaunchSource::LaunchPoint)
+	{
+		return true;
+	}
+
+	if (ProjectileHandSocketNames.IsEmpty() ||
 		ProjectileHandSocketNames.Num() != ProjectileBowSocketNames.Num())
 	{
 		return false;
@@ -41,30 +61,36 @@ bool URangedAttackAbility::CanActivateAbility_Implementation() const
 
 	return IsValid(EquippedBow) && EquippedBow->IsDrawn();
 }
+
 void URangedAttackAbility::ActivateAbility_Implementation()
 {
-	Bow = GetEquippedWeaponAs<ABowBase>();
+	Bow = LaunchSource == EProjectileLaunchSource::Bow
+		? GetEquippedWeaponAs<ABowBase>()
+		: nullptr;
 
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 	bProjectileReleased = false;
+	ReleasedProjectiles.Reset();
 
-	if (!IsValid(Bow))
+	if (LaunchSource == EProjectileLaunchSource::Bow)
 	{
-		RequestCancelAbility();
-		return;
+		if (!IsValid(Bow))
+		{
+			RequestCancelAbility();
+			return;
+		}
+
+		Bow->DiscardPreparedArrows();
 	}
 
-	Bow->DiscardPreparedArrows();
-	
 	// Fixed for this execution, like ranks: a booster ending mid-volley doesn't change it.
 	ResolvedDamageMultiplier = FMath::Max(
 		GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageMultiplierByRank)),
-		0.0f
-	);
+		0.0f);
 
 	ResolvedProjectileCount = ResolveProjectileCount();
-	
+
 	Super::ActivateAbility_Implementation();
 }
 
@@ -85,8 +111,6 @@ void URangedAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Ev
 
 void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
-	
-	
 	const bool bHadPreparedProjectile =
 		bProjectilePrepared ||
 		(IsValid(Bow) && Bow->HasPreparedArrows());
@@ -96,18 +120,13 @@ void URangedAttackAbility::OnAbilityEnded_Implementation(const EAbilityEndReason
 	if (IsValid(Bow))
 	{
 		Bow->EndDrawVisuals();
-		
 	}
 
 	DiscardPreparedProjectile();
 
 	Super::OnAbilityEnded_Implementation(EndReason);
 
-	OnRangedAttackFinished(
-		EndReason,
-		bHadPreparedProjectile,
-		bReleasedProjectile
-	);
+	OnRangedAttackFinished(EndReason, bHadPreparedProjectile, bReleasedProjectile);
 
 	Bow = nullptr;
 
@@ -123,12 +142,24 @@ bool URangedAttackAbility::HasPreparedProjectile() const
 		IsValid(Bow) &&
 		Bow->HasPreparedArrows();
 }
+
 int32 URangedAttackAbility::GetProjectileCount() const
 {
 	return ResolvedProjectileCount;
 }
+
 int32 URangedAttackAbility::ResolveProjectileCount() const
 {
+	if (LaunchSource == EProjectileLaunchSource::LaunchPoint)
+	{
+		const int32 BaseCount = ProjectileCountByRank.Values.IsEmpty() ? 1 : GetRankedInt(ProjectileCountByRank);
+
+		return FMath::Clamp(
+			GetModifiedInt(AbilitySystemTags::Stat_ProjectileCount, BaseCount),
+			1,
+			MaxLaunchPointProjectiles);
+	}
+
 	const int32 SocketCount = ProjectileHandSocketNames.Num();
 
 	const int32 BaseCount = ProjectileCountByRank.Values.IsEmpty()
@@ -138,9 +169,9 @@ int32 URangedAttackAbility::ResolveProjectileCount() const
 	return FMath::Clamp(
 		GetModifiedInt(AbilitySystemTags::Stat_ProjectileCount, BaseCount),
 		1,
-		SocketCount
-	);
+		SocketCount);
 }
+
 float URangedAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
 {
 	return ResolvedDamageMultiplier;
@@ -173,14 +204,16 @@ void URangedAttackAbility::DiscardPreparedProjectile()
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
 }
+
 FVector URangedAttackAbility::ResolveProjectileDirectionForIndex_Implementation(const int32 ProjectileIndex) const
 {
 	return ResolveProjectileDirection();
 }
+
 bool URangedAttackAbility::PrepareProjectile_Implementation()
 {
 	if (!IsValid(Bow) ||
-		!IsValid(ArrowData) ||
+		!IsValid(ProjectileData) ||
 		ProjectileHandSocketNames.IsEmpty() ||
 		ProjectileHandSocketNames.Num() != ProjectileBowSocketNames.Num())
 	{
@@ -194,7 +227,7 @@ bool URangedAttackAbility::PrepareProjectile_Implementation()
 
 	const int32 ProjectileCount = GetProjectileCount();
 
-	if (!Bow->PrepareArrows(ArrowData, ProjectileCount))
+	if (!Bow->PrepareArrows(ProjectileData, ProjectileCount))
 	{
 		return false;
 	}
@@ -238,51 +271,62 @@ bool URangedAttackAbility::NockProjectile_Implementation()
 	bProjectileNocked = true;
 
 	Bow->BeginDrawVisuals();
-	
+
 	OnProjectileNocked();
 	return true;
 }
 
 bool URangedAttackAbility::ReleaseProjectile_Implementation()
 {
-	if (!IsValid(Bow) ||
-		!bProjectilePrepared ||
-		bProjectileReleased ||
-		!Bow->HasPreparedArrows())
+	if (bProjectileReleased || !IsValid(ProjectileData))
 	{
 		return false;
 	}
 
-	const bool bHasTarget =
-		ShouldUseCurrentTarget() &&
-		IsValid(GetTargetingComponent()) &&
-		GetTargetingComponent()->HasTarget();
+	const bool bFromBow = LaunchSource == EProjectileLaunchSource::Bow;
 
-	TArray<FVector> Directions;
-	Directions.Reserve(Bow->GetPreparedArrowCount());
-
-	for (int32 Index = 0; Index < Bow->GetPreparedArrowCount(); ++Index)
+	if (bFromBow && (!IsValid(Bow) || !bProjectilePrepared || !Bow->HasPreparedArrows()))
 	{
-		FVector Direction = FVector::ZeroVector;
+		return false;
+	}
 
-		if (bHasTarget)
+	// Where each projectile starts: the nocked arrows, or the launch points.
+	const int32 ProjectileCount = bFromBow ? Bow->GetPreparedArrowCount() : GetProjectileCount();
+
+	TArray<FTransform> StartTransforms;
+	StartTransforms.Reserve(ProjectileCount);
+
+	for (int32 Index = 0; Index < ProjectileCount; ++Index)
+	{
+		if (bFromBow)
 		{
-			const AArrowBase* PreparedArrow = Bow->GetPreparedArrow(Index);
+			const AProjectileBase* PreparedArrow = Bow->GetPreparedArrow(Index);
 
 			if (!IsValid(PreparedArrow))
 			{
 				return false;
 			}
 
-			Direction = (
-				GetTargetingComponent()->GetCurrentTargetAimLocation() -
-				PreparedArrow->GetActorLocation()
-			).GetSafeNormal();
+			StartTransforms.Add(PreparedArrow->GetActorTransform());
 		}
 		else
 		{
-			Direction = ResolveProjectileDirectionForIndex(Index).GetSafeNormal();
+			StartTransforms.Add(ResolveLaunchTransform(Index));
 		}
+	}
+
+	// The player's target or the AI's target, the same way for both.
+	const bool bHasTarget = ShouldUseCurrentTarget() && HasAbilityTarget();
+	const FVector TargetAimLocation = bHasTarget ? GetAbilityTargetAimLocation() : FVector::ZeroVector;
+
+	TArray<FVector> Directions;
+	Directions.Reserve(ProjectileCount);
+
+	for (int32 Index = 0; Index < ProjectileCount; ++Index)
+	{
+		const FVector Direction = bHasTarget
+			? (TargetAimLocation - StartTransforms[Index].GetLocation()).GetSafeNormal()
+			: ResolveProjectileDirectionForIndex(Index).GetSafeNormal();
 
 		if (Direction.IsNearlyZero())
 		{
@@ -304,16 +348,14 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 		GetModifiedFloat(AbilitySystemTags::Stat_PierceDamage, GetDefault<UAbilitySystemSettings>()->DefaultPierceDamageFactor),
 		0.0f);
 
-	// ... the rest of the ShotParams lines ...
-
 	// Features get the final say over the shot.
 	ForEachFragment<UProjectileFragment>([this, &ShotParams](const UProjectileFragment& Fragment)
 	{
 		Fragment.ModifyShotParams(*this, ShotParams);
 	});
-	
-	// Open before release so every arrow can join; seal right after so the
-	// group closes once the last arrow resolves.
+
+	// Open before release so every projectile can join; seal right after so the
+	// group closes once the last one resolves.
 	UImpactGroupSubsystem* ImpactGroups = bGroupProjectileImpacts
 		? UImpactGroupSubsystem::Get(this)
 		: nullptr;
@@ -323,7 +365,27 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 		ShotParams.ImpactGroup = ImpactGroups->OpenGroup(ProjectileImpactGroup);
 	}
 
-	const bool bReleased = Bow->ReleasePreparedArrows(Directions, ShotParams);
+	ReleasedProjectiles.Reset();
+	bool bReleased = false;
+
+	if (bFromBow)
+	{
+		bReleased = Bow->ReleasePreparedArrows(Directions, ShotParams);
+
+		for (int32 Index = 0; bReleased && Index < Bow->GetReleasedArrowCount(); ++Index)
+		{
+			if (AProjectileBase* Arrow = Bow->GetReleasedArrow(Index))
+			{
+				ReleasedProjectiles.Add(Arrow);
+			}
+		}
+
+		Bow->EndDrawVisuals();
+	}
+	else
+	{
+		bReleased = LaunchFromPoints(StartTransforms, Directions, ShotParams);
+	}
 
 	if (IsValid(ImpactGroups))
 	{
@@ -334,19 +396,6 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	{
 		return false;
 	}
-	
-	ReleasedProjectiles.Reset();
-
-	for (int32 Index = 0; Index < Bow->GetReleasedArrowCount(); ++Index)
-	{
-		if (AArrowBase* Arrow = Bow->GetReleasedArrow(Index))
-		{
-			ReleasedProjectiles.Add(Arrow);
-		}
-	}
-	Bow->EndDrawVisuals();
-
-	
 
 	bProjectilePrepared = false;
 	bProjectileNocked = false;
@@ -354,9 +403,92 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 
 	OnProjectileReleased(ShotParams.Strength);
 	NotifyFragmentsProjectilesReleased();
-	
-	
+
 	return true;
+}
+
+bool URangedAttackAbility::LaunchFromPoints(const TArray<FTransform>& StartTransforms, const TArray<FVector>& Directions, const FArrowShotParams& ShotParams)
+{
+	UProjectilePoolSubsystem* Pool = UProjectilePoolSubsystem::Get(this);
+	ACharacter* OwnerCharacter = GetOwningCharacter();
+
+	if (!IsValid(Pool) || !IsValid(OwnerCharacter) || StartTransforms.Num() != Directions.Num())
+	{
+		return false;
+	}
+
+	// Owned by the weapon when there is one (like the bow's arrows), else by the character.
+	AActor* LaunchOwner = IsValid(GetEquippedWeapon())
+		? static_cast<AActor*>(GetEquippedWeapon())
+		: static_cast<AActor*>(OwnerCharacter);
+
+	for (int32 Index = 0; Index < StartTransforms.Num(); ++Index)
+	{
+		AProjectileBase* Projectile = Pool->AcquireProjectile(ProjectileData, LaunchOwner, OwnerCharacter);
+
+		if (!IsValid(Projectile))
+		{
+			continue;
+		}
+
+		Projectile->SetActorLocationAndRotation(
+			StartTransforms[Index].GetLocation(),
+			Directions[Index].Rotation(),
+			false,
+			nullptr,
+			ETeleportType::TeleportPhysics);
+
+		if (!Projectile->Fire(Directions[Index], ShotParams))
+		{
+			Projectile->ReturnToPool();
+			continue;
+		}
+
+		ReleasedProjectiles.Add(Projectile);
+	}
+
+	return !ReleasedProjectiles.IsEmpty();
+}
+
+FTransform URangedAttackAbility::ResolveLaunchTransform(const int32 ProjectileIndex) const
+{
+	// 1. The equipped weapon's launch sockets (staff tip, blade).
+	if (const AWeaponBase* EquippedWeapon = GetEquippedWeapon())
+	{
+		FTransform WeaponLaunchTransform;
+
+		if (EquippedWeapon->GetLaunchTransform(ProjectileIndex, WeaponLaunchTransform))
+		{
+			return WeaponLaunchTransform;
+		}
+	}
+
+	const ACharacter* OwnerCharacter = GetOwningCharacter();
+
+	if (!IsValid(OwnerCharacter))
+	{
+		return FTransform::Identity;
+	}
+
+	// 2. Sockets on the character (a hand).
+	const USkeletalMeshComponent* CharacterMesh = OwnerCharacter->GetMesh();
+
+	if (!CharacterLaunchSocketNames.IsEmpty() && IsValid(CharacterMesh))
+	{
+		const FName SocketName = CharacterLaunchSocketNames[FMath::Abs(ProjectileIndex) % CharacterLaunchSocketNames.Num()];
+
+		if (CharacterMesh->DoesSocketExist(SocketName))
+		{
+			return CharacterMesh->GetSocketTransform(SocketName);
+		}
+	}
+
+	// 3. Just in front of the eyes.
+	FVector EyeLocation;
+	FRotator EyeRotation;
+	OwnerCharacter->GetActorEyesViewPoint(EyeLocation, EyeRotation);
+
+	return FTransform(EyeRotation, EyeLocation + OwnerCharacter->GetActorForwardVector() * 50.0f);
 }
 
 FVector URangedAttackAbility::ResolveProjectileDirection_Implementation() const
@@ -394,7 +526,7 @@ void URangedAttackAbility::OnRangedAttackFinished_Implementation(EAbilityEndReas
 {
 }
 
-AArrowBase* URangedAttackAbility::GetReleasedProjectile(const int32 ProjectileIndex) const
+AProjectileBase* URangedAttackAbility::GetReleasedProjectile(const int32 ProjectileIndex) const
 {
 	return ReleasedProjectiles.IsValidIndex(ProjectileIndex)
 		? ReleasedProjectiles[ProjectileIndex].Get()
@@ -403,40 +535,43 @@ AArrowBase* URangedAttackAbility::GetReleasedProjectile(const int32 ProjectileIn
 
 bool URangedAttackAbility::HandleProjectileAnimationEvent(const FGameplayTag EventTag)
 {
-	if (PrepareProjectileEventTag.IsValid() &&
-		EventTag.MatchesTagExact(PrepareProjectileEventTag))
+	// Prepare and nock only exist for bows.
+	if (LaunchSource == EProjectileLaunchSource::Bow)
 	{
-		return PrepareProjectile();
+		if (PrepareProjectileEventTag.IsValid() && EventTag.MatchesTagExact(PrepareProjectileEventTag))
+		{
+			return PrepareProjectile();
+		}
+
+		if (NockProjectileEventTag.IsValid() && EventTag.MatchesTagExact(NockProjectileEventTag))
+		{
+			return NockProjectile();
+		}
 	}
 
-	if (NockProjectileEventTag.IsValid() &&
-		EventTag.MatchesTagExact(NockProjectileEventTag))
-	{
-		return NockProjectile();
-	}
-
-	if (ReleaseProjectileEventTag.IsValid() &&
-		EventTag.MatchesTagExact(ReleaseProjectileEventTag))
+	if (ReleaseProjectileEventTag.IsValid() && EventTag.MatchesTagExact(ReleaseProjectileEventTag))
 	{
 		return ReleaseProjectile();
 	}
 
 	return true;
 }
+
 FGameplayTag URangedAttackAbility::GetCostEventTag() const
 {
 	const FGameplayTag Configured = Super::GetCostEventTag();
 	return Configured.IsValid() ? Configured : ReleaseProjectileEventTag;
 }
+
 void URangedAttackAbility::NotifyFragmentsProjectilesReleased()
 {
-	TArray<AArrowBase*> Released;
+	TArray<AProjectileBase*> Released;
 
 	for (int32 Index = 0; Index < GetReleasedProjectileCount(); ++Index)
 	{
-		if (AArrowBase* Arrow = GetReleasedProjectile(Index))
+		if (AProjectileBase* Projectile = GetReleasedProjectile(Index))
 		{
-			Released.Add(Arrow);
+			Released.Add(Projectile);
 		}
 	}
 
@@ -450,3 +585,32 @@ void URangedAttackAbility::NotifyFragmentsProjectilesReleased()
 		Fragment.OnProjectilesReleased(*this, Released);
 	});
 }
+
+#if WITH_EDITOR
+EDataValidationResult URangedAttackAbility::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	if (!IsValid(ProjectileData))
+	{
+		Context.AddError(NSLOCTEXT("RangedAttack", "NoProjectile", "Projectile Data is empty, so nothing can be fired."));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	if (!ReleaseProjectileEventTag.IsValid())
+	{
+		Context.AddWarning(NSLOCTEXT("RangedAttack", "NoRelease",
+			"Release Projectile Event Tag is empty: nothing fires unless this ability releases from code. Usually: set it, and add an Ability Event notify with that tag to the montage."));
+	}
+
+	if (LaunchSource == EProjectileLaunchSource::Bow &&
+		(ProjectileHandSocketNames.IsEmpty() || ProjectileHandSocketNames.Num() != ProjectileBowSocketNames.Num()))
+	{
+		Context.AddError(NSLOCTEXT("RangedAttack", "BowSockets",
+			"Bow launch needs one Hand Socket and one Bow Socket per arrow, in matching pairs."));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	return Result;
+}
+#endif

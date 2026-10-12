@@ -1,5 +1,10 @@
 #include "ActiveAbility.h"
 #include "AbilityComponent.h"
+#include "AbilityTargetSource.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/Controller.h"
+#include "TargetableInterface.h"
+#include "TargetingComponent.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -142,21 +147,13 @@ bool UActiveAbility::RequestAbility(const FGameplayTag RequestedAbilityId)
 	UAbilityComponent* Component = GetAbilityComponent();
 	return IsValid(Component) && Component->TryActivateAbility(RequestedAbilityId);
 }
-
-bool UActiveAbility::RequestResolveBufferedInput()
-{
-	UAbilityComponent* Component = GetAbilityComponent();
-	return IsValid(Component) && Component->ResolveBufferedAbilityInput();
-}
-
-void UActiveAbility::ClearBufferedInputs()
+void UActiveAbility::OpenActivationWindow()
 {
 	if (UAbilityComponent* Component = GetAbilityComponent())
 	{
-		Component->ClearBufferedInputs();
+		Component->RequestActivationWindow(this);
 	}
 }
-
 void UActiveAbility::OpenTransition()
 {
 	if (UAbilityComponent* Component = GetAbilityComponent())
@@ -228,6 +225,45 @@ void UActiveAbility::NotifyFragmentsEnded(const EAbilityEndReason EndReason)
 		}
 	}
 }
+AActor* UActiveAbility::GetAbilityTarget() const
+{
+	// The player picks targets through its Targeting Component.
+	if (IsValid(TargetingComponent))
+	{
+		return TargetingComponent->GetCurrentTarget();
+	}
+
+	// AI: the controller decides.
+	const ACharacter* OwnerCharacter = GetOwningCharacter();
+	const AController* OwnerController = IsValid(OwnerCharacter) ? OwnerCharacter->GetController() : nullptr;
+
+	if (IsValid(OwnerController) && OwnerController->Implements<UAbilityTargetSource>())
+	{
+		return IAbilityTargetSource::Execute_GetAbilityTarget(OwnerController);
+	}
+
+	return nullptr;
+}
+
+FVector UActiveAbility::GetAbilityTargetAimLocation() const
+{
+	if (IsValid(TargetingComponent) && TargetingComponent->HasTarget())
+	{
+		return TargetingComponent->GetCurrentTargetAimLocation();
+	}
+
+	const AActor* AbilityTarget = GetAbilityTarget();
+
+	if (!IsValid(AbilityTarget))
+	{
+		return FVector::ZeroVector;
+	}
+
+	return AbilityTarget->Implements<UTargetableInterface>()
+		? ITargetableInterface::Execute_GetTargetAimLocation(AbilityTarget)
+		: AbilityTarget->GetActorLocation();
+}
+
 
 #if WITH_EDITOR
 

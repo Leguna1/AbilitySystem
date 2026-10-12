@@ -9,7 +9,8 @@ void UResourceWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (bFindResourceComponentAutomatically)
+	// A component set from outside (e.g. an enemy's health bar) wins over the automatic search.
+	if (bFindResourceComponentAutomatically && !ResourceComponent)
 	{
 		FindOwningResourceComponent();
 	}

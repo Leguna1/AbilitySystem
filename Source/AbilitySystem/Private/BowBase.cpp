@@ -1,9 +1,10 @@
 #include "BowBase.h"
 
-#include "ArrowDataAsset.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
-
+#include "ProjectileBase.h"
+#include "ProjectileDataAsset.h"
+#include "ProjectilePoolSubsystem.h"
 
 ABowBase::ABowBase()
 {
@@ -23,14 +24,14 @@ void ABowBase::Tick(const float DeltaTime)
 
 	DrawAlpha = FMath::FInterpTo(DrawAlpha, TargetAlpha, DeltaTime, InterpSpeed);
 
-	const USkeletalMeshComponent* Mesh = GetWielderMesh();
+	const USkeletalMeshComponent* WielderSkeletalMesh = GetWielderMesh();
 
 	if (bDrawVisualsActive &&
-		IsValid(Mesh) &&
+		IsValid(WielderSkeletalMesh) &&
 		!DrawHandSocketName.IsNone() &&
-		Mesh->DoesSocketExist(DrawHandSocketName))
+		WielderSkeletalMesh->DoesSocketExist(DrawHandSocketName))
 	{
-		StringTargetLocation = Mesh->GetSocketLocation(DrawHandSocketName);
+		StringTargetLocation = WielderSkeletalMesh->GetSocketLocation(DrawHandSocketName);
 	}
 
 	if (!bDrawVisualsActive && FMath::IsNearlyZero(DrawAlpha, 0.001f))
@@ -43,7 +44,18 @@ void ABowBase::Tick(const float DeltaTime)
 void ABowBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	EndDrawVisuals();
-	DestroyArrowPool();
+	DiscardPreparedArrows();
+
+	// Arrows already in flight belong to the pool and keep flying; just stop listening to them.
+	for (AProjectileBase* Arrow : ReleasedArrows)
+	{
+		if (IsValid(Arrow))
+		{
+			Arrow->OnReadyToRecycle.RemoveDynamic(this, &ABowBase::HandleArrowReadyToRecycle);
+		}
+	}
+
+	ReleasedArrows.Reset();
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -64,11 +76,13 @@ void ABowBase::EndDrawVisuals()
 	bDrawVisualsActive = false;
 }
 
-bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
+bool ABowBase::PrepareArrows(UProjectileDataAsset* ArrowData, const int32 ArrowCount)
 {
+	UProjectilePoolSubsystem* Pool = UProjectilePoolSubsystem::Get(this);
+
 	if (HasPreparedArrows() ||
+		!IsValid(Pool) ||
 		!IsValid(ArrowData) ||
-		!ArrowData->ArrowClass ||
 		ArrowCount <= 0)
 	{
 		return false;
@@ -78,19 +92,16 @@ bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 
 	for (int32 Index = 0; Index < ArrowCount; ++Index)
 	{
-		AArrowBase* Arrow = AcquireAvailableArrow(ArrowData->ArrowClass);
+		// Owned by the bow, so the arrow never hits the bow or (through the instigator) the archer.
+		AProjectileBase* Arrow = Pool->AcquireProjectile(ArrowData, this, GetInstigator());
 
-		if (!IsValid(Arrow) || !Arrow->ActivateFromPool(ArrowData))
+		if (!IsValid(Arrow))
 		{
-			if (IsValid(Arrow))
-			{
-				Arrow->ReturnToPool();
-			}
-
 			DiscardPreparedArrows();
 			return false;
 		}
 
+		TrackArrow(Arrow);
 		PreparedArrows.Add(Arrow);
 	}
 
@@ -99,22 +110,23 @@ bool ABowBase::PrepareArrows(UArrowDataAsset* ArrowData, const int32 ArrowCount)
 
 bool ABowBase::AttachPreparedArrowToWielder(const int32 ArrowIndex, const FName SocketName)
 {
-	USkeletalMeshComponent* Mesh = GetWielderMesh();
+	USkeletalMeshComponent* WielderSkeletalMesh = GetWielderMesh();
+
 	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||
 		!IsValid(PreparedArrows[ArrowIndex]) ||
-		!IsValid(Mesh) ||
+		!IsValid(WielderSkeletalMesh) ||
 		SocketName.IsNone() ||
-		!Mesh->DoesSocketExist(SocketName))
+		!WielderSkeletalMesh->DoesSocketExist(SocketName))
 	{
 		return false;
 	}
 
 	return PreparedArrows[ArrowIndex]->AttachToComponent(
-		Mesh,
+		WielderSkeletalMesh,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		SocketName
-	);
+		SocketName);
 }
+
 void ABowBase::OnHolstered_Implementation()
 {
 	Super::OnHolstered_Implementation();
@@ -122,6 +134,7 @@ void ABowBase::OnHolstered_Implementation()
 	EndDrawVisuals();
 	DiscardPreparedArrows();
 }
+
 bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName SocketName)
 {
 	if (!PreparedArrows.IsValidIndex(ArrowIndex) ||
@@ -136,37 +149,39 @@ bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName Sock
 	return PreparedArrows[ArrowIndex]->AttachToComponent(
 		BowMesh,
 		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		SocketName
-	);
+		SocketName);
 }
 
 bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const FArrowShotParams& ShotParams)
 {
-	if (PreparedArrows.IsEmpty() ||
-		Directions.Num() != PreparedArrows.Num())
+	if (PreparedArrows.IsEmpty() || Directions.Num() != PreparedArrows.Num())
 	{
 		return false;
 	}
 
 	for (int32 Index = 0; Index < PreparedArrows.Num(); ++Index)
 	{
-		if (!IsValid(PreparedArrows[Index]) ||
-			Directions[Index].GetSafeNormal().IsNearlyZero())
+		if (!IsValid(PreparedArrows[Index]) || Directions[Index].GetSafeNormal().IsNearlyZero())
 		{
 			return false;
 		}
 	}
 
-	TArray<TObjectPtr<AArrowBase>> ArrowsToFire = PreparedArrows;
+	TArray<TObjectPtr<AProjectileBase>> ArrowsToFire = PreparedArrows;
 	PreparedArrows.Reset();
+
+	for (AProjectileBase* PreviousArrow : ReleasedArrows)
+	{
+		UntrackArrow(PreviousArrow);
+	}
+
 	ReleasedArrows.Reset();
 
-	
 	bool bReleasedAnyArrow = false;
 
 	for (int32 Index = 0; Index < ArrowsToFire.Num(); ++Index)
 	{
-		AArrowBase* Arrow = ArrowsToFire[Index];
+		AProjectileBase* Arrow = ArrowsToFire[Index];
 
 		if (!IsValid(Arrow))
 		{
@@ -177,6 +192,7 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const FA
 
 		if (!Arrow->Fire(Directions[Index].GetSafeNormal(), ShotParams))
 		{
+			UntrackArrow(Arrow);
 			Arrow->ReturnToPool();
 			continue;
 		}
@@ -191,108 +207,49 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const FA
 
 void ABowBase::DiscardPreparedArrows()
 {
-	for (AArrowBase* Arrow : PreparedArrows)
+	TArray<TObjectPtr<AProjectileBase>> ArrowsToDiscard = PreparedArrows;
+	PreparedArrows.Reset();
+
+	for (AProjectileBase* Arrow : ArrowsToDiscard)
 	{
 		if (IsValid(Arrow))
 		{
+			UntrackArrow(Arrow);
 			Arrow->ReturnToPool();
 		}
 	}
-
-	PreparedArrows.Reset();
-}
-AArrowBase* ABowBase::GetPreparedArrow(const int32 ArrowIndex) const
-{
-	return PreparedArrows.IsValidIndex(ArrowIndex)
-		? PreparedArrows[ArrowIndex].Get()
-		: nullptr;
 }
 
-AArrowBase* ABowBase::GetReleasedArrow(const int32 ArrowIndex) const
+AProjectileBase* ABowBase::GetPreparedArrow(const int32 ArrowIndex) const
 {
-	return ReleasedArrows.IsValidIndex(ArrowIndex)
-		? ReleasedArrows[ArrowIndex].Get()
-		: nullptr;
+	return PreparedArrows.IsValidIndex(ArrowIndex) ? PreparedArrows[ArrowIndex].Get() : nullptr;
 }
-AArrowBase* ABowBase::CreateArrow(const TSubclassOf<AArrowBase> ArrowClass)
-{
-	UWorld* World = GetWorld();
 
-	if (!IsValid(World) || !ArrowClass)
+AProjectileBase* ABowBase::GetReleasedArrow(const int32 ArrowIndex) const
+{
+	return ReleasedArrows.IsValidIndex(ArrowIndex) ? ReleasedArrows[ArrowIndex].Get() : nullptr;
+}
+
+void ABowBase::TrackArrow(AProjectileBase* Arrow)
+{
+	if (IsValid(Arrow))
 	{
-		return nullptr;
+		Arrow->OnReadyToRecycle.AddUniqueDynamic(this, &ABowBase::HandleArrowReadyToRecycle);
 	}
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.Instigator = GetInstigator();
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	AArrowBase* NewArrow = World->SpawnActor<AArrowBase>(ArrowClass, FTransform::Identity, SpawnParameters);
-
-	if (!IsValid(NewArrow))
-	{
-		return nullptr;
-	}
-
-	NewArrow->OnReadyToRecycle.AddDynamic(this, &ABowBase::HandleArrowReadyToRecycle);
-	NewArrow->ResetForPool();
-
-	AllSpawnedArrows.Add(NewArrow);
-	return NewArrow;
 }
 
-AArrowBase* ABowBase::AcquireAvailableArrow(const TSubclassOf<AArrowBase> ArrowClass)
+void ABowBase::UntrackArrow(AProjectileBase* Arrow)
 {
-	for (int32 Index = AvailableArrows.Num() - 1; Index >= 0; --Index)
+	if (IsValid(Arrow))
 	{
-		AArrowBase* Candidate = AvailableArrows[Index];
-
-		if (!IsValid(Candidate))
-		{
-			AvailableArrows.RemoveAtSwap(Index);
-			continue;
-		}
-
-		if (Candidate->IsA(ArrowClass))
-		{
-			AvailableArrows.RemoveAtSwap(Index);
-			return Candidate;
-		}
-	}
-
-	return CreateArrow(ArrowClass);
-}
-
-void ABowBase::DestroyArrowPool()
-{
-	PreparedArrows.Reset();
-	ReleasedArrows.Reset();
-
-	for (const TObjectPtr<AArrowBase>& Arrow : AllSpawnedArrows)
-	{
-		if (!IsValid(Arrow))
-		{
-			continue;
-		}
-
 		Arrow->OnReadyToRecycle.RemoveDynamic(this, &ABowBase::HandleArrowReadyToRecycle);
-		Arrow->Destroy();
 	}
-
-	AllSpawnedArrows.Reset();
-	AvailableArrows.Reset();
 }
 
-void ABowBase::HandleArrowReadyToRecycle(AArrowBase* Arrow)
+void ABowBase::HandleArrowReadyToRecycle(AProjectileBase* Arrow)
 {
-	if (!IsValid(Arrow) || !AllSpawnedArrows.Contains(Arrow))
-	{
-		return;
-	}
-
+	// The pool may hand this arrow to someone else next, so the bow forgets it now.
+	UntrackArrow(Arrow);
 	PreparedArrows.Remove(Arrow);
 	ReleasedArrows.Remove(Arrow);
-
-	AvailableArrows.AddUnique(Arrow);
 }

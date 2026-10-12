@@ -1,15 +1,13 @@
 #include "InputBufferComponent.h"
 
+#include "AbilityComponent.h"
+#include "ActiveAbility.h"
 #include "Engine/World.h"
+#include "Misc/ScopeExit.h"
 
 UInputBufferComponent::UInputBufferComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
-}
-
-void UInputBufferComponent::SetMovementInput(const FVector2D MovementInput)
-{
-	CurrentMovementInput = MovementInput.GetClampedToMaxSize(1.0f);
 }
 
 void UInputBufferComponent::BeginPlay()
@@ -20,6 +18,215 @@ void UInputBufferComponent::BeginPlay()
 	HeldInputTags.Reset();
 	HeldInputSequences.Reset();
 	NextSequence = 1;
+
+	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
+
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->ActivationWindowEvent.AddDynamic(this, &UInputBufferComponent::HandleActivationWindowEvent);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UInputBufferComponent on %s found no UAbilityComponent: input won't start abilities."),
+			*GetNameSafe(GetOwner()));
+	}
+}
+
+void UInputBufferComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->ActivationWindowEvent.RemoveDynamic(this, &UInputBufferComponent::HandleActivationWindowEvent);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+/* ============================== Entry points ============================== */
+
+void UInputBufferComponent::HandleInput(const FGameplayTag InputTag, const bool bPressed)
+{
+	if (!InputTag.IsValid())
+	{
+		return;
+	}
+
+	if (!bPressed)
+	{
+		if (InputReleased(InputTag) && IsValid(AbilityComponent))
+		{
+			AbilityComponent->NotifyInputReleased(InputTag);
+		}
+		return;
+	}
+
+	if (!InputPressed(InputTag, GetLongestBufferDurationForInput(InputTag)) || !IsValid(AbilityComponent))
+	{
+		return;
+	}
+
+	// The active ability hears the press first (charging, aiming, its own combo logic).
+	AbilityComponent->NotifyInputPressed(InputTag);
+
+	if (ShouldResolveOnPress(InputTag))
+	{
+		ResolveBufferedInputs();
+	}
+}
+
+void UInputBufferComponent::HandleMovementInput(const FVector2D MovementInput)
+{
+	SetMovementInput(MovementInput);
+
+	if (IsValid(AbilityComponent))
+	{
+		AbilityComponent->MovementInputReceived(CurrentMovementInput);
+	}
+}
+
+bool UInputBufferComponent::ResolveBufferedInputs()
+{
+	if (!IsValid(AbilityComponent) || bResolving)
+	{
+		return false;
+	}
+
+	bResolving = true;
+	ON_SCOPE_EXIT { bResolving = false; };
+
+	TArray<FInputActivationCandidate> Candidates;
+	BuildActivationCandidates(Candidates);
+
+	for (const FInputActivationCandidate& Candidate : Candidates)
+	{
+		if (AbilityComponent->TryActivateAbility(Candidate.AbilityId))
+		{
+			ConsumeInput(Candidate.BufferedInput);
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UInputBufferComponent::HandleActivationWindowEvent(const EActivationWindowEvent WindowEvent)
+{
+	switch (WindowEvent)
+	{
+	case EActivationWindowEvent::Opened:
+		ResolveBufferedInputs();
+		break;
+
+	case EActivationWindowEvent::Flushed:
+		ClearBufferedInputs();
+		break;
+	}
+}
+
+bool UInputBufferComponent::ShouldResolveOnPress(const FGameplayTag InputTag) const
+{
+	const UActiveAbility* CurrentAbility = AbilityComponent->GetActiveAbility();
+
+	if (!IsValid(CurrentAbility))
+	{
+		return true;
+	}
+
+	// The active ability's own input waits for its checkpoint or transition,
+	// so a combo doesn't advance the instant the button is pressed.
+	if (CurrentAbility->GetActivationInputTag().MatchesTagExact(InputTag))
+	{
+		return false;
+	}
+
+	// Another ability's input goes through right away while the active one can still be early-cancelled.
+	return !CurrentAbility->IsEarlyCancellationClosed() &&
+		!CurrentAbility->IsCommitted() &&
+		!CurrentAbility->GetAllowedEarlyCancellationAbilityTags().IsEmpty();
+}
+
+void UInputBufferComponent::BuildActivationCandidates(TArray<FInputActivationCandidate>& OutCandidates)
+{
+	OutCandidates.Reset();
+
+	TArray<FBufferedInput> WaitingInputs;
+	GetInputCandidates(WaitingInputs, true);
+
+	for (const FBufferedInput& WaitingInput : WaitingInputs)
+	{
+		for (const TSubclassOf<UAbility> AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
+		{
+			// Passives fail the cast and never become candidates.
+			const UActiveAbility* AbilityDefaults = Cast<UActiveAbility>(AbilityComponent->GetAbilityDefaults(AbilityClass));
+
+			if (!IsValid(AbilityDefaults) ||
+				!AbilityDefaults->GetActivationInputTag().IsValid() ||
+				!AbilityDefaults->GetActivationInputTag().MatchesTagExact(WaitingInput.InputTag) ||
+				AbilityComponent->GetAbilityRank(AbilityClass) <= 0)
+			{
+				continue;
+			}
+
+			if (WaitingInput.Source == EBufferedInputSource::Held && !AbilityDefaults->CanActivateFromHeldInput())
+			{
+				continue;
+			}
+
+			if (AbilityDefaults->RequiresInputHeldAtResolution() && !IsInputHeld(WaitingInput.InputTag))
+			{
+				continue;
+			}
+
+			FInputActivationCandidate& Candidate = OutCandidates.AddDefaulted_GetRef();
+			Candidate.AbilityId = AbilityDefaults->GetAbilityId();
+			Candidate.BufferedInput = WaitingInput;
+			Candidate.Priority = AbilityDefaults->GetActivationPriority();
+		}
+	}
+
+	OutCandidates.Sort([](const FInputActivationCandidate& A, const FInputActivationCandidate& B)
+	{
+		if (A.Priority != B.Priority)
+		{
+			return A.Priority > B.Priority;
+		}
+
+		return A.BufferedInput.Sequence < B.BufferedInput.Sequence;
+	});
+}
+
+float UInputBufferComponent::GetLongestBufferDurationForInput(const FGameplayTag InputTag) const
+{
+	if (!IsValid(AbilityComponent))
+	{
+		return -1.0f;
+	}
+
+	float LongestDuration = 0.0f;
+	bool bFoundAbility = false;
+
+	for (const TSubclassOf<UAbility> AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
+	{
+		const UActiveAbility* AbilityDefaults = Cast<UActiveAbility>(AbilityComponent->GetAbilityDefaults(AbilityClass));
+
+		if (!IsValid(AbilityDefaults) || !AbilityDefaults->GetActivationInputTag().MatchesTagExact(InputTag))
+		{
+			continue;
+		}
+
+		LongestDuration = FMath::Max(LongestDuration, AbilityDefaults->GetInputBufferDuration());
+		bFoundAbility = true;
+	}
+
+	// No ability on this input: fall back to the default duration.
+	return bFoundAbility ? LongestDuration : -1.0f;
+}
+
+/* ============================== Storage ============================== */
+
+void UInputBufferComponent::SetMovementInput(const FVector2D MovementInput)
+{
+	CurrentMovementInput = MovementInput.GetClampedToMaxSize(1.0f);
 }
 
 bool UInputBufferComponent::InputPressed(FGameplayTag InputTag, float BufferDurationOverride)
@@ -200,9 +407,7 @@ float UInputBufferComponent::GetCurrentTime() const
 
 float UInputBufferComponent::ResolveBufferDuration(float BufferDurationOverride) const
 {
-	return BufferDurationOverride >= 0.0f
-		? BufferDurationOverride
-		: DefaultBufferDuration;
+	return BufferDurationOverride >= 0.0f ? BufferDurationOverride : DefaultBufferDuration;
 }
 
 bool UInputBufferComponent::HasPressedEntry(FGameplayTag InputTag) const

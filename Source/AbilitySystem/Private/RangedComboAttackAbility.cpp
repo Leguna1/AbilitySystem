@@ -46,7 +46,7 @@ void URangedComboAttackAbility::OnAnimationEvent_Implementation(const FGameplayT
 	if (InputCheckPointEventTag.IsValid() &&
 		EventTag.MatchesTagExact(InputCheckPointEventTag))
 	{
-		RequestResolveBufferedInput();
+		OpenActivationWindow();
 	}
 }
 

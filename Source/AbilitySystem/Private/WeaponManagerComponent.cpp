@@ -155,7 +155,7 @@ bool UWeaponManagerComponent::SwapTo(UWeaponDataAsset* WeaponData, const int32 L
 
 	if (IsValid(AbilityComponent))
 	{
-		AbilityComponent->ClearBufferedInputs();
+		AbilityComponent->FlushActivationRequests();
 	}
 
 	if (IsValid(EquippedWeapon))
