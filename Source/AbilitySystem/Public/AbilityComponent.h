@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "UObject/ObjectKey.h"
 #include "HitReactionTypes.h"
+#include "ResourceComponent.h"
 #include "AbilityComponent.generated.h"
 
 class ACharacter;
@@ -446,5 +447,8 @@ private:
 	
 	UPROPERTY(Transient)
 	TObjectPtr<UAttributeComponent> AttributeComponent;
+	
+	UFUNCTION()
+    void HandleOwnerResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
 	
 };

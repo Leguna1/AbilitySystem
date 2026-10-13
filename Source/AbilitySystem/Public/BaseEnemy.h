@@ -96,6 +96,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UWidgetComponent> HealthBarComponent;
 	
+	/** Set by the AI controller: true while fighting, false when idle or walking home. */
+	void SetInCombat(bool bNewInCombat);
+
+	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
+	bool IsInCombat() const { return bInCombat; }
 	
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
@@ -141,11 +146,25 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy|Perception", meta = (ClampMin = "0.0"))
 	float ProximityAwarenessRadius = 300.0f;
 	
-	
+	/** For Blueprint extras: combat music, an alert sound, an aggro icon, and so on. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Enemy|Combat")
+	void OnCombatStateChanged(bool bNowInCombat);
+
+	/** Seconds the nameplate stays visible after leaving combat. 0 = hide at once. */
+	UPROPERTY(EditDefaultsOnly, Category = "Enemy|UI", meta = (ClampMin = "0"))
+	float NameplateHideDelay = 2.0f;
 
 private:
 	UFUNCTION()
 	void HandlePayloadReceived(const FAbilityPayload& Payload, float DamageApplied);
 
 	FVector HomeLocation = FVector::ZeroVector;
+	
+	/** Hands this enemy's components to every resource bar and effects bar in the nameplate. */
+	void InitializeNameplate();
+	
+	void SetNameplateVisible(bool bVisible);
+
+	bool bInCombat = false;
+	FTimerHandle NameplateHideTimer;
 };

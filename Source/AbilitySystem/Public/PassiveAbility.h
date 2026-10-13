@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Ability.h"
+#include "HitReactionTypes.h"
 #include "ModifierTypes.h"
 #include "PayloadReceiver.h"
 #include "PassiveAbility.generated.h"
@@ -10,12 +11,12 @@ class UActiveAbility;
 class UCombatantComponent;
 
 /**
- * An always-on ability. Granted like any ability; one persistent instance
- * exists while granted. Active while its rank is 1+: applies its modifiers
- * and granted tags, and receives combat and ability events.
+ * An always-on ability: stats and tags for as long as it's learned (rank 1+).
+ * Granted like any ability; one persistent instance exists while granted.
+ * Most skill tree upgrades are just this: fill Modifiers, no code.
  *
- * Pure stat passives need no code (fill Modifiers). Reactive passives
- * override the event hooks and use ApplyTimedEffect for procs.
+ * For "when X happens, do Y", use Reactive Ability (a child of this class).
+ * The event hooks below are for custom C++ or Blueprint passives; they do nothing by default.
  */
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API UPassiveAbility : public UAbility
@@ -56,6 +57,16 @@ public:
 	void OnDied(AActor* Killer);
 	virtual void OnDied_Implementation(AActor* Killer);
 
+	/** A hit made the owner react (flinch or stronger). */
+	UFUNCTION(BlueprintNativeEvent, Category = "Passive|Combat")
+	void OnHitReaction(const FHitReactionResult& Reaction);
+	virtual void OnHitReaction_Implementation(const FHitReactionResult& Reaction);
+
+	/** Health changed. Values are fractions of max health (0..1). */
+	UFUNCTION(BlueprintNativeEvent, Category = "Passive|Combat")
+	void OnHealthChanged(float HealthBefore, float HealthAfter);
+	virtual void OnHealthChanged_Implementation(float HealthBefore, float HealthAfter);
+
 	/* -------------------- Ability events -------------------- */
 
 	/** Runs before the ability's own activation, so effects applied here still reach its snapshot. */
@@ -70,20 +81,17 @@ public:
 	UFUNCTION(BlueprintNativeEvent, Category = "Passive|Abilities")
 	void OnAbilityEnded(UActiveAbility* Ability, EAbilityEndReason EndReason);
 	virtual void OnAbilityEnded_Implementation(UActiveAbility* Ability, EAbilityEndReason EndReason);
-	
+
 	/** A gameplay event sent by an active ability (e.g. Event.Combo.Finished). */
 	UFUNCTION(BlueprintNativeEvent, Category = "Passive|Abilities")
 	void OnGameplayEvent(FGameplayTag EventTag, UActiveAbility* Source);
 	virtual void OnGameplayEvent_Implementation(FGameplayTag EventTag, UActiveAbility* Source);
-	
-#if WITH_EDITOR
-	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
-#endif
 
-protected:
+	/* -------------------- Timed effects -------------------- */
+
 	/**
 	 * Applies (or refreshes) a timed effect owned by this passive, at its rank.
-	 * EntryKey must not be None (reserved for the passive's permanent entry).
+	 * EntryKey must not be None (reserved for the permanent entry). Duration 0 = until removed.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Passive")
 	void ApplyTimedEffect(FName EntryKey, const TArray<FStatModifier>& EffectModifiers, const FGameplayTagContainer& EffectTags, float Duration);
@@ -91,20 +99,25 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Passive")
 	void RemoveTimedEffect(FName EntryKey);
 
-	/** Applied for as long as the passive is active, at its rank. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Passive")
-	TArray<FStatModifier> Modifiers;
-
-	/** Owner tags granted for as long as the passive is active. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Passive")
-	FGameplayTagContainer GrantedTags;
-	
 	UFUNCTION(BlueprintPure, Category = "Passive")
 	bool HasTimedEffect(FName EntryKey) const;
-	
+
 	/** Sets the UI stack count of one of this passive's timed effects. */
 	UFUNCTION(BlueprintCallable, Category = "Passive")
 	void SetTimedEffectStacks(FName EntryKey, int32 Stacks);
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+
+protected:
+	/** Applied for as long as the passive is learned, at its rank. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Always On")
+	TArray<FStatModifier> Modifiers;
+
+	/** Owner tags granted for as long as the passive is learned. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Always On")
+	FGameplayTagContainer GrantedTags;
 
 private:
 	friend class UAbilityComponent;
@@ -113,7 +126,7 @@ private:
 	void DeactivatePassive();
 
 	bool bPassiveActive = false;
-	
+
 	/** Where this passive's effects live: the owner's combatant component. */
 	UCombatantComponent* GetEffectTarget() const;
 };

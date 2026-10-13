@@ -13,7 +13,9 @@ void UChanceBuffPassive::OnGameplayEvent_Implementation(const FGameplayTag Event
 	{
 		return;
 	}
-
+	UE_LOG(LogTemp, Warning, TEXT("[ChanceBuff] %s got %s (active %d)"),
+		*GetName(), *EventTag.ToString(), IsPassiveActive());
+	
 	if (FMath::FRand() >= GetRankedFloat(ChanceByRank))
 	{
 		return;

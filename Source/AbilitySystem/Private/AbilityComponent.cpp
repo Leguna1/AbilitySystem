@@ -54,7 +54,11 @@ void UAbilityComponent::BeginPlay()
 		UE_LOG(LogAbilitySystem, Error, TEXT("UAbilityComponent on %s requires a UCombatantComponent: passives, buffs and stat modifiers will not work."),
 			*GetNameSafe(GetOwner()));
 	}
-
+	
+	if (IsValid(ResourceComponent))
+	{
+		ResourceComponent->OnResourceChanged.AddDynamic(this, &UAbilityComponent::HandleOwnerResourceChanged);
+	}
 	// Passives need the owning character, so their instances are created here,
 	// not at grant time during InitializeComponent.
 	for (const TSubclassOf<UAbility>& AbilityClass : GrantedAbilityClasses)
@@ -112,7 +116,10 @@ void UAbilityComponent::EndPlay(EEndPlayReason::Type EndPlayReason)
 		CombatantComponent->OnEffectsChanged.RemoveDynamic(this, &UAbilityComponent::HandleCombatantEffectsChanged);
 	}
 
-	
+	if (IsValid(ResourceComponent))
+	{
+		ResourceComponent->OnResourceChanged.RemoveDynamic(this, &UAbilityComponent::HandleOwnerResourceChanged);
+	}
 
 	PassiveInstances.Reset();
 	
@@ -1448,6 +1455,8 @@ void UAbilityComponent::BroadcastGameplayEvent(const FGameplayTag EventTag, UAct
 	{
 		return;
 	}
+	
+	UE_LOG(LogTemp, Warning, TEXT("[Event] %s from %s"), *EventTag.ToString(), *GetNameSafe(Source));
 
 	ForEachActivePassive([EventTag, Source](UPassiveAbility* Passive)
 	{
@@ -1493,6 +1502,11 @@ bool UAbilityComponent::TriggerHitReaction(const FHitReactionResult& Reaction)
 void UAbilityComponent::HandleOwnerHitReaction(const FHitReactionResult& Result)
 {
 	TriggerHitReaction(Result);
+
+	ForEachActivePassive([&Result](UPassiveAbility* Passive)
+	{
+		Passive->OnHitReaction(Result);
+	});
 }
 void UAbilityComponent::HandleCombatantEffectsChanged()
 {
@@ -1503,4 +1517,27 @@ void UAbilityComponent::HandleCombatantEffectsChanged()
 void UAbilityComponent::FlushActivationRequests()
 {
 	BroadcastActivationWindow(EActivationWindowEvent::Flushed);
+}
+void UAbilityComponent::HandleOwnerResourceChanged(const EResourceType ResourceType, const EResourceValueType ValueType,
+	const float OldValue, const float NewValue)
+{
+	if (ResourceType != EResourceType::Health || ValueType != EResourceValueType::Current || !IsValid(ResourceComponent))
+	{
+		return;
+	}
+
+	const float MaxHealth = ResourceComponent->GetResourceValue(EResourceType::Health, EResourceValueType::Max);
+
+	if (MaxHealth <= 0.0f)
+	{
+		return;
+	}
+
+	const float HealthBefore = OldValue / MaxHealth;
+	const float HealthAfter = NewValue / MaxHealth;
+
+	ForEachActivePassive([HealthBefore, HealthAfter](UPassiveAbility* Passive)
+	{
+		Passive->OnHealthChanged(HealthBefore, HealthAfter);
+	});
 }

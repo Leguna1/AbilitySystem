@@ -39,11 +39,13 @@ void UPassiveAbility::DeactivatePassive()
 		Target->RemoveEffectsFromSource(this);
 	}
 }
+
 UCombatantComponent* UPassiveAbility::GetEffectTarget() const
 {
 	const UAbilityComponent* Component = GetAbilityComponent();
 	return IsValid(Component) ? Component->GetCombatantComponent() : nullptr;
 }
+
 void UPassiveAbility::ApplyTimedEffect(const FName EntryKey, const TArray<FStatModifier>& EffectModifiers, const FGameplayTagContainer& EffectTags, const float Duration)
 {
 	UCombatantComponent* Target = GetEffectTarget();
@@ -63,6 +65,22 @@ void UPassiveAbility::RemoveTimedEffect(const FName EntryKey)
 		Target->RemoveEffect(this, EntryKey);
 	}
 }
+
+bool UPassiveAbility::HasTimedEffect(const FName EntryKey) const
+{
+	const UCombatantComponent* Target = GetEffectTarget();
+	return IsValid(Target) && Target->HasEffect(this, EntryKey);
+}
+
+void UPassiveAbility::SetTimedEffectStacks(const FName EntryKey, const int32 Stacks)
+{
+	if (UCombatantComponent* Target = GetEffectTarget(); Target && !EntryKey.IsNone())
+	{
+		Target->SetEffectStacks(this, EntryKey, Stacks);
+	}
+}
+
+/* -------------------- Default hooks: do nothing -------------------- */
 
 void UPassiveAbility::OnPassiveActivated_Implementation()
 {
@@ -88,6 +106,14 @@ void UPassiveAbility::OnDied_Implementation(AActor* Killer)
 {
 }
 
+void UPassiveAbility::OnHitReaction_Implementation(const FHitReactionResult& Reaction)
+{
+}
+
+void UPassiveAbility::OnHealthChanged_Implementation(float HealthBefore, float HealthAfter)
+{
+}
+
 void UPassiveAbility::OnAbilityActivated_Implementation(UActiveAbility* Ability)
 {
 }
@@ -99,22 +125,11 @@ void UPassiveAbility::OnAbilityCommitted_Implementation(UActiveAbility* Ability)
 void UPassiveAbility::OnAbilityEnded_Implementation(UActiveAbility* Ability, EAbilityEndReason EndReason)
 {
 }
+
 void UPassiveAbility::OnGameplayEvent_Implementation(FGameplayTag EventTag, UActiveAbility* Source)
 {
 }
 
-bool UPassiveAbility::HasTimedEffect(const FName EntryKey) const
-{
-	const UCombatantComponent* Target = GetEffectTarget();
-	return IsValid(Target) && Target->HasEffect(this, EntryKey);
-}
-void UPassiveAbility::SetTimedEffectStacks(const FName EntryKey, const int32 Stacks)
-{
-	if (UCombatantComponent* Target = GetEffectTarget(); Target && !EntryKey.IsNone())
-	{
-		Target->SetEffectStacks(this, EntryKey, Stacks);
-	}
-}
 #if WITH_EDITOR
 #include "AbilityValidation.h"
 

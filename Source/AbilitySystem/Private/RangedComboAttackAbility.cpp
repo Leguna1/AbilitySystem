@@ -176,6 +176,9 @@ float URangedComboAttackAbility::ResolveProjectileDamageMultiplier_Implementatio
 
 void URangedComboAttackAbility::OnProjectileReleased_Implementation(const float Strength)
 {
+	UE_LOG(LogTemp, Warning, TEXT("[Combo] released step %d / %d, final=%d"),
+	CurrentComboIndex, ComboMontages.Num(), IsFinalComboStep());
+	
 	Super::OnProjectileReleased_Implementation(Strength);
 
 	// The finisher counts as soon as its arrow leaves the bow, hit or miss.

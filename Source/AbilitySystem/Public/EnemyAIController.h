@@ -168,4 +168,5 @@ private:
 	/** Acceptance radius of the current chase, so switching from "get in range" to "get line of sight" re-issues the move. */
 	float LastChaseAcceptance = -1.0f;
 	
+	void UpdateCombatState();
 };

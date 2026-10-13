@@ -350,14 +350,17 @@ void AEnemyAIController::Think()
 	if (IsReturningHome())
 	{
 		ThinkReturnHome();
+		UpdateCombatState();
 	}
 	else if (AActor* Target = GetCurrentTarget())
 	{
 		ThinkCombat(Abilities, Target);
+		UpdateCombatState();
 	}
 	else
 	{
 		ThinkIdle();
+		UpdateCombatState();
 	}
 
 	if (bDrawBehaviorDebug)
@@ -678,5 +681,12 @@ void AEnemyAIController::SetReturningHome(bool bNewReturningHome)
 	else
 	{
 		Abilities->RemoveLooseOwnerTag(AbilitySystemTags::State_Invulnerable);
+	}
+}
+void AEnemyAIController::UpdateCombatState()
+{
+	if (ABaseEnemy* EnemyPawn = Enemy.Get())
+	{
+		EnemyPawn->SetInCombat(IsValid(GetCurrentTarget()) && !bReturningHome);
 	}
 }

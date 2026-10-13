@@ -7,12 +7,14 @@
 #include "Components/CapsuleComponent.h"
 #include "EnemyAIController.h"
 #include "GameFramework/CharacterMovementComponent.h"
-#include "InputBufferComponent.h"
 #include "MotionWarpingComponent.h"
 #include "ResourceComponent.h"
 #include "Misc/DataValidation.h"
 #include "Components/WidgetComponent.h"
 #include "ResourceWidget.h"
+#include "ActiveEffectsBarWidget.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
 
 
 ABaseEnemy::ABaseEnemy()
@@ -51,11 +53,9 @@ void ABaseEnemy::BeginPlay()
 	{
 		Combatant->OnPayloadReceived.AddDynamic(this, &ABaseEnemy::HandlePayloadReceived);
 	}
-	// Widget components create their widget in their own BeginPlay, which has run by now.
-	if (UResourceWidget* HealthBarWidget = Cast<UResourceWidget>(HealthBarComponent->GetUserWidgetObject()))
-	{
-		HealthBarWidget->SetResourceComponent(GetResourceComponent());
-	}
+	
+	InitializeNameplate();
+	SetNameplateVisible(false);
 }
 
 void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -67,7 +67,31 @@ void ABaseEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	Super::EndPlay(EndPlayReason);
 }
+void ABaseEnemy::InitializeNameplate()
+{
+	UUserWidget* Nameplate = IsValid(HealthBarComponent) ? HealthBarComponent->GetUserWidgetObject() : nullptr;
 
+	if (!IsValid(Nameplate) || !IsValid(Nameplate->WidgetTree))
+	{
+		return;
+	}
+
+	TArray<UWidget*> NameplateWidgets;
+	Nameplate->WidgetTree->GetAllWidgets(NameplateWidgets);
+	NameplateWidgets.Add(Nameplate);
+
+	for (UWidget* NameplateWidget : NameplateWidgets)
+	{
+		if (UResourceWidget* ResourceBar = Cast<UResourceWidget>(NameplateWidget))
+		{
+			ResourceBar->SetResourceComponent(GetResourceComponent());
+		}
+		else if (UActiveEffectsBarWidget* EffectsBar = Cast<UActiveEffectsBarWidget>(NameplateWidget))
+		{
+			EffectsBar->InitializeEffectsBar(GetCombatantComponent());
+		}
+	}
+}
 void ABaseEnemy::HandleCharacterDied(AActor* Killer)
 {
 	if (AEnemyAIController* EnemyController = Cast<AEnemyAIController>(GetController()))
@@ -102,6 +126,41 @@ void ABaseEnemy::HandlePayloadReceived(const FAbilityPayload& Payload, float Dam
 	if (AEnemyAIController* EnemyController = Cast<AEnemyAIController>(GetController()))
 	{
 		EnemyController->NotifyAttackedBy(Payload.Instigator.Get());
+	}
+}
+void ABaseEnemy::SetInCombat(const bool bNewInCombat)
+{
+	if (bInCombat == bNewInCombat)
+	{
+		return;
+	}
+
+	bInCombat = bNewInCombat;
+	GetWorldTimerManager().ClearTimer(NameplateHideTimer);
+
+	if (bInCombat)
+	{
+		SetNameplateVisible(true);
+	}
+	else if (NameplateHideDelay > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(NameplateHideTimer,
+			FTimerDelegate::CreateUObject(this, &ABaseEnemy::SetNameplateVisible, false),
+			NameplateHideDelay, false);
+	}
+	else
+	{
+		SetNameplateVisible(false);
+	}
+
+	OnCombatStateChanged(bInCombat);
+}
+
+void ABaseEnemy::SetNameplateVisible(const bool bVisible)
+{
+	if (IsValid(HealthBarComponent))
+	{
+		HealthBarComponent->SetVisibility(bVisible);
 	}
 }
 
