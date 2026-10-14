@@ -42,6 +42,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	float GetFiredStrength() const { return ShotParams.Strength; }
 
+	/** Damage of this projectile's next hit: the shot's damage after pierce falloff. */
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	float GetCalculatedDamage() const;
 

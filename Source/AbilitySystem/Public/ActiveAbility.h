@@ -23,6 +23,9 @@ class ABILITYSYSTEM_API UActiveAbility : public UAbility
 public:
 	virtual void InitializeAbility(UAbilityComponent* InAbilityComponent, ACharacter* InOwningCharacter) override;
 
+	/** Focus cost and cooldown, when set. */
+	virtual TArray<FAbilityDisplayStat> GetDisplayStats_Implementation(int32 Rank) const override;
+
 	/* -------------------- Activation -------------------- */
 
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Lifecycle")

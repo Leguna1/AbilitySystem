@@ -21,7 +21,10 @@ class ABILITYSYSTEM_API UOffensiveAbilityBase : public UMontageAbility
 public:
 	virtual void ActivateAbility_Implementation() override;
 	virtual void OnAbilityEnded_Implementation(EAbilityEndReason EndReason) override;
-	
+
+	/** Cost and cooldown, plus damage type and poise damage. */
+	virtual TArray<FAbilityDisplayStat> GetDisplayStats_Implementation(int32 Rank) const override;
+
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
 #endif

@@ -27,6 +27,24 @@ void UActiveAbility::InitializeAbility(UAbilityComponent* InAbilityComponent, AC
 	bEarlyCancellationClosed = false;
 }
 
+TArray<FAbilityDisplayStat> UActiveAbility::GetDisplayStats_Implementation(const int32 Rank) const
+{
+	TArray<FAbilityDisplayStat> Stats = Super::GetDisplayStats_Implementation(Rank);
+
+	if (FocusCost > 0.0f)
+	{
+		Stats.Emplace(LOCTEXT("FocusLabel", "Focus"), FormatDisplayNumber(FocusCost));
+	}
+
+	if (CooldownDuration > 0.0f)
+	{
+		Stats.Emplace(LOCTEXT("CooldownLabel", "Cooldown"),
+			FText::Format(LOCTEXT("CooldownValue", "{0} sec"), FormatDisplayNumber(CooldownDuration)));
+	}
+
+	return Stats;
+}
+
 bool UActiveAbility::CanActivateAbility_Implementation() const
 {
 	return true;
@@ -309,3 +327,4 @@ EDataValidationResult UActiveAbility::IsDataValid(FDataValidationContext& Contex
 }
 
 #endif
+#undef LOCTEXT_NAMESPACE

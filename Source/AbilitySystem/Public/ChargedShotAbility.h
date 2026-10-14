@@ -74,6 +74,9 @@ public:
 protected:
 	virtual float ResolveProjectileStrength_Implementation() const override;
 
+	/** Damage By Rank, scaled from 1x (no charge) up to Full Charge Damage Multiplier (full charge). */
+	virtual float ResolveProjectileDamage_Implementation() const override;
+
 	/**
 	 * Commits the current accumulated charge and enters Recovery.
 	 *
@@ -121,6 +124,13 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging")
 	FAbilityRankedFloat MaximumChargeTimeByRank = FAbilityRankedFloat(1.5f);
+
+	/**
+	 * Damage multiplier at full charge, by rank: the arrow deals Damage By Rank x this when fully charged,
+	 * scaling linearly from 1x when released early. 2 = double damage at full charge.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging", meta = (ClampMin = "1.0"))
+	FAbilityRankedFloat FullChargeDamageMultiplierByRank = FAbilityRankedFloat(2.0f);
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Charged Shot|Charging")
 	bool bAutoReleaseAtMaximumCharge = true;

@@ -165,13 +165,13 @@ void URangedComboAttackAbility::OnComboStepFinished_Implementation(int32 ComboIn
 void URangedComboAttackAbility::OnComboAdvanced_Implementation(int32 PreviousComboIndex, int32 NewComboIndex)
 {
 }
-float URangedComboAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
+float URangedComboAttackAbility::ResolveProjectileDamage_Implementation() const
 {
-	const float BaseMultiplier = Super::ResolveProjectileDamageMultiplier_Implementation();
+	const float BaseDamage = Super::ResolveProjectileDamage_Implementation();
 
 	return IsFinalComboStep()
-		? BaseMultiplier * FMath::Max(GetRankedFloat(FinisherDamageMultiplierByRank), 0.0f)
-		: BaseMultiplier;
+		? BaseDamage * FMath::Max(GetRankedFloat(FinisherDamageMultiplierByRank), 0.0f)
+		: BaseDamage;
 }
 
 void URangedComboAttackAbility::OnProjectileReleased_Implementation(const float Strength)

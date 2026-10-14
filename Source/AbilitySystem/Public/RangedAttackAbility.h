@@ -101,10 +101,13 @@ protected:
 	float ResolveProjectileStrength() const;
 	virtual float ResolveProjectileStrength_Implementation() const;
 
-	/** The ability's damage multiplier for each projectile it releases. Default 1. */
+	/**
+	 * Damage of each projectile this release fires. Default: Damage By Rank with Stat.Damage modifiers,
+	 * fixed at activation. Override to scale it (e.g. Charged Shot by charge).
+	 */
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Ranged")
-	float ResolveProjectileDamageMultiplier() const;
-	virtual float ResolveProjectileDamageMultiplier_Implementation() const;
+	float ResolveProjectileDamage() const;
+	virtual float ResolveProjectileDamage_Implementation() const;
 
 	/**
 	 * Whether projectiles are aimed at the ability target (the player's targeting, or the AI's target).
@@ -195,9 +198,12 @@ protected:
 
 	/* -------------------- Rank -------------------- */
 
-	/** The ability's damage multiplier per rank, applied on top of the projectile data's damage. */
+	/**
+	 * Damage of each projectile, by rank: a multiple of the owner's Attack Power (or Magic Power
+	 * for magic damage), 1 = 100%. Flat damage if the owner has no power.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
-	FAbilityRankedFloat DamageMultiplierByRank = FAbilityRankedFloat(1.0f);
+	FAbilityRankedFloat DamageByRank = FAbilityRankedFloat(1.0f);
 
 	/** Projectiles per release, by rank. Empty = one per bow socket pair (Bow) or one (Launch Point). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
@@ -227,7 +233,7 @@ private:
 	int32 ResolveProjectileCount() const;
 
 	UPROPERTY(Transient)
-	float ResolvedDamageMultiplier = 1.0f;
+	float ResolvedDamage = 1.0f;
 
 	UPROPERTY(Transient)
 	int32 ResolvedProjectileCount = 0;

@@ -11,6 +11,23 @@ class ACharacter;
 class UAbilityComponent;
 class UTexture2D;
 
+/** One line of an ability's stat block in UI: "Cooldown: 8 sec". */
+USTRUCT(BlueprintType)
+struct FAbilityDisplayStat
+{
+	GENERATED_BODY()
+
+	FAbilityDisplayStat() = default;
+	FAbilityDisplayStat(const FText& InLabel, const FText& InValue) : Label(InLabel), Value(InValue) {}
+
+	/** Also how two ranks' stats are matched, to highlight the ones that change. */
+	UPROPERTY(BlueprintReadWrite, Category = "Ability|Display")
+	FText Label;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Ability|Display")
+	FText Value;
+};
+
 /**
  * Anything that can be granted to a character: identity, display data, tags
  * and rank. Grants, ranks and the skill tree work with this type.
@@ -66,6 +83,17 @@ public:
 	/** Get Description At Rank on a class's defaults: for UI that shows abilities nobody has yet (skill tree). */
 	UFUNCTION(BlueprintPure, Category = "Ability|Display", meta = (AdvancedDisplay = "CompareToRank"))
 	static FText GetClassDescriptionAtRank(TSubclassOf<UAbility> AbilityClass, int32 Rank, int32 CompareToRank = 0);
+
+	/**
+	 * The stat block shown above the description at Rank, e.g. cost, cooldown, damage type, poise.
+	 * Active and offensive abilities fill the common ones; override to add more (call the parent first).
+	 */
+	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Display")
+	TArray<FAbilityDisplayStat> GetDisplayStats(int32 Rank) const;
+	virtual TArray<FAbilityDisplayStat> GetDisplayStats_Implementation(int32 Rank) const { return {}; }
+
+	/** "8", "0.5", "1,200": how stat blocks show numbers. */
+	static FText FormatDisplayNumber(double Value);
 
 	/** Shows the description at every rank and the tokens it can use. A button in the ability's Class Defaults. */
 	UFUNCTION(CallInEditor, Category = "Ability|Display")

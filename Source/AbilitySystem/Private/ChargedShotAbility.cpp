@@ -216,6 +216,12 @@ float UChargedShotAbility::ResolveProjectileStrength_Implementation() const
 	return GetNormalizedCharge();
 }
 
+float UChargedShotAbility::ResolveProjectileDamage_Implementation() const
+{
+	const float FullChargeMultiplier = FMath::Max(GetRankedFloat(FullChargeDamageMultiplierByRank), 1.0f);
+	return Super::ResolveProjectileDamage_Implementation() * FMath::Lerp(1.0f, FullChargeMultiplier, GetNormalizedCharge());
+}
+
 bool UChargedShotAbility::RequestChargedRelease(const bool bImmediate)
 {
 	if (ChargedShotStage != EChargedShotStage::Charging ||
@@ -281,10 +287,6 @@ bool UChargedShotAbility::HandleMaximumCharge()
 
 	OnMaximumChargeReached();
 
-	if (bAutoReleaseAtMaximumCharge)
-	{
-		return RequestChargedRelease(false);
-	}
 	if (bAutoReleaseAtMaximumCharge)
 	{
 		return RequestChargedRelease(bImmediateReleaseAtMaximumCharge);

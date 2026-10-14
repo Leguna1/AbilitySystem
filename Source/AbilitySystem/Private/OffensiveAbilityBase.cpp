@@ -32,6 +32,23 @@ void UOffensiveAbilityBase::OnAbilityEnded_Implementation(const EAbilityEndReaso
 	OnAttackFinished(EndReason);
 }
 
+TArray<FAbilityDisplayStat> UOffensiveAbilityBase::GetDisplayStats_Implementation(const int32 Rank) const
+{
+	TArray<FAbilityDisplayStat> Stats = Super::GetDisplayStats_Implementation(Rank);
+
+	// Damage type first: it reads as the ability's kind ("Physical", "Magic").
+	Stats.Insert(FAbilityDisplayStat(
+		NSLOCTEXT("OffensiveAbility", "DamageTypeLabel", "Damage"),
+		StaticEnum<EDamageType>()->GetDisplayNameTextByValue(static_cast<int64>(DamageType))), 0);
+
+	if (HitImpact.Reaction != EHitReactionType::None && HitImpact.PoiseDamage > 0.0f)
+	{
+		Stats.Emplace(NSLOCTEXT("OffensiveAbility", "PoiseLabel", "Poise"), FormatDisplayNumber(HitImpact.PoiseDamage));
+	}
+
+	return Stats;
+}
+
 bool UOffensiveAbilityBase::ConfigureTargetFacingWarp()
 {
 	if (!bUseTargetFacingWarp ||

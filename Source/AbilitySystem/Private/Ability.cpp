@@ -98,6 +98,14 @@ FText UAbility::GetDescriptionAtRank(const int32 Rank, const int32 CompareToRank
 	return FText::Format(Description, Arguments);
 }
 
+FText UAbility::FormatDisplayNumber(const double Value)
+{
+	FNumberFormattingOptions Options;
+	Options.MinimumFractionalDigits = 0;
+	Options.MaximumFractionalDigits = 2;
+	return FText::AsNumber(Value, &Options);
+}
+
 FText UAbility::GetClassDescriptionAtRank(const TSubclassOf<UAbility> AbilityClass, const int32 Rank, const int32 CompareToRank)
 {
 	const UAbility* Defaults = IsValid(AbilityClass) ? AbilityClass.GetDefaultObject() : nullptr;

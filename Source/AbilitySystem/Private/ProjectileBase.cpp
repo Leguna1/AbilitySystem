@@ -121,14 +121,8 @@ void AProjectileBase::Tick(const float DeltaTime)
 
 float AProjectileBase::GetCalculatedDamage() const
 {
-	if (!IsValid(ProjectileData))
-	{
-		return 0.0f;
-	}
-
-	const float StrengthMultiplier = FMath::Lerp(1.0f, ProjectileData->MaximumDamageMultiplier, ShotParams.Strength);
-
-	return ProjectileData->BaseDamage * StrengthMultiplier * ShotParams.DamageMultiplier;
+	// The firing ability already decided it; only pierce falloff changes it in flight.
+	return ShotParams.Damage * CurrentPierceDamageFactor;
 }
 
 void AProjectileBase::SpinBegin_Implementation()
@@ -475,8 +469,8 @@ void AProjectileBase::HandleImpact(
 		ImpactLocation = FVector(SweepResult.ImpactPoint);
 	}
 
-	// Each target passed through lowers the damage for the next one.
-	const float ImpactDamage = GetCalculatedDamage() * CurrentPierceDamageFactor;
+	// Each target passed through lowers the damage for the next one (included in GetCalculatedDamage).
+	const float ImpactDamage = GetCalculatedDamage();
 
 	FAbilityPayload Payload;
 	Payload.Damage = ImpactDamage;

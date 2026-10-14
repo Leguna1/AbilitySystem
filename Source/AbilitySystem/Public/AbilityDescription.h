@@ -13,7 +13,8 @@
  * triggers, conditions, effects and fragments, and data assets it points to):
  *  - Ranked values, named after the property without "ByRank": DamageByRank -> {Damage}.
  *    Each also has a percent form: ChanceByRank 0.2 -> {Chance} = 0.2, {ChancePercent} = 20%.
- *  - Plain numbers, by property name: BaseDamage -> {BaseDamage}.
+ *  - Plain numbers, by property name: BaseDamage -> {BaseDamage}, FocusCost -> {FocusCost}.
+ *  - Enums, as their display name: DamageType -> {DamageType} = "Physical".
  *  - Modifiers, by stat tag without "Stat.": Stat.AttackSpeed 0.15 (Percent) -> {AttackSpeed} = 15%.
  *    Shown without a sign, so the text says which way it goes ("slows by {MoveSpeed}").
  *  - The same name twice (two Buff Self effects): the second is {Name2}, then {Name3}...

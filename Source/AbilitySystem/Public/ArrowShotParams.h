@@ -11,7 +11,7 @@ struct FArrowShotParams
 {
 	GENERATED_BODY()
 
-	/** 0..1 draw strength. Drives speed, gravity and the arrow data's strength damage multiplier. */
+	/** 0..1 draw strength. Drives the projectile's speed and gravity (its damage is already in Damage). */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	float Strength = 1.0f;
 
@@ -19,9 +19,12 @@ struct FArrowShotParams
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	bool bTargetedShot = false;
 
-	/** The ability's share of the damage, applied on top of the arrow data's. */
+	/**
+	 * Damage of each projectile of this shot, decided by the firing ability (rank, modifiers, charge).
+	 * A multiple of the instigator's power when it has one, else flat. Pierce falloff applies on top.
+	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
-	float DamageMultiplier = 1.0f;
+	float Damage = 1.0f;
 
 	/** Impact group this shot's impacts report to. Invalid = ungrouped. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")

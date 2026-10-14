@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Ability.h"
 #include "GameplayTagContainer.h"
 #include "SkillTreeAsset.h"
 #include "SkillTreeComponent.h"
@@ -47,12 +48,19 @@ struct FSkillNodeDetails
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
 	FText CurrentDescription;
 
+	/** Cost, cooldown, damage type... at the current rank. Empty for most passives. */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
+	TArray<FAbilityDisplayStat> CurrentStats;
+
 	/** Not maxed: what the next rank does. Changed numbers are wrapped in <Changed></> when highlighting is on. */
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
 	bool bShowNext = false;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
 	FText NextDescription;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
+	TArray<FAbilityDisplayStat> NextStats;
 };
 
 /**
@@ -64,8 +72,8 @@ struct FSkillNodeDetails
  *
  * Optional widgets in the UMG subclass, found by name:
  *  - NameText (Text), IconImage (Image)
- *  - CurrentColumn (any panel), CurrentHeaderText (Text), CurrentDescriptionText (Rich Text)
- *  - NextColumn (any panel), NextHeaderText (Text), NextDescriptionText (Rich Text)
+ *  - CurrentColumn (any panel), CurrentHeaderText (Text), CurrentStatsText (Rich Text), CurrentDescriptionText (Rich Text)
+ *  - NextColumn (any panel), NextHeaderText (Text), NextStatsText (Rich Text), NextDescriptionText (Rich Text)
  *  - DetailsContent: shown while a node is displayed; EmptyHint: shown while none is
  * Give the Rich Text Blocks a style row named "Changed" to color the numbers that improve.
  * Or skip them all and build the look in On Details Updated.
@@ -113,6 +121,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details")
 	FText UnlearnedHeaderFormat = NSLOCTEXT("SkillDetails", "UnlearnedHeader", "Rank 1/{MaxRank}");
 
+	/** One stat in the stat block. {Label} and {Value} are filled in. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details")
+	FText StatFormat = NSLOCTEXT("SkillDetails", "StatFormat", "{Label}: {Value}");
+
+	/** Between stats in the stat block. Use a line break (Shift+Enter) for one stat per line. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details", meta = (MultiLine = "true"))
+	FText StatSeparator = INVTEXT("   ");
+
 	/** Wrap the next rank's changed numbers in <Changed></> for the Rich Text style. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details")
 	bool bHighlightChanges = true;
@@ -132,6 +148,9 @@ protected:
 	TObjectPtr<UTextBlock> CurrentHeaderText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
+	TObjectPtr<URichTextBlock> CurrentStatsText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
 	TObjectPtr<URichTextBlock> CurrentDescriptionText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
@@ -139,6 +158,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
 	TObjectPtr<UTextBlock> NextHeaderText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
+	TObjectPtr<URichTextBlock> NextStatsText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
 	TObjectPtr<URichTextBlock> NextDescriptionText;
@@ -152,6 +174,9 @@ protected:
 private:
 	bool BuildDetails(FSkillNodeDetails& OutDetails) const;
 	void ApplyToBoundWidgets(const FSkillNodeDetails& Details);
+
+	/** Stats as one line of text. Values that differ from CompareStats (matched by label) are wrapped in <Changed></>. */
+	FText FormatStats(const TArray<FAbilityDisplayStat>& Stats, const TArray<FAbilityDisplayStat>* CompareStats) const;
 	void SetShowingNode(bool bShowingNode);
 
 	UPROPERTY(Transient)

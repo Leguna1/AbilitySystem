@@ -85,8 +85,8 @@ void URangedAttackAbility::ActivateAbility_Implementation()
 	}
 
 	// Fixed for this execution, like ranks: a booster ending mid-volley doesn't change it.
-	ResolvedDamageMultiplier = FMath::Max(
-		GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageMultiplierByRank)),
+	ResolvedDamage = FMath::Max(
+		GetModifiedFloat(AbilitySystemTags::Stat_Damage, GetRankedFloat(DamageByRank)),
 		0.0f);
 
 	ResolvedProjectileCount = ResolveProjectileCount();
@@ -172,9 +172,9 @@ int32 URangedAttackAbility::ResolveProjectileCount() const
 		SocketCount);
 }
 
-float URangedAttackAbility::ResolveProjectileDamageMultiplier_Implementation() const
+float URangedAttackAbility::ResolveProjectileDamage_Implementation() const
 {
-	return ResolvedDamageMultiplier;
+	return ResolvedDamage;
 }
 
 void URangedAttackAbility::ResetProjectileCycle()
@@ -339,7 +339,7 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	FArrowShotParams ShotParams;
 	ShotParams.Strength = FMath::Clamp(ResolveProjectileStrength(), 0.0f, 1.0f);
 	ShotParams.bTargetedShot = bHasTarget;
-	ShotParams.DamageMultiplier = FMath::Max(ResolveProjectileDamageMultiplier(), 0.0f);
+	ShotParams.Damage = FMath::Max(ResolveProjectileDamage(), 0.0f);
 	ShotParams.Hit = BuildHitSpec();
 
 	// Pierce from stats alone (e.g. a passive); a Pierce feature supplies base values instead.

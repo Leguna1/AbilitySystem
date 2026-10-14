@@ -12,6 +12,7 @@ class UStaticMesh;
 /**
  * Defines one kind of projectile: how it looks, flies, hits and ends.
  * An arrow, a magic bolt or a boss orb is the same Projectile actor with a different asset.
+ * How much it hurts is up to the ability that fires it, so one asset serves many abilities.
  *
  * Start:   the projectile is launched.
  * Ongoing: it is flying.
@@ -53,16 +54,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile", meta = (EditCondition = "bSpinInFlight", ClampMin = "0.0", Units = "s"))
 	float SpinDuration = 1.0f;
 
-	/* -------------------- Damage -------------------- */
+	/* -------------------- Impact -------------------- */
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Damage", meta = (ClampMin = "0.0"))
-	float BaseDamage = 20.0f;
-
-	/** Damage multiplier at full launch strength (a fully drawn bow). Launchers without strength fire at full. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Damage", meta = (ClampMin = "0.0"))
-	float MaximumDamageMultiplier = 1.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Damage", meta = (ClampMin = "0.0"))
+	/** Push given to physics objects it hits, as a multiple of its velocity. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Impact", meta = (ClampMin = "0.0"))
 	float ImpactImpulseMultiplier = 1.0f;
 
 	/* -------------------- Movement -------------------- */

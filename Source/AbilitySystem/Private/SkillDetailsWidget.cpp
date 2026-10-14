@@ -90,12 +90,14 @@ bool USkillDetailsWidget::BuildDetails(FSkillNodeDetails& OutDetails) const
 	if (OutDetails.bShowCurrent)
 	{
 		OutDetails.CurrentDescription = Defaults->GetDescriptionAtRank(OutDetails.Rank);
+		OutDetails.CurrentStats = Defaults->GetDisplayStats(OutDetails.Rank);
 	}
 
 	if (OutDetails.bShowNext)
 	{
 		const int32 CompareToRank = bHighlightChanges ? OutDetails.Rank : 0;
 		OutDetails.NextDescription = Defaults->GetDescriptionAtRank(OutDetails.Rank + 1, CompareToRank);
+		OutDetails.NextStats = Defaults->GetDisplayStats(OutDetails.Rank + 1);
 	}
 
 	return true;
@@ -123,6 +125,12 @@ void USkillDetailsWidget::ApplyToBoundWidgets(const FSkillNodeDetails& Details)
 			CurrentHeaderText->SetText(FormatHeader(CurrentHeaderFormat, Details.Rank, Details.MaxRank));
 		}
 
+		if (IsValid(CurrentStatsText))
+		{
+			CurrentStatsText->SetText(FormatStats(Details.CurrentStats, nullptr));
+			SetShown(CurrentStatsText, !Details.CurrentStats.IsEmpty());
+		}
+
 		if (IsValid(CurrentDescriptionText))
 		{
 			CurrentDescriptionText->SetText(Details.CurrentDescription);
@@ -139,11 +147,47 @@ void USkillDetailsWidget::ApplyToBoundWidgets(const FSkillNodeDetails& Details)
 			NextHeaderText->SetText(FormatHeader(Format, Details.Rank + 1, Details.MaxRank));
 		}
 
+		if (IsValid(NextStatsText))
+		{
+			// Compare only against a rank the player has; the unlearned column has nothing to improve on.
+			const bool bCompare = bHighlightChanges && Details.bShowCurrent;
+			NextStatsText->SetText(FormatStats(Details.NextStats, bCompare ? &Details.CurrentStats : nullptr));
+			SetShown(NextStatsText, !Details.NextStats.IsEmpty());
+		}
+
 		if (IsValid(NextDescriptionText))
 		{
 			NextDescriptionText->SetText(Details.NextDescription);
 		}
 	}
+}
+
+FText USkillDetailsWidget::FormatStats(const TArray<FAbilityDisplayStat>& Stats, const TArray<FAbilityDisplayStat>* CompareStats) const
+{
+	TArray<FText> Lines;
+
+	for (const FAbilityDisplayStat& Stat : Stats)
+	{
+		FText Value = Stat.Value;
+
+		if (CompareStats)
+		{
+			const FAbilityDisplayStat* Compared = CompareStats->FindByPredicate([&Stat](const FAbilityDisplayStat& Other)
+			{
+				return Other.Label.EqualTo(Stat.Label);
+			});
+
+			// New in this rank, or a different value: highlight it.
+			if (!Compared || !Compared->Value.ToString().Equals(Value.ToString()))
+			{
+				Value = FText::Format(INVTEXT("<Changed>{0}</>"), Value);
+			}
+		}
+
+		Lines.Add(FText::FormatNamed(StatFormat, TEXT("Label"), Stat.Label, TEXT("Value"), Value));
+	}
+
+	return FText::Join(StatSeparator, Lines);
 }
 
 void USkillDetailsWidget::SetShowingNode(const bool bShowingNode)

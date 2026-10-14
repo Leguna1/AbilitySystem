@@ -147,6 +147,20 @@ namespace AbilityDescription
 					return;
 				}
 
+				// Enums show their display name: Damage Type -> "Physical".
+				if (const FEnumProperty* EnumProperty = CastField<FEnumProperty>(Property))
+				{
+					const int64 EnumValue = EnumProperty->GetUnderlyingProperty()->GetSignedIntPropertyValue(Value);
+					AddText(Name, EnumProperty->GetEnum()->GetDisplayNameTextByValue(EnumValue));
+					return;
+				}
+
+				if (const FByteProperty* ByteProperty = CastField<FByteProperty>(Property); ByteProperty && ByteProperty->Enum)
+				{
+					AddText(Name, ByteProperty->Enum->GetDisplayNameTextByValue(ByteProperty->GetPropertyValue(Value)));
+					return;
+				}
+
 				if (const FNumericProperty* NumericProperty = CastField<FNumericProperty>(Property))
 				{
 					if (NumericProperty->IsFloatingPoint())
@@ -183,6 +197,14 @@ namespace AbilityDescription
 				const FString Unique = MakeUnique(Name);
 				Tokens.Add(Unique, FormatNumber(Number));
 				Tokens.Add(Unique + TEXT("Percent"), FormatPercent(Number));
+			}
+
+			void AddText(const FString& Name, const FText& Text)
+			{
+				if (!Name.IsEmpty())
+				{
+					Tokens.Add(MakeUnique(Name), Text);
+				}
 			}
 
 			void AddModifier(const FStatModifier& Modifier)
