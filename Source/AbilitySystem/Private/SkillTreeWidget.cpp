@@ -3,6 +3,7 @@
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/SizeBox.h"
+#include "SkillDetailsWidget.h"
 #include "SkillTreeComponent.h"
 #include "SkillTreeLinkWidget.h"
 #include "SkillTreeNodeWidget.h"
@@ -54,9 +55,25 @@ void USkillTreeWidget::InitializeTree(USkillTreeComponent* InTreeComponent)
 	RebuildTree();
 }
 
+void USkillTreeWidget::SetDetailsWidget(USkillDetailsWidget* InDetailsWidget)
+{
+	DetailsPanel = InDetailsWidget;
+
+	if (IsValid(DetailsPanel))
+	{
+		DetailsPanel->ClearDetails();
+	}
+}
+
 void USkillTreeWidget::RebuildTree()
 {
 	ClearTree();
+
+	// The nodes are rebuilt, so whatever the panel showed may be gone.
+	if (IsValid(DetailsPanel))
+	{
+		DetailsPanel->ClearDetails();
+	}
 
 	const USkillTreeAsset* Tree = IsValid(TreeComponent) ? TreeComponent->GetTreeAsset() : nullptr;
 
@@ -91,6 +108,31 @@ void USkillTreeWidget::NativeDestruct()
 void USkillTreeWidget::HandleTreeChanged()
 {
 	RefreshAllNodes();
+
+	// Buying a rank while hovering moves the panel to the new current and next rank.
+	if (IsValid(DetailsPanel) && DetailsPanel->GetShownNodeId().IsValid())
+	{
+		DetailsPanel->Refresh();
+	}
+}
+
+void USkillTreeWidget::HandleNodeHovered(USkillTreeNodeWidget* NodeWidget)
+{
+	if (IsValid(DetailsPanel) && IsValid(NodeWidget))
+	{
+		DetailsPanel->ShowNode(TreeComponent, NodeWidget->GetNodeId());
+	}
+}
+
+void USkillTreeWidget::HandleNodeUnhovered(USkillTreeNodeWidget* NodeWidget)
+{
+	if (bClearDetailsOnUnhover &&
+		IsValid(DetailsPanel) &&
+		IsValid(NodeWidget) &&
+		DetailsPanel->GetShownNodeId() == NodeWidget->GetNodeId())
+	{
+		DetailsPanel->ClearDetails();
+	}
 }
 
 void USkillTreeWidget::ClearTree()
@@ -442,6 +484,8 @@ void USkillTreeWidget::BuildNodes(const USkillTreeAsset& Tree)
 		}
 
 		NodeWidget->InitializeNode(TreeComponent, Node.NodeId);
+		NodeWidget->OnNodeHovered.AddDynamic(this, &USkillTreeWidget::HandleNodeHovered);
+		NodeWidget->OnNodeUnhovered.AddDynamic(this, &USkillTreeWidget::HandleNodeUnhovered);
 
 		const FVector2D NodeSize = GetNodeSize(Node.Kind);
 

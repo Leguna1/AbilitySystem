@@ -60,12 +60,6 @@ void USkillTreeNodeWidget::RefreshNode()
 		TreeComponent->CanUnlockNode(NodeId),
 		TreeComponent->CanRefundNode(NodeId)
 	);
-	
-	OnNodeStateChanged(
-		State,
-		TreeComponent->CanUnlockNode(NodeId),
-		TreeComponent->CanRefundNode(NodeId)
-	);
 }
 
 bool USkillTreeNodeWidget::TryUnlock()
@@ -99,4 +93,17 @@ FReply USkillTreeNodeWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	}
 
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+void USkillTreeNodeWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	// Super first: it runs the Blueprint On Mouse Enter, so hover visuals in the UMG graph still work.
+	Super::NativeOnMouseEnter(InGeometry, InMouseEvent);
+	OnNodeHovered.Broadcast(this);
+}
+
+void USkillTreeNodeWidget::NativeOnMouseLeave(const FPointerEvent& InMouseEvent)
+{
+	Super::NativeOnMouseLeave(InMouseEvent);
+	OnNodeUnhovered.Broadcast(this);
 }

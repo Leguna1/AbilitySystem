@@ -1,6 +1,7 @@
 #include "Ability.h"
 
 #include "AbilityComponent.h"
+#include "AbilityDescription.h"
 #include "GameFramework/Character.h"
 
 #include "AbilitySystemLog.h"
@@ -8,6 +9,7 @@
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
+#include "Misc/MessageDialog.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "Ability"
@@ -57,6 +59,76 @@ int32 UAbility::GetModifiedInt(const FGameplayTag Stat, const int32 BaseValue) c
 {
 	return FMath::RoundToInt(GetModifiedFloat(Stat, static_cast<float>(BaseValue)));
 }
+/* -------------------- Description -------------------- */
+
+void UAbility::GetDescriptionTokens(const int32 Rank, TMap<FString, FText>& OutTokens) const
+{
+	AbilityDescription::CollectTokens(this, Rank, OutTokens);
+}
+
+FText UAbility::GetDescriptionAtRank(const int32 Rank, const int32 CompareToRank) const
+{
+	if (Description.IsEmpty())
+	{
+		return FText::GetEmpty();
+	}
+
+	TMap<FString, FText> Tokens;
+	GetDescriptionTokens(FMath::Max(Rank, 1), Tokens);
+
+	TMap<FString, FText> CompareTokens;
+
+	if (CompareToRank > 0 && CompareToRank != Rank)
+	{
+		GetDescriptionTokens(CompareToRank, CompareTokens);
+	}
+
+	FFormatNamedArguments Arguments;
+
+	for (const TPair<FString, FText>& Token : Tokens)
+	{
+		const FText* Compared = CompareTokens.Find(Token.Key);
+		const bool bChanged = Compared && !Compared->ToString().Equals(Token.Value.ToString());
+
+		Arguments.Add(Token.Key, bChanged
+			? FText::Format(INVTEXT("<Changed>{0}</>"), Token.Value)
+			: Token.Value);
+	}
+
+	return FText::Format(Description, Arguments);
+}
+
+FText UAbility::GetClassDescriptionAtRank(const TSubclassOf<UAbility> AbilityClass, const int32 Rank, const int32 CompareToRank)
+{
+	const UAbility* Defaults = IsValid(AbilityClass) ? AbilityClass.GetDefaultObject() : nullptr;
+	return IsValid(Defaults) ? Defaults->GetDescriptionAtRank(Rank, CompareToRank) : FText::GetEmpty();
+}
+
+void UAbility::PreviewDescription()
+{
+#if WITH_EDITOR
+	FString Preview;
+
+	for (int32 PreviewRank = 1; PreviewRank <= GetMaxRank(); ++PreviewRank)
+	{
+		Preview += FString::Printf(TEXT("Rank %d:\n%s\n\n"), PreviewRank, *GetDescriptionAtRank(PreviewRank).ToString());
+	}
+
+	TMap<FString, FText> Tokens;
+	GetDescriptionTokens(1, Tokens);
+
+	Preview += TEXT("Tokens (rank 1 values):\n");
+
+	for (const TPair<FString, FText>& Token : Tokens)
+	{
+		Preview += FString::Printf(TEXT("  {%s} = %s\n"), *Token.Key, *Token.Value.ToString());
+	}
+
+	FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(Preview),
+		FText::Format(LOCTEXT("PreviewTitle", "{0}: description preview"), DisplayName));
+#endif
+}
+
 void UAbility::PostInitProperties()
 {
 	Super::PostInitProperties();
@@ -130,6 +202,26 @@ EDataValidationResult UAbility::IsDataValid(FDataValidationContext& Context) con
 		Context.AddWarning(LOCTEXT("NoName", "Display Name is empty. The hotbar and skill tree will show nothing."));
 	}
 
+	// A token the ability doesn't provide would show up literally in game, e.g. "{Chanse}".
+	if (!Description.IsEmpty())
+	{
+		TArray<FString> UsedTokens;
+		FTextFormat(Description).GetFormatArgumentNames(UsedTokens);
+
+		TMap<FString, FText> AvailableTokens;
+		GetDescriptionTokens(1, AvailableTokens);
+
+		for (const FString& UsedToken : UsedTokens)
+		{
+			if (!AvailableTokens.Contains(UsedToken))
+			{
+				Context.AddWarning(FText::Format(LOCTEXT("UnknownToken",
+					"Description uses {0}, but this ability has no value by that name. Click Preview Description to see the ones it has."),
+					FText::FromString(TEXT("{") + UsedToken + TEXT("}"))));
+			}
+		}
+	}
+
 	if (StartingRank > MaxRank)
 	{
 		Context.AddWarning(FText::Format(LOCTEXT("RankOrder",
@@ -176,3 +268,4 @@ EDataValidationResult UAbility::IsDataValid(FDataValidationContext& Context) con
 }
 
 #endif
+#undef LOCTEXT_NAMESPACE

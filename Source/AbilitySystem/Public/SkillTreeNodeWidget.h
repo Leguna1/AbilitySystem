@@ -9,7 +9,10 @@
 
 class UAbility;
 class USkillTreeComponent;
+class USkillTreeNodeWidget;
 class UTexture2D;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSkillTreeNodeHoverSignature, USkillTreeNodeWidget*, NodeWidget);
 
 /**
  * One node in the skill tree. Reads its display data from the granted ability's
@@ -70,7 +73,15 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
 	ESkillNodeKind GetKind() const { return Kind; }
-	
+
+	/** The mouse moved onto this node. The tree uses it to fill its details panel. */
+	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|UI")
+	FSkillTreeNodeHoverSignature OnNodeHovered;
+
+	/** The mouse left this node. */
+	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|UI")
+	FSkillTreeNodeHoverSignature OnNodeUnhovered;
+
 protected:
 	/** Populate static visuals (icon, name, cost) here. Called once after init. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Skill Tree|UI")
@@ -84,6 +95,8 @@ protected:
 	void OnNodeStateChanged(ESkillNodeState NewState, bool bCanUnlockNow, bool bCanRefundNow);
 	
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
 
 private:
 	UPROPERTY(Transient)

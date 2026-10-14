@@ -51,8 +51,25 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Display")
 	FText GetDisplayName() const { return DisplayName; }
 
+	/** The description as authored, tokens unfilled. For a readable version use Get Description At Rank. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Display")
 	FText GetDescription() const { return Description; }
+
+	/**
+	 * The description with every {Token} filled in with Rank's values (see AbilityDescription.h for the tokens).
+	 * CompareToRank > 0 wraps values that differ from that rank in <Changed>...</>, for a Rich Text Block
+	 * with a "Changed" style (e.g. green numbers in the next-rank column). 0 = plain text.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Ability|Display", meta = (AdvancedDisplay = "CompareToRank"))
+	FText GetDescriptionAtRank(int32 Rank, int32 CompareToRank = 0) const;
+
+	/** Get Description At Rank on a class's defaults: for UI that shows abilities nobody has yet (skill tree). */
+	UFUNCTION(BlueprintPure, Category = "Ability|Display", meta = (AdvancedDisplay = "CompareToRank"))
+	static FText GetClassDescriptionAtRank(TSubclassOf<UAbility> AbilityClass, int32 Rank, int32 CompareToRank = 0);
+
+	/** Shows the description at every rank and the tokens it can use. A button in the ability's Class Defaults. */
+	UFUNCTION(CallInEditor, Category = "Ability|Display")
+	void PreviewDescription();
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Display")
 	UTexture2D* GetIcon() const { return Icon; }
@@ -100,11 +117,22 @@ protected:
 	UFUNCTION(BlueprintPure, Category = "Ability|Tags")
 	bool OwnerHasAnyTags(const FGameplayTagContainer& Tags) const;
 
+	/**
+	 * The values the description's {Tokens} are filled from, at Rank. Found automatically from authored
+	 * values; override to add your own (call Super first).
+	 */
+	virtual void GetDescriptionTokens(int32 Rank, TMap<FString, FText>& OutTokens) const;
+
 	/* -------------------- Definition -------------------- */
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display")
 	FText DisplayName;
 
+	/**
+	 * One description for every rank: write {Tokens} where numbers go, e.g.
+	 * "Fires {ProjectileCount} arrows, each dealing {DamagePercent} Attack Power."
+	 * Click Preview Description to see each rank and every token available.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Display", meta = (MultiLine = "true"))
 	FText Description;
 

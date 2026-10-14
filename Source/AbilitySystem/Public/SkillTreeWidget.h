@@ -8,6 +8,7 @@
 
 class UCanvasPanel;
 class USizeBox;
+class USkillDetailsWidget;
 class USkillTreeComponent;
 class USkillTreeLinkWidget;
 class USkillTreeNodeWidget;
@@ -65,8 +66,9 @@ struct FSkillTreeLink
  * Required in the UMG subclass:
  *  - a Canvas Panel named "NodeCanvas";
  *  - NodeWidgetClass set.
- * Optional: "ContentSizeBox" (a SizeBox around NodeCanvas), SectionWidgetClass,
- * ExclusiveMarkerWidgetClass, LinkWidgetClass.
+ * Optional: "ContentSizeBox" (a SizeBox around NodeCanvas), "DetailsPanel" (a Skill Details
+ * widget filled on hover; or call Set Details Widget if it lives elsewhere on the page),
+ * SectionWidgetClass, ExclusiveMarkerWidgetClass, LinkWidgetClass.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API USkillTreeWidget : public UUserWidget
@@ -87,6 +89,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
 	FVector2D GetContentSize() const { return ContentSize; }
 
+	/** The panel hovered nodes are shown in, when it isn't inside this widget (e.g. elsewhere on the page). */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|UI")
+	void SetDetailsWidget(USkillDetailsWidget* InDetailsWidget);
+
 protected:
 	virtual void NativeDestruct() override;
 
@@ -98,6 +104,14 @@ protected:
 	/** Optional SizeBox wrapping NodeCanvas; receives the content size so parents can scroll or scale. */
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Tree|UI")
 	TObjectPtr<USizeBox> ContentSizeBox;
+
+	/** Optional fixed panel that shows the hovered node's current and next rank. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Tree|UI")
+	TObjectPtr<USkillDetailsWidget> DetailsPanel;
+
+	/** Clear the details panel when the mouse leaves a node. Off = it keeps the last hovered node. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|UI")
+	bool bClearDetailsOnUnhover = false;
 
 	/* -------------------- Widget classes -------------------- */
 
@@ -188,6 +202,12 @@ private:
 
 	UFUNCTION()
 	void HandleTreeChanged();
+
+	UFUNCTION()
+	void HandleNodeHovered(USkillTreeNodeWidget* NodeWidget);
+
+	UFUNCTION()
+	void HandleNodeUnhovered(USkillTreeNodeWidget* NodeWidget);
 
 	void ClearTree();
 	void ComputeLayout(const USkillTreeAsset& Tree);
