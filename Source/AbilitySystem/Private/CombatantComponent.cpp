@@ -4,9 +4,31 @@
 #include "AbilitySystemTags.h"
 #include "ResourceComponent.h"
 #include "AbilitySystemSettings.h"
+#include "AttributeComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 #include "GenericTeamAgentInterface.h"
+
+namespace
+{
+	/** The attributes one damage type uses: the attacker's power range and the defender's defense. */
+	struct FDamageTypeAttributes
+	{
+		FGameplayTag PowerMin;
+		FGameplayTag PowerMax;
+		FGameplayTag Defense;
+	};
+
+	FDamageTypeAttributes GetDamageTypeAttributes(const EDamageType DamageType)
+	{
+		if (DamageType == EDamageType::Magic)
+		{
+			return { AbilitySystemTags::Stat_MagicPower_Min, AbilitySystemTags::Stat_MagicPower_Max, AbilitySystemTags::Stat_MagicResist };
+		}
+
+		return { AbilitySystemTags::Stat_AttackPower_Min, AbilitySystemTags::Stat_AttackPower_Max, AbilitySystemTags::Stat_Armor };
+	}
+}
 
 
 UCombatantComponent::UCombatantComponent()
@@ -22,7 +44,8 @@ void UCombatantComponent::BeginPlay()
 
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
-	
+	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
+
 
 	if (!IsValid(ResourceComponent))
 	{
@@ -77,17 +100,7 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 
 	if (IsValid(ResourceComponent))
 	{
-		
-		// Defensive buffs and statuses alike, scoped against the attacking ability's tags.
-		const float TakenMultiplier = GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, Payload.SourceAbilityTags);
-		
-		const float Variance = GetDefault<UAbilitySystemSettings>()->DamageVariance;
-
-		const float Damage = FMath::Max(
-			Payload.Damage * FMath::Max(TakenMultiplier, 0.0f) * FMath::FRandRange(1.0f - Variance, 1.0f + Variance),
-			0.0f
-		);
-		
+		const float Damage = CalculateDamageTaken(Payload);
 		const float HealthBefore = ResourceComponent->GetResourceValue(EResourceType::Health, EResourceValueType::Current);
 
 		// A lethal hit fires OnDeath inside ModifyResource; this lets that callback credit the killer.
@@ -123,6 +136,52 @@ bool UCombatantComponent::ReceivePayload(const FAbilityPayload& Payload)
 	}
 
 	return true;
+}
+
+float UCombatantComponent::CalculateDamageTaken(const FAbilityPayload& Payload) const
+{
+	const FDamageTypeAttributes TypeAttributes = GetDamageTypeAttributes(Payload.DamageType);
+
+	// Attacker: a multiple of its power, rolled between Min and Max. No power for this type = flat damage with the usual variance.
+	const AActor* InstigatorActor = Payload.Instigator.Get();
+	const UAttributeComponent* InstigatorAttributes = IsValid(InstigatorActor)
+		? InstigatorActor->FindComponentByClass<UAttributeComponent>()
+		: nullptr;
+
+	float RawDamage = 0.0f;
+
+	if (IsValid(InstigatorAttributes) && InstigatorAttributes->HasAttribute(TypeAttributes.PowerMin))
+	{
+		const float PowerMin = InstigatorAttributes->GetAttributeValue(TypeAttributes.PowerMin);
+		const float PowerMax = FMath::Max(InstigatorAttributes->GetAttributeValue(TypeAttributes.PowerMax, PowerMin), PowerMin);
+
+		RawDamage = Payload.Damage * FMath::FRandRange(PowerMin, PowerMax);
+	}
+	else
+	{
+		const float Variance = GetDefault<UAbilitySystemSettings>()->DamageVariance;
+		RawDamage = Payload.Damage * FMath::FRandRange(1.0f - Variance, 1.0f + Variance);
+	}
+
+	// Defender: Armor or Magic Resist, then Damage Taken (Vulnerability and other statuses, scoped against the attacking ability).
+	const float TakenMultiplier = FMath::Max(
+		GetModifiedValue(AbilitySystemTags::Stat_DamageTaken, DamageTakenMultiplier, Payload.SourceAbilityTags),
+		0.0f);
+
+	return FMath::Max(RawDamage * (1.0f - GetDamageReduction(Payload.DamageType)) * TakenMultiplier, 0.0f);
+}
+
+float UCombatantComponent::GetDamageReduction(const EDamageType DamageType) const
+{
+	if (!IsValid(AttributeComponent))
+	{
+		return 0.0f;
+	}
+
+	const UAbilitySystemSettings* Settings = GetDefault<UAbilitySystemSettings>();
+	const float Defense = FMath::Max(AttributeComponent->GetAttributeValue(GetDamageTypeAttributes(DamageType).Defense), 0.0f);
+
+	return FMath::Min(Defense / (Defense + Settings->DefenseConstant), Settings->MaxDamageReduction);
 }
 
 bool UCombatantComponent::CanReceivePayload(const FAbilityPayload& Payload) const

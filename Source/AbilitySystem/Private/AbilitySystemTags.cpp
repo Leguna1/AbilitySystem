@@ -32,4 +32,15 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_SuperArmor, "State.SuperArmor", "Hits still land but never interrupt (flinch at most).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Playing an interrupting hit reaction.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PoiseDamage, "Stat.PoiseDamage", "Poise removed by this ability's hits.");
+
+	/* -------------------- Offense and defense attributes -------------------- */
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_AttackPower, "Stat.AttackPower", "Modifiers here change both Attack Power Min and Max.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_AttackPower_Min, "Stat.AttackPower.Min", "Low end of the physical damage roll (melee and ranged).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_AttackPower_Max, "Stat.AttackPower.Max", "High end of the physical damage roll (melee and ranged).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicPower, "Stat.MagicPower", "Modifiers here change both Magic Power Min and Max.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicPower_Min, "Stat.MagicPower.Min", "Low end of the magic damage roll.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicPower_Max, "Stat.MagicPower.Max", "High end of the magic damage roll.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_Armor, "Stat.Armor", "Reduces physical damage taken: Armor / (Armor + Defense Constant).");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicResist, "Stat.MagicResist", "Reduces magic damage taken: Resist / (Resist + Defense Constant).");
 }

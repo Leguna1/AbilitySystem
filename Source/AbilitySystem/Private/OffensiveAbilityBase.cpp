@@ -154,6 +154,7 @@ FHitSpec UOffensiveAbilityBase::BuildHitSpec() const
 	FHitSpec Hit;
 	Hit.SourceAbilityTags = GetAbilityTags();
 	Hit.Impact = ResolveHitImpact();
+	Hit.DamageType = DamageType;
 
 	ForEachFragment<UAttackFragment>([this, &Hit](const UAttackFragment& Fragment)
 	{

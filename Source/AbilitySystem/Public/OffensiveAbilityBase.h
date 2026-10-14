@@ -75,4 +75,8 @@ protected:
 
 	/** HitImpact with this execution's modifiers applied. */
 	FHitImpact ResolveHitImpact() const;
+	
+	/** Physical scales with Attack Power and is reduced by Armor; Magic uses Magic Power and Magic Resist. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Damage")
+	EDamageType DamageType = EDamageType::Physical;
 };

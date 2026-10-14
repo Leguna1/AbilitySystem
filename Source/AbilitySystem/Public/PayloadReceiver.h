@@ -7,6 +7,17 @@
 #include "HitReactionTypes.h"
 #include "PayloadReceiver.generated.h"
 
+/** Which power a hit scales with and which defense reduces it. */
+UENUM(BlueprintType)
+enum class EDamageType : uint8
+{
+	/** Scales with Attack Power, reduced by Armor. Swords, arrows, fists. */
+	Physical UMETA(DisplayName = "Physical"),
+
+	/** Scales with Magic Power, reduced by Magic Resist. Spells and hexes. */
+	Magic UMETA(DisplayName = "Magic")
+};
+
 /**
  * What a hit delivers to its target. Starts with damage and the context needed
  * to attribute it; designed to grow (status tags, knockback, effect handles)
@@ -17,9 +28,16 @@ struct FAbilityPayload
 {
 	GENERATED_BODY()
 
-	/** Damage to apply. */
+	/**
+	 * How hard the hit is. If the instigator has the power for DamageType, this is a multiple
+	 * of that power (1 = 100%, rolled between its Min and Max). Otherwise it is flat damage.
+	 * The receiver then applies its Armor or Magic Resist, and Damage Taken.
+	 */
 	UPROPERTY(BlueprintReadWrite, Category = "Payload")
 	float Damage = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, Category = "Payload")
+	EDamageType DamageType = EDamageType::Physical;
 
 	/** Actor that caused this payload (the shooter), for attribution. May be null. */
 	UPROPERTY(BlueprintReadWrite, Category = "Payload")
@@ -59,6 +77,10 @@ struct FHitSpec
 	UPROPERTY(BlueprintReadWrite, Category = "Hit")
 	FGameplayTagContainer SourceAbilityTags;
 
+	/** Which power the damage scales with and which defense reduces it. */
+	UPROPERTY(BlueprintReadWrite, Category = "Hit")
+	EDamageType DamageType = EDamageType::Physical;
+
 	/** How hard the hit is (poise damage, reaction). */
 	UPROPERTY(BlueprintReadWrite, Category = "Hit")
 	FHitImpact Impact;
@@ -70,6 +92,7 @@ struct FHitSpec
 	void ApplyTo(FAbilityPayload& Payload) const
 	{
 		Payload.SourceAbilityTags = SourceAbilityTags;
+		Payload.DamageType = DamageType;
 		Payload.Impact = Impact;
 		Payload.Statuses = Statuses;
 	}

@@ -27,9 +27,23 @@ public:
 	UPROPERTY(Config, EditAnywhere, Category = "Impacts|Environment", meta = (ClampMin = "0.1", ClampMax = "3.0"))
 	float EnvironmentPitchMax = 1.05f;
 	
-	/** Every delivered hit is scaled by a random factor in [1 - this, 1 + this]. 0 = no variance. */
+	/**
+	 * Flat-damage hits (the attacker has no power for the damage type) are scaled by a random factor
+	 * in [1 - this, 1 + this]. Hits that scale with power roll between its Min and Max instead. 0 = no variance.
+	 */
 	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "0.5"))
 	float DamageVariance = 0.07f;
+
+	/**
+	 * Damage reduction = Defense / (Defense + this), for Armor and Magic Resist alike.
+	 * Defense equal to this halves the damage. At 100, each point is +1% effective health against that damage type.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Combat|Defense", meta = (ClampMin = "1.0"))
+	float DefenseConstant = 100.0f;
+
+	/** The most Armor or Magic Resist can reduce damage. 0.75 = at most 75% less damage. */
+	UPROPERTY(Config, EditAnywhere, Category = "Combat|Defense", meta = (ClampMin = "0.0", ClampMax = "0.95"))
+	float MaxDamageReduction = 0.75f;
 	
 	/** Damage kept per target an arrow passes through (0.5 = half), before Stat.PierceDamage modifiers. A Pierce feature can override it. */
 	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "2.0"))

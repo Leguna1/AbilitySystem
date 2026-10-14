@@ -33,8 +33,10 @@ struct FAttributeDefinition
 };
 
 /**
- * The character's own numbers, such as move speed and attack speed.
+ * The character's own numbers: move speed, attack speed, attack and magic power, armor, magic resist.
  * Current value = base, modified by every effect on that attribute, clamped to [Min, Max].
+ * Effects on the attribute's group apply too, after its own: Stat.AttackPower changes both
+ * Stat.AttackPower.Min and Stat.AttackPower.Max.
  * Attributes belong to the character, so only unscoped effects apply.
  * Broadcasts OnAttributeChanged; nothing needs to poll. Can drive the character's walk speed.
  */
@@ -72,7 +74,11 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** This character's attributes. Typically Stat.MoveSpeed and Stat.AttackSpeed. */
+	/**
+	 * This character's attributes. Typically Stat.MoveSpeed and Stat.AttackSpeed, plus for combat:
+	 * Stat.AttackPower.Min/Max, Stat.MagicPower.Min/Max, Stat.Armor, Stat.MagicResist.
+	 * Raise Max Value for those: it defaults to 10.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes", meta = (TitleProperty = "Attribute"))
 	TArray<FAttributeDefinition> Attributes;
 
@@ -85,6 +91,10 @@ private:
 	void HandleEffectsChanged();
 
 	void RecalculateAttributes();
+
+	/** Base value after the attribute's own effects, then its group's (e.g. Stat.AttackPower for .Min), before clamping. */
+	float EvaluateAttribute(const FAttributeDefinition& Definition) const;
+
 	void ApplyWalkSpeed() const;
 	int32 FindAttributeIndex(FGameplayTag Attribute) const;
 

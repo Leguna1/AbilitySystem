@@ -8,6 +8,7 @@
 #include "CombatantComponent.generated.h"
 
 class UAbilityComponent;
+class UAttributeComponent;
 class UResourceComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCombatantPayloadReceivedSignature, const FAbilityPayload&, Payload, float, DamageApplied);
@@ -58,6 +59,13 @@ public:
 	/** For owners without an ability component (simple enemies). */
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void SetInvulnerable(bool bNewInvulnerable) { bInvulnerable = bNewInvulnerable; }
+
+	/**
+	 * Fraction of DamageType damage this owner's Armor or Magic Resist removes (0.33 = 33% less).
+	 * Defense / (Defense + Defense Constant), capped at Max Damage Reduction. For character sheets and tooltips too.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Combat")
+	float GetDamageReduction(EDamageType DamageType) const;
 
 	/** This owner accepted a payload. DamageApplied is what health actually lost. */
 	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
@@ -148,7 +156,7 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-	/** Scales incoming damage. Hook for armor, difficulty, or future passives. */
+	/** Scales incoming damage after Armor / Magic Resist. Hook for difficulty; statuses use Stat.DamageTaken. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (ClampMin = "0.0"))
 	float DamageTakenMultiplier = 1.0f;
 	
@@ -177,8 +185,18 @@ private:
 
 	static UCombatantComponent* FindCombatant(const AActor* Actor);
 
+	/**
+	 * What Payload takes off this owner's health:
+	 * Damage x the instigator's power roll (flat if it has none) x (1 - this owner's damage reduction) x Damage Taken.
+	 */
+	float CalculateDamageTaken(const FAbilityPayload& Payload) const;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UResourceComponent> ResourceComponent;
+
+	/** Optional: Armor and Magic Resist. Without it, this owner has no defenses. */
+	UPROPERTY(Transient)
+	TObjectPtr<UAttributeComponent> AttributeComponent;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityComponent> AbilityComponent;

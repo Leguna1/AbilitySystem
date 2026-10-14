@@ -1,5 +1,6 @@
 #include "AttributeComponent.h"
 
+#include "AbilitySystemTags.h"
 #include "CombatantComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -108,13 +109,7 @@ void UAttributeComponent::RecalculateAttributes()
 	for (int32 Index = 0; Index < Attributes.Num(); ++Index)
 	{
 		const FAttributeDefinition& Definition = Attributes[Index];
-
-		// Attributes belong to the character, not an ability, so they are evaluated without ability tags.
-		const float Modified = IsValid(CombatantComponent)
-			? CombatantComponent->GetModifiedValue(Definition.Attribute, Definition.BaseValue, FGameplayTagContainer())
-			: Definition.BaseValue;
-
-		const float NewValue = FMath::Clamp(Modified, Definition.MinValue, FMath::Max(Definition.MaxValue, Definition.MinValue));
+		const float NewValue = FMath::Clamp(EvaluateAttribute(Definition), Definition.MinValue, FMath::Max(Definition.MaxValue, Definition.MinValue));
 
 		if (FMath::IsNearlyEqual(NewValue, CurrentValues[Index]))
 		{
@@ -131,6 +126,26 @@ void UAttributeComponent::RecalculateAttributes()
 
 		OnAttributeChanged.Broadcast(Definition.Attribute, OldValue, NewValue);
 	}
+}
+
+float UAttributeComponent::EvaluateAttribute(const FAttributeDefinition& Definition) const
+{
+	if (!IsValid(CombatantComponent))
+	{
+		return Definition.BaseValue;
+	}
+
+	// Attributes belong to the character, not an ability, so they are evaluated without ability tags.
+	const FGameplayTagContainer NoAbilityTags;
+	const float OwnValue = CombatantComponent->GetModifiedValue(Definition.Attribute, Definition.BaseValue, NoAbilityTags);
+
+	// The group: Stat.AttackPower for Stat.AttackPower.Min. Top-level tags (Stat.MoveSpeed) have none, since "Stat" itself isn't a group.
+	const FGameplayTag Group = Definition.Attribute.RequestDirectParent();
+	const bool bHasGroup = Group.IsValid() && Group.RequestDirectParent().IsValid();
+
+	return bHasGroup
+		? CombatantComponent->GetModifiedValue(Group, OwnValue, NoAbilityTags)
+		: OwnValue;
 }
 
 void UAttributeComponent::ApplyWalkSpeed() const
@@ -194,6 +209,19 @@ EDataValidationResult UAttributeComponent::IsDataValid(FDataValidationContext& C
 			Context.AddWarning(FText::Format(LOCTEXT("BaseOutside", "{0}: Base Value is outside [Min, Max] and will be clamped."), Where));
 		}
 	}
+
+	// A power roll needs both ends: a lone Min or Max is almost certainly a mistake.
+	const auto WarnHalfPair = [&Context, &Seen](const FGameplayTag MinTag, const FGameplayTag MaxTag)
+	{
+		if (Seen.Contains(MinTag) != Seen.Contains(MaxTag))
+		{
+			Context.AddWarning(FText::Format(LOCTEXT("HalfPair", "{0} and {1} go together: list both."),
+				FText::FromName(MinTag.GetTagName()), FText::FromName(MaxTag.GetTagName())));
+		}
+	};
+
+	WarnHalfPair(AbilitySystemTags::Stat_AttackPower_Min, AbilitySystemTags::Stat_AttackPower_Max);
+	WarnHalfPair(AbilitySystemTags::Stat_MagicPower_Min, AbilitySystemTags::Stat_MagicPower_Max);
 
 	if (WalkSpeedAttribute.IsValid() && !Seen.Contains(WalkSpeedAttribute))
 	{
