@@ -102,6 +102,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Enemy|Combat")
 	bool IsInCombat() const { return bInCombat; }
 	
+	/** Experience the killer earns. */
+	UFUNCTION(BlueprintPure, Category = "Enemy|Rewards")
+	int32 GetExperienceReward() const { return ExperienceReward; }
+
+protected:
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Rewards", meta = (ClampMin = "0"))
+	int32 ExperienceReward = 10;
+	
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif

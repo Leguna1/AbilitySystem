@@ -42,6 +42,7 @@ protected:
 /**
  * Gives you a buff: modifiers and tags for a while. Firing again refreshes it.
  * With charges, using abilities with the consuming tags spends them, and the buff ends when they run out (Primed).
+ * With Max Stacks above 1, firing again adds a stack instead: the modifiers count once per stack (Overdrive).
  */
 UCLASS(meta = (DisplayName = "Buff Self"))
 class ABILITYSYSTEM_API UPassiveEffect_BuffSelf : public UPassiveEffect
@@ -64,9 +65,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Buff")
 	FGameplayTagContainer GrantedTags;
 
-	/** Seconds, by rank. 0 = until its charges are spent. */
+	/** Seconds, by rank. 0 = until its charges are spent. Each new stack refreshes it. */
 	UPROPERTY(EditAnywhere, Category = "Buff")
 	FAbilityRankedFloat DurationByRank = FAbilityRankedFloat(5.0f);
+
+	/**
+	 * Most stacks at once, by rank. 1 = no stacking (firing again only refreshes).
+	 * The modifiers are per stack: +5% attack speed at 4 stacks = +20%. All stacks end together.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Buff|Stacks", meta = (ClampMin = "1"))
+	FAbilityRankedInt MaxStacksByRank = FAbilityRankedInt(1);
 
 	/** Uses before the buff ends, by rank. 0 = no charges (lasts its duration). */
 	UPROPERTY(EditAnywhere, Category = "Buff|Charges")
@@ -150,6 +158,40 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Sound")
 	EPassiveEffectTarget PlayAt = EPassiveEffectTarget::Self;
+};
+
+/**
+ * Shortens the remaining cooldown of your abilities: by seconds, by a share of what's left, or both.
+ * Abilities matches ids and their parents: Ability.Bow covers every bow ability.
+ */
+UCLASS(meta = (DisplayName = "Reduce Cooldown"))
+class ABILITYSYSTEM_API UPassiveEffect_ReduceCooldown : public UPassiveEffect
+{
+	GENERATED_BODY()
+
+public:
+	virtual void Execute(UReactiveAbility& Reactive, const FPassiveEventContext& Event) const override;
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
+
+protected:
+	/** Whose cooldowns: ability ids, or parents of them (Ability.Bow). */
+	UPROPERTY(EditAnywhere, Category = "Cooldown", meta = (Categories = "Ability"))
+	FGameplayTagContainer Abilities;
+
+	/** Use the ability that caused the event instead (e.g. the one that dealt the damage). Abilities is ignored. */
+	UPROPERTY(EditAnywhere, Category = "Cooldown")
+	bool bTriggeringAbility = false;
+
+	/** Seconds taken off, by rank. */
+	UPROPERTY(EditAnywhere, Category = "Cooldown", meta = (ClampMin = "0.0"))
+	FAbilityRankedFloat ReductionSecondsByRank = FAbilityRankedFloat(0.0f);
+
+	/** Share of the remaining cooldown taken off, by rank: 0.25 = a quarter, 1 = ready at once. Applied before the seconds. */
+	UPROPERTY(EditAnywhere, Category = "Cooldown", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	FAbilityRankedFloat RemainingReductionByRank = FAbilityRankedFloat(0.0f);
 };
 
 /** Sends a gameplay event to your other passives (chains: "on Fury, also..."). */

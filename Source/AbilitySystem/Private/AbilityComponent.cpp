@@ -1059,6 +1059,7 @@ void UAbilityComponent::StartCooldown(const FGameplayTag AbilityId, const float 
 	if (Index != INDEX_NONE)
 	{
 		CooldownState.EndTimes[Index] = EndTime;
+		CooldownState.Durations[Index] = Duration;
 	}
 	else
 	{
@@ -1540,4 +1541,34 @@ void UAbilityComponent::HandleOwnerResourceChanged(const EResourceType ResourceT
 	{
 		Passive->OnHealthChanged(HealthBefore, HealthAfter);
 	});
+}
+int32 UAbilityComponent::ReduceCooldowns(const FGameplayTagContainer& AbilityIds, const float Seconds, const float RemainingFraction, const bool bExactMatch)
+{
+	const UWorld* World = GetWorld();
+
+	if (!World || AbilityIds.IsEmpty())
+	{
+		return 0;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	const double KeptFraction = 1.0 - FMath::Clamp(RemainingFraction, 0.0f, 1.0f);
+	int32 ChangedCount = 0;
+
+	for (int32 Index = 0; Index < CooldownState.AbilityIds.Num(); ++Index)
+	{
+		const FGameplayTag& CooldownId = CooldownState.AbilityIds[Index];
+		const bool bMatches = bExactMatch ? AbilityIds.HasTagExact(CooldownId) : CooldownId.MatchesAny(AbilityIds);
+		const double Remaining = CooldownState.EndTimes[Index] - Now;
+
+		if (!bMatches || Remaining <= 0.0)
+		{
+			continue;
+		}
+
+		CooldownState.EndTimes[Index] = Now + FMath::Max(Remaining * KeptFraction - FMath::Max(Seconds, 0.0f), 0.0);
+		++ChangedCount;
+	}
+
+	return ChangedCount;
 }

@@ -37,7 +37,8 @@ struct FAttributeDefinition
  * Current value = base, modified by every effect on that attribute, clamped to [Min, Max].
  * Effects on the attribute's group apply too, after its own: Stat.AttackPower changes both
  * Stat.AttackPower.Min and Stat.AttackPower.Max.
- * Attributes belong to the character, so only unscoped effects apply.
+ * The character's value uses only unscoped effects. An ability can ask for its own view with
+ * Get Attribute Value For Ability, which adds effects scoped to it ("+20% attack speed for bow abilities").
  * Broadcasts OnAttributeChanged; nothing needs to poll. Can drive the character's walk speed.
  */
 UCLASS(ClassGroup = (Ability), meta = (BlueprintSpawnableComponent))
@@ -54,6 +55,13 @@ public:
 	/** Current value, after effects and clamping. Fallback if this character has no such attribute. */
 	UFUNCTION(BlueprintPure, Category = "Attributes")
 	float GetAttributeValue(FGameplayTag Attribute, float Fallback = 0.0f) const;
+
+	/**
+	 * The attribute as one ability sees it: the character's effects plus those scoped to AbilityTags,
+	 * clamped like the character's value. Abilities use it for attributes they read for themselves (Attack Speed).
+	 */
+	UFUNCTION(BlueprintPure, Category = "Attributes")
+	float GetAttributeValueForAbility(FGameplayTag Attribute, const FGameplayTagContainer& AbilityTags, float Fallback = 0.0f) const;
 
 	UFUNCTION(BlueprintPure, Category = "Attributes")
 	float GetAttributeBase(FGameplayTag Attribute, float Fallback = 0.0f) const;
@@ -92,8 +100,13 @@ private:
 
 	void RecalculateAttributes();
 
-	/** Base value after the attribute's own effects, then its group's (e.g. Stat.AttackPower for .Min), before clamping. */
-	float EvaluateAttribute(const FAttributeDefinition& Definition) const;
+	/**
+	 * Base value after the attribute's own effects, then its group's (e.g. Stat.AttackPower for .Min), before clamping.
+	 * Empty AbilityTags = the character's value; otherwise effects scoped to those tags count too.
+	 */
+	float EvaluateAttribute(const FAttributeDefinition& Definition, const FGameplayTagContainer& AbilityTags) const;
+
+	static float ClampToDefinition(const FAttributeDefinition& Definition, float Value);
 
 	void ApplyWalkSpeed() const;
 	int32 FindAttributeIndex(FGameplayTag Attribute) const;

@@ -194,6 +194,14 @@ public:
 	/** 0..1 fraction of cooldown elapsed (1 = ready), for a radial sweep. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
 	float GetAbilityCooldownProgress(FGameplayTag AbilityId) const;
+	
+	/**
+ * Shortens the remaining cooldown of every ability whose id matches AbilityIds
+ * (parents match too, unless bExactMatch). RemainingFraction first (0.25 = a quarter off), then Seconds.
+ * Returns how many cooldowns changed.
+ */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Cooldown")
+	int32 ReduceCooldowns(const FGameplayTagContainer& AbilityIds, float Seconds, float RemainingFraction = 0.0f, bool bExactMatch = false);
 
 	/** True if the owner currently has enough Focus for this ability's cost. */
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")

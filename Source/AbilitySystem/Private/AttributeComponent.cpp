@@ -74,6 +74,18 @@ float UAttributeComponent::GetAttributeValue(const FGameplayTag Attribute, const
 	return CurrentValues[Index];
 }
 
+float UAttributeComponent::GetAttributeValueForAbility(const FGameplayTag Attribute, const FGameplayTagContainer& AbilityTags, const float Fallback) const
+{
+	const int32 Index = FindAttributeIndex(Attribute);
+
+	if (Index == INDEX_NONE)
+	{
+		return Fallback;
+	}
+
+	return ClampToDefinition(Attributes[Index], EvaluateAttribute(Attributes[Index], AbilityTags));
+}
+
 float UAttributeComponent::GetAttributeBase(const FGameplayTag Attribute, const float Fallback) const
 {
 	const int32 Index = FindAttributeIndex(Attribute);
@@ -109,7 +121,7 @@ void UAttributeComponent::RecalculateAttributes()
 	for (int32 Index = 0; Index < Attributes.Num(); ++Index)
 	{
 		const FAttributeDefinition& Definition = Attributes[Index];
-		const float NewValue = FMath::Clamp(EvaluateAttribute(Definition), Definition.MinValue, FMath::Max(Definition.MaxValue, Definition.MinValue));
+		const float NewValue = ClampToDefinition(Definition, EvaluateAttribute(Definition, FGameplayTagContainer()));
 
 		if (FMath::IsNearlyEqual(NewValue, CurrentValues[Index]))
 		{
@@ -128,24 +140,28 @@ void UAttributeComponent::RecalculateAttributes()
 	}
 }
 
-float UAttributeComponent::EvaluateAttribute(const FAttributeDefinition& Definition) const
+float UAttributeComponent::EvaluateAttribute(const FAttributeDefinition& Definition, const FGameplayTagContainer& AbilityTags) const
 {
 	if (!IsValid(CombatantComponent))
 	{
 		return Definition.BaseValue;
 	}
 
-	// Attributes belong to the character, not an ability, so they are evaluated without ability tags.
-	const FGameplayTagContainer NoAbilityTags;
-	const float OwnValue = CombatantComponent->GetModifiedValue(Definition.Attribute, Definition.BaseValue, NoAbilityTags);
+	// Empty tags: only unscoped effects (the character's own value). With tags: scoped ones that match count too.
+	const float OwnValue = CombatantComponent->GetModifiedValue(Definition.Attribute, Definition.BaseValue, AbilityTags);
 
 	// The group: Stat.AttackPower for Stat.AttackPower.Min. Top-level tags (Stat.MoveSpeed) have none, since "Stat" itself isn't a group.
 	const FGameplayTag Group = Definition.Attribute.RequestDirectParent();
 	const bool bHasGroup = Group.IsValid() && Group.RequestDirectParent().IsValid();
 
 	return bHasGroup
-		? CombatantComponent->GetModifiedValue(Group, OwnValue, NoAbilityTags)
+		? CombatantComponent->GetModifiedValue(Group, OwnValue, AbilityTags)
 		: OwnValue;
+}
+
+float UAttributeComponent::ClampToDefinition(const FAttributeDefinition& Definition, const float Value)
+{
+	return FMath::Clamp(Value, Definition.MinValue, FMath::Max(Definition.MaxValue, Definition.MinValue));
 }
 
 void UAttributeComponent::ApplyWalkSpeed() const

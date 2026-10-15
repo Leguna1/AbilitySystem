@@ -8,6 +8,7 @@
 #include "MotionWarpingComponent.h"
 #include "AbilitySystemTags.h"
 #include "AttributeComponent.h"
+#include "CombatantComponent.h"
 
 void UMontageAbility::ActivateAbility_Implementation()
 {
@@ -21,6 +22,8 @@ void UMontageAbility::ActivateAbility_Implementation()
 
 void UMontageAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndReason)
 {
+	UnbindAttackSpeedUpdates();
+
 	const float BlendOutTime = bEndedByMovement
 	? MovementCancelBlendOutTime
 	: EndReason == EAbilityEndReason::EarlyCancelled
@@ -47,20 +50,11 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 	CloseTransition();
 
 	ActiveMontage = nullptr;
-
-	const UAbilityComponent* Component = GetAbilityComponent();
-	const UAttributeComponent* Attributes = IsValid(Component) ? Component->GetAttributeComponent() : nullptr;
-
-	// Attack speed is a character attribute; characters without one play at the montage's own rate.
-	const float AttackSpeed = bAffectedByAttackSpeed && IsValid(Attributes)
-		? Attributes->GetAttributeValue(AbilitySystemTags::Stat_AttackSpeed, 1.0f)
-		: 1.0f;
-
-	const float EffectivePlayRate = PlayRate * FMath::Max(AttackSpeed, 0.1f);
+	BaseMontagePlayRate = PlayRate;
 
 	const float Duration = AnimInstance->Montage_Play(
 		Montage,
-		EffectivePlayRate,
+		PlayRate * GetAttackSpeed(),
 		EMontagePlayReturnType::MontageLength,
 		0.0f,
 		true
@@ -72,6 +66,7 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 	}
 
 	ActiveMontage = Montage;
+	BindAttackSpeedUpdates();
 
 	// Install the root-motion distance warp target before the warp window hits.
 	ApplyRootMotionDistanceWarp();
@@ -86,6 +81,69 @@ bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float Play
 
 	OnAbilityMontageStarted(Montage);
 	return true;
+}
+
+float UMontageAbility::GetAttackSpeed() const
+{
+	if (!bAffectedByAttackSpeed)
+	{
+		return 1.0f;
+	}
+
+	const UAbilityComponent* Component = GetAbilityComponent();
+	const UAttributeComponent* Attributes = IsValid(Component) ? Component->GetAttributeComponent() : nullptr;
+
+	// This ability's own view: the character's attack speed plus any scoped to its tags. No attribute = normal speed.
+	const float AttackSpeed = IsValid(Attributes)
+		? Attributes->GetAttributeValueForAbility(AbilitySystemTags::Stat_AttackSpeed, GetAbilityTags(), 1.0f)
+		: 1.0f;
+
+	return FMath::Max(AttackSpeed, 0.1f);
+}
+
+void UMontageAbility::BindAttackSpeedUpdates()
+{
+	if (!bAffectedByAttackSpeed || !bUpdateAttackSpeedDuringMontage || AttackSpeedSource.IsValid())
+	{
+		return;
+	}
+
+	// Effects live on the combatant; any change there may change this ability's attack speed.
+	const UAbilityComponent* Component = GetAbilityComponent();
+	UCombatantComponent* Combatant = IsValid(Component) ? Component->GetCombatantComponent() : nullptr;
+
+	if (IsValid(Combatant))
+	{
+		Combatant->OnEffectsChanged.AddUniqueDynamic(this, &UMontageAbility::HandleOwnerEffectsChanged);
+		AttackSpeedSource = Combatant;
+	}
+}
+
+void UMontageAbility::UnbindAttackSpeedUpdates()
+{
+	if (UCombatantComponent* Combatant = AttackSpeedSource.Get())
+	{
+		Combatant->OnEffectsChanged.RemoveDynamic(this, &UMontageAbility::HandleOwnerEffectsChanged);
+	}
+
+	AttackSpeedSource.Reset();
+}
+
+void UMontageAbility::HandleOwnerEffectsChanged()
+{
+	UAnimInstance* AnimInstance = GetAnimInstance();
+
+	if (!IsValid(AnimInstance) || !IsValid(ActiveMontage) || !AnimInstance->Montage_IsPlaying(ActiveMontage))
+	{
+		return;
+	}
+
+	const float NewPlayRate = BaseMontagePlayRate * GetAttackSpeed();
+
+	if (!FMath::IsNearlyEqual(AnimInstance->Montage_GetPlayRate(ActiveMontage), NewPlayRate))
+	{
+		AnimInstance->Montage_SetPlayRate(ActiveMontage, NewPlayRate);
+	}
 }
 
 void UMontageAbility::StopAbilityMontage(const float BlendOutTime)

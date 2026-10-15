@@ -16,6 +16,7 @@ void UReactiveAbility::OnPassiveActivated_Implementation()
 	LastTriggerTime = -1.0e9;
 	TriggerCount = 0;
 	ActiveCharges.Reset();
+	ActiveStacks.Reset();
 
 	Super::OnPassiveActivated_Implementation();
 }
@@ -23,6 +24,7 @@ void UReactiveAbility::OnPassiveActivated_Implementation()
 void UReactiveAbility::OnPassiveDeactivated_Implementation()
 {
 	ActiveCharges.Reset();
+	ActiveStacks.Reset();
 
 	Super::OnPassiveDeactivated_Implementation();
 }
@@ -191,6 +193,28 @@ void UReactiveAbility::OnGameplayEvent_Implementation(const FGameplayTag EventTa
 	Event.EventTag = EventTag;
 	Event.Ability = Source;
 	HandleEvent(Event);
+}
+
+/* ============================== Stacks ============================== */
+
+int32 UReactiveAbility::AddEffectStack(const FName EntryKey, const int32 MaxStacks)
+{
+	FEffectStacks* Existing = ActiveStacks.FindByPredicate([EntryKey](const FEffectStacks& Entry)
+	{
+		return Entry.EntryKey == EntryKey;
+	});
+
+	FEffectStacks& StackEntry = Existing ? *Existing : ActiveStacks.AddDefaulted_GetRef();
+	StackEntry.EntryKey = EntryKey;
+
+	// Ran out (or was removed) since the last stack: begin again.
+	if (!HasTimedEffect(EntryKey))
+	{
+		StackEntry.Count = 0;
+	}
+
+	StackEntry.Count = FMath::Min(StackEntry.Count + 1, FMath::Max(MaxStacks, 1));
+	return StackEntry.Count;
 }
 
 /* ============================== Charges ============================== */

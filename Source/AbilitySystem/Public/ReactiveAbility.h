@@ -49,6 +49,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Reaction")
 	void SetEffectCharges(FName EntryKey, int32 Charges, const FGameplayTagContainer& ConsumedByAbilityTags);
 
+	/**
+	 * Adds one stack to a stacking timed effect, up to MaxStacks, and returns the new count.
+	 * Starts again from 1 if the effect has run out since. The caller applies the effect itself.
+	 */
+	int32 AddEffectStack(FName EntryKey, int32 MaxStacks);
+
 	/** World time the reaction last fired. Very negative = never. */
 	double GetLastTriggerTime() const { return LastTriggerTime; }
 
@@ -97,4 +103,12 @@ private:
 	int32 TriggerCount = 0;
 
 	TArray<FEffectCharges> ActiveCharges;
+
+	struct FEffectStacks
+	{
+		FName EntryKey;
+		int32 Count = 0;
+	};
+
+	TArray<FEffectStacks> ActiveStacks;
 };

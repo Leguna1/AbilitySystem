@@ -6,6 +6,7 @@
 
 class UAnimInstance;
 class UAnimMontage;
+class UCombatantComponent;
 
 /**
  * Reusable base for an ability whose execution is represented by a montage.
@@ -32,9 +33,20 @@ public:
 	
 	virtual void OnMovementInputReceived_Implementation(FVector2D MovementInput) override;
 	
-	/** Montages play faster or slower with the owner's attack speed. Off for movement and reactions. */
+	/**
+	 * Montages play faster or slower with the owner's attack speed, including attack speed scoped
+	 * to this ability (e.g. "+20% for bow abilities"). Off for movement and reactions.
+	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Animation")
 	bool bAffectedByAttackSpeed = true;
+
+	/** Attack speed gained or lost mid-montage changes the speed right away (stacking buffs, slows). Off = fixed at start. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Animation", meta = (EditCondition = "bAffectedByAttackSpeed"))
+	bool bUpdateAttackSpeedDuringMontage = true;
+
+	/** This ability's attack speed right now: 1 = normal. Always 1 when not affected by attack speed. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Animation")
+	float GetAttackSpeed() const;
 
 protected:
 	UFUNCTION(BlueprintNativeEvent, BlueprintPure, Category = "Ability|Montage")
@@ -144,6 +156,19 @@ protected:
 private:
 	void HandleMontageBlendingOut(UAnimMontage* Montage, bool bInterrupted);
 	void HandleMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+
+	/** Buffs or slows changed: re-applies attack speed to the playing montage. */
+	UFUNCTION()
+	void HandleOwnerEffectsChanged();
+
+	void BindAttackSpeedUpdates();
+	void UnbindAttackSpeedUpdates();
+
+	/** The rate the montage was asked to play at, before attack speed. */
+	float BaseMontagePlayRate = 1.0f;
+
+	/** Combatant whose effect changes update the play rate, while bound. */
+	TWeakObjectPtr<UCombatantComponent> AttackSpeedSource;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAnimMontage> ActiveMontage;

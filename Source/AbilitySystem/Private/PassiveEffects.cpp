@@ -1,6 +1,7 @@
 #include "PassiveEffects.h"
 
 #include "AbilityComponent.h"
+#include "ActiveAbility.h"
 #include "CombatantComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
@@ -31,8 +32,30 @@ void UPassiveEffect_BuffSelf::Execute(UReactiveAbility& Reactive, const FPassive
 	// The effect's own object name keys the buff, so several buff effects on one passive stay separate
 	// and the same one refreshes instead of stacking.
 	const FName BuffKey = GetFName();
+	const float Duration = FMath::Max(DurationByRank.Get(Rank), 0.0f);
+	const int32 MaxStacks = FMath::Max(MaxStacksByRank.Get(Rank), 1);
 
-	Reactive.ApplyTimedEffect(BuffKey, Modifiers, GrantedTags, FMath::Max(DurationByRank.Get(Rank), 0.0f));
+	if (MaxStacks > 1)
+	{
+		// One more stack (or a fresh first one if the buff ran out); the modifiers count once per stack.
+		const int32 Stacks = Reactive.AddEffectStack(BuffKey, MaxStacks);
+
+		TArray<FStatModifier> StackedModifiers = Modifiers;
+
+		for (FStatModifier& Modifier : StackedModifiers)
+		{
+			for (float& Magnitude : Modifier.Magnitude.Values)
+			{
+				Magnitude *= static_cast<float>(Stacks);
+			}
+		}
+
+		Reactive.ApplyTimedEffect(BuffKey, StackedModifiers, GrantedTags, Duration);
+		Reactive.SetTimedEffectStacks(BuffKey, Stacks);
+		return;
+	}
+
+	Reactive.ApplyTimedEffect(BuffKey, Modifiers, GrantedTags, Duration);
 
 	const int32 Charges = ChargesByRank.Get(Rank);
 
@@ -54,6 +77,20 @@ EDataValidationResult UPassiveEffect_BuffSelf::IsDataValid(FDataValidationContex
 	{
 		Context.AddWarning(NSLOCTEXT("PassiveEffects", "ChargesNoTags",
 			"Buff Self has charges but no Consumed By Ability Tags, so the charges are never spent."));
+	}
+
+	const bool bStacks = MaxStacksByRank.Get(1) > 1;
+
+	if (bHasCharges && bStacks)
+	{
+		Context.AddWarning(NSLOCTEXT("PassiveEffects", "ChargesAndStacks",
+			"Buff Self has both charges and Max Stacks above 1. Stacking ignores charges; use one or the other."));
+	}
+
+	if (bStacks && DurationByRank.Get(1) <= 0.0f)
+	{
+		Context.AddWarning(NSLOCTEXT("PassiveEffects", "StacksForever",
+			"Buff Self stacks but has no duration, so the stacks never fall off."));
 	}
 
 	if (!bHasCharges && DurationByRank.Get(1) <= 0.0f)
@@ -121,6 +158,65 @@ void UPassiveEffect_ActivateAbility::Execute(UReactiveAbility& Reactive, const F
 		OwnerAbilities->TryActivateAbility(AbilityId);
 	}
 }
+
+/* ============================== Reduce Cooldown ============================== */
+
+void UPassiveEffect_ReduceCooldown::Execute(UReactiveAbility& Reactive, const FPassiveEventContext& Event) const
+{
+	UAbilityComponent* OwnerAbilities = Reactive.GetAbilityComponent();
+
+	if (!IsValid(OwnerAbilities))
+	{
+		return;
+	}
+
+	const int32 Rank = Reactive.GetAbilityRank();
+	const float Seconds = FMath::Max(ReductionSecondsByRank.Get(Rank), 0.0f);
+	const float RemainingFraction = FMath::Clamp(RemainingReductionByRank.Get(Rank), 0.0f, 1.0f);
+
+	if (!bTriggeringAbility)
+	{
+		OwnerAbilities->ReduceCooldowns(Abilities, Seconds, RemainingFraction, false);
+		return;
+	}
+
+	// The ability behind the event: named directly for ability events, or the source of the hit for damage events.
+	// Exact ids only, so a category tag on the hit (Ability.Type.Special) can't reach other abilities.
+	FGameplayTagContainer TriggeringIds;
+
+	if (IsValid(Event.Ability))
+	{
+		TriggeringIds.AddTag(Event.Ability->GetAbilityId());
+	}
+	else
+	{
+		TriggeringIds = Event.Payload.SourceAbilityTags;
+	}
+
+	OwnerAbilities->ReduceCooldowns(TriggeringIds, Seconds, RemainingFraction, true);
+}
+
+#if WITH_EDITOR
+EDataValidationResult UPassiveEffect_ReduceCooldown::IsDataValid(FDataValidationContext& Context) const
+{
+	EDataValidationResult Result = Super::IsDataValid(Context);
+
+	if (!bTriggeringAbility && Abilities.IsEmpty())
+	{
+		Context.AddError(NSLOCTEXT("PassiveEffects", "ReduceNoAbilities",
+			"Reduce Cooldown has no Abilities. Pick them, or tick Triggering Ability."));
+		Result = EDataValidationResult::Invalid;
+	}
+
+	if (ReductionSecondsByRank.Get(1) <= 0.0f && RemainingReductionByRank.Get(1) <= 0.0f)
+	{
+		Context.AddWarning(NSLOCTEXT("PassiveEffects", "ReduceNothing",
+			"Reduce Cooldown takes off 0 seconds and 0% of the remaining time, so it does nothing."));
+	}
+
+	return Result;
+}
+#endif
 
 /* ============================== Spawn Effect ============================== */
 
