@@ -1,5 +1,6 @@
 #include "TargetingComponent.h"
 
+#include "CombatantComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/Controller.h"
@@ -7,8 +8,6 @@
 #include "TargetableInterface.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
-#include "Engine/EngineTypes.h"
-#include "CombatantComponent.h"
 
 UTargetingComponent::UTargetingComponent()
 {
@@ -27,14 +26,6 @@ void UTargetingComponent::BeginPlay()
 		return;
 	}
 
-	if (TargetObjectTypes.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("UTargetingComponent on %s has no TargetObjectTypes; defaulting to Pawn."),
-			*GetNameSafe(GetOwner()));
-
-		TargetObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
-	}
-	
 	if (ReleaseRange < AcquisitionRange)
 	{
 		ReleaseRange = AcquisitionRange;
@@ -72,36 +63,20 @@ void UTargetingComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void UTargetingComponent::RefreshTarget()
 {
-	if (!IsValid(OwningCharacter))
+	if (!IsValid(OwningCharacter) || !IsValid(GetWorld()))
 	{
 		ClearTarget();
 		return;
 	}
 
-	// Retention: keep the held target while it stays legal (range + LOS).
-	// Angle is deliberately NOT re-checked here, so turning the camera or
-	// running away from the target doesn't drop the lock on its own.
-	if (IsValid(CurrentTarget))
+	// Retention: range, targetable, and sight with a grace period. Angle is deliberately not
+	// re-checked, so turning the camera or running away doesn't drop the lock on its own.
+	if (IsValid(CurrentTarget) && !ShouldKeepCurrentTarget(RefreshInterval))
 	{
-		const float DistanceSquared = FVector::DistSquared(
-			OwningCharacter->GetActorLocation(),
-			CurrentTarget->GetActorLocation()
-		);
-
-		const bool bStillValid =
-			IsValidTarget(CurrentTarget) &&
-			DistanceSquared <= FMath::Square(ReleaseRange) &&
-			(!bRequireLineOfSight || HasLineOfSightTo(CurrentTarget));
-
-		if (!bStillValid)
-		{
-			ClearTarget();
-		}
+		ClearTarget();
 	}
 
-	// Accumulate intent every refresh (not only when we lack a target), then
-	// let a challenger take over only if its intent beats the held target plus
-	// the stickiness bonus. This is what produces a natural, deliberate swap.
+	// Intent accumulates every refresh, held target or not.
 	TArray<AActor*> Candidates;
 	FindTargetCandidates(Candidates);
 
@@ -115,10 +90,12 @@ void UTargetingComponent::RefreshTarget()
 	}
 	else if (IsValid(Challenger) && Challenger != CurrentTarget)
 	{
+		// A challenger must clearly beat the held target, and not right after the last switch.
+		const bool bSwitchAllowed = GetWorld()->GetTimeSeconds() - LastSwitchTime >= MinTimeBetweenSwitches;
 		const float ChallengerIntent = GetAccumulatedIntent(Challenger);
 		const float HeldIntent = GetAccumulatedIntent(CurrentTarget) + TargetStickinessBonus;
 
-		if (ChallengerIntent > HeldIntent)
+		if (bSwitchAllowed && ChallengerIntent > HeldIntent)
 		{
 			SetTarget(Challenger);
 		}
@@ -126,18 +103,42 @@ void UTargetingComponent::RefreshTarget()
 
 	if (bDrawTargetDebugSphere && IsValid(CurrentTarget))
 	{
+		// Yellow while the target is out of sight but still held.
 		DrawDebugSphere(
 			GetWorld(),
 			GetCurrentTargetAimLocation(),
 			TargetDebugSphereRadius,
 			TargetDebugSphereSegments,
-			FColor::Green,
+			TimeWithoutSight > 0.0f ? FColor::Yellow : FColor::Green,
 			false,
 			RefreshInterval * 1.25f,
 			0,
 			1.5f
 		);
 	}
+}
+
+bool UTargetingComponent::ShouldKeepCurrentTarget(const float DeltaTime)
+{
+	const float DistanceSquared = FVector::DistSquared(
+		OwningCharacter->GetActorLocation(),
+		CurrentTarget->GetActorLocation()
+	);
+
+	if (!IsValidTarget(CurrentTarget) || DistanceSquared > FMath::Square(ReleaseRange))
+	{
+		return false;
+	}
+
+	if (!bRequireLineOfSight || HasLineOfSightTo(CurrentTarget))
+	{
+		TimeWithoutSight = 0.0f;
+		return true;
+	}
+
+	// Briefly hidden (a pillar, a tree, another golem): keep it for a moment.
+	TimeWithoutSight += DeltaTime;
+	return TimeWithoutSight <= LostSightGraceTime;
 }
 
 void UTargetingComponent::ClearTarget()
@@ -159,20 +160,51 @@ bool UTargetingComponent::SetTarget(AActor* NewTarget)
 
 	AActor* PreviousTarget = CurrentTarget;
 
-	if (UCombatantComponent* PreviousCombatant = IsValid(PreviousTarget) ? PreviousTarget->FindComponentByClass<UCombatantComponent>() : nullptr)
+	if (IsValid(PreviousTarget))
 	{
-		PreviousCombatant->OnDied.RemoveDynamic(this, &UTargetingComponent::HandleTargetDied);
+		if (UCombatantComponent* PreviousCombatant = PreviousTarget->FindComponentByClass<UCombatantComponent>())
+		{
+			PreviousCombatant->OnDied.RemoveDynamic(this, &UTargetingComponent::HandleTargetDied);
+		}
 	}
 
 	CurrentTarget = NewTarget;
+	TimeWithoutSight = 0.0f;
 
-	if (UCombatantComponent* NewCombatant = IsValid(CurrentTarget) ? CurrentTarget->FindComponentByClass<UCombatantComponent>() : nullptr)
+	if (IsValid(CurrentTarget))
 	{
-		NewCombatant->OnDied.AddDynamic(this, &UTargetingComponent::HandleTargetDied);
+		if (UCombatantComponent* NewCombatant = CurrentTarget->FindComponentByClass<UCombatantComponent>())
+		{
+			NewCombatant->OnDied.AddUniqueDynamic(this, &UTargetingComponent::HandleTargetDied);
+		}
+
+		if (const UWorld* World = GetWorld())
+		{
+			LastSwitchTime = World->GetTimeSeconds();
+		}
 	}
 
 	OnTargetChanged.Broadcast(PreviousTarget, CurrentTarget);
 	return IsValid(CurrentTarget);
+}
+
+void UTargetingComponent::HandleTargetDied(AActor* Killer)
+{
+	// Forget the dead one's intent and pick the next target right away, not on the next refresh.
+	AActor* DeadTarget = CurrentTarget;
+
+	IntentRecords.RemoveAllSwap([DeadTarget](const FTargetIntentRecord& Record)
+	{
+		return Record.Target.Get() == DeadTarget;
+	});
+
+	ClearTarget();
+
+	// Next tick: by then the dead one reports itself untargetable and can't be picked again.
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimerForNextTick(this, &UTargetingComponent::RefreshTarget);
+	}
 }
 
 bool UTargetingComponent::IsValidTarget(AActor* Candidate) const
@@ -184,14 +216,7 @@ bool UTargetingComponent::IsValidTarget(AActor* Candidate) const
 	{
 		return false;
 	}
-	if (const UCombatantComponent* Combatant = Candidate->FindComponentByClass<UCombatantComponent>())
-	{
-		if (Combatant->IsDead())
-		{
-			return false;
-		}
-	}
-	
+
 	if (!ITargetableInterface::Execute_IsTargetable(Candidate))
 	{
 		return false;
@@ -293,6 +318,13 @@ void UTargetingComponent::UpdateIntent(const TArray<AActor*>& Candidates, float 
 		}
 
 		float IntentGain = 0.0f;
+
+		// Proximity: the nearer, the more. Keeps the enemy on you targeted without framing it.
+		if (ProximityWeight > 0.0f && AcquisitionRange > 0.0f)
+		{
+			const float Distance = FVector::Dist(OwningCharacter->GetActorLocation(), Candidate->GetActorLocation());
+			IntentGain += ProximityWeight * (1.0f - FMath::Clamp(Distance / AcquisitionRange, 0.0f, 1.0f));
+		}
 
 		// Framing (primary): centeredness in the camera cone, gated by settle.
 		const float CamDot = FVector::DotProduct(CameraForward, DirToCandidate);
@@ -478,12 +510,20 @@ bool UTargetingComponent::HasLineOfSightTo(AActor* Candidate) const
 		return false;
 	}
 
-	const FVector Start = GetTargetingOrigin();
+	// From the character, not the camera: the camera boom dips into walls and foliage, the archer doesn't.
+	const FVector Start = IsValid(OwningCharacter) ? OwningCharacter->GetPawnViewLocation() : GetTargetingOrigin();
 	const FVector End = ResolveTargetAimLocation(Candidate);
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(TargetingLineOfSight), false);
 	QueryParams.AddIgnoredActor(GetOwner());
 	QueryParams.AddIgnoredActor(Candidate);
+
+	FCollisionResponseParams ResponseParams;
+
+	if (!bPawnsBlockLineOfSight)
+	{
+		ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Ignore);
+	}
 
 	FHitResult HitResult;
 
@@ -492,7 +532,8 @@ bool UTargetingComponent::HasLineOfSightTo(AActor* Candidate) const
 		Start,
 		End,
 		LineOfSightTraceChannel,
-		QueryParams
+		QueryParams,
+		ResponseParams
 	);
 
 	return !bBlocked;
@@ -534,10 +575,4 @@ FVector UTargetingComponent::GetTargetingForwardVector() const
 	}
 
 	return OwningCharacter->GetActorForwardVector();
-}
-void UTargetingComponent::HandleTargetDied(AActor* Killer)
-{
-	// Drop the corpse now and pick the next target, instead of waiting for the next refresh.
-	ClearTarget();
-	RefreshTarget();
 }

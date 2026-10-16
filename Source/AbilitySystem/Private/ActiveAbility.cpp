@@ -281,6 +281,11 @@ FVector UActiveAbility::GetAbilityTargetAimLocation() const
 		? ITargetableInterface::Execute_GetTargetAimLocation(AbilityTarget)
 		: AbilityTarget->GetActorLocation();
 }
+FGameplayTag UActiveAbility::GetActivationInputTag() const
+{
+	const UAbilityComponent* Component = GetAbilityComponent();
+	return IsValid(Component) ? Component->GetAbilityInputTag(GetAbilityId()) : ActivationInputTag;
+}
 
 
 #if WITH_EDITOR

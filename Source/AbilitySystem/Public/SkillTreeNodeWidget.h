@@ -8,6 +8,7 @@
 #include "SkillTreeNodeWidget.generated.h"
 
 class UAbility;
+class UActionBarComponent;
 class USkillTreeComponent;
 class USkillTreeNodeWidget;
 class UTexture2D;
@@ -19,8 +20,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSkillTreeNodeHoverSignature, USkill
  * defaults and its lock state from the SkillTreeComponent.
  *
  * The C++ base owns the data; the UMG subclass owns the look. Implement the
- * BlueprintImplementableEvents to reflect state, and call TryUnlock/TryRefund
- * from your click handlers.
+ * BlueprintImplementableEvents to reflect state.
+ *
+ * Mouse: left-click learns, right-click refunds, Shift + left-click adds or removes it on the action bar,
+ * and a learned active ability can be dragged onto an action bar slot.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API USkillTreeNodeWidget : public UUserWidget
@@ -43,6 +46,17 @@ public:
 	/** Attempt to refund this node. Wire to right-click / refund button. */
 	UFUNCTION(BlueprintCallable, Category = "Skill Tree|UI")
 	bool TryRefund();
+
+	/** Adds this node's ability to the first empty action bar slot, or removes it if it's there. */
+	UFUNCTION(BlueprintCallable, Category = "Skill Tree|UI")
+	bool ToggleOnActionBar();
+
+	/** Learned, an active ability, and meant for the action bar. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	bool CanPlaceOnActionBar() const;
+
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	bool IsOnActionBar() const;
 
 	/* -------------------- Getters for the UMG graph -------------------- */
 
@@ -95,12 +109,29 @@ protected:
 	void OnNodeStateChanged(ESkillNodeState NewState, bool bCanUnlockNow, bool bCanRefundNow);
 	
 	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual FReply NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
+
+	/** The widget that follows the cursor while dragging. Null = the icon. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Skill Tree|UI")
+	UWidget* BuildDragVisual();
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Tree|UI")
+	FVector2D DragIconSize = FVector2D(48.0f, 48.0f);
 	virtual void NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 	virtual void NativeOnMouseLeave(const FPointerEvent& InMouseEvent) override;
 
 private:
+	UActionBarComponent* FindActionBar() const;
+
 	UPROPERTY(Transient)
 	TObjectPtr<USkillTreeComponent> TreeComponent;
+
+	UPROPERTY(Transient)
+	TSubclassOf<UAbility> AbilityClass;
+
+	/** A left press that may still become a click (learn) rather than a drag. */
+	bool bPendingClick = false;
 
 	UPROPERTY(Transient)
 	FGameplayTag NodeId;

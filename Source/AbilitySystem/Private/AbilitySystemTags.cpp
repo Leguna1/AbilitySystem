@@ -43,4 +43,8 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicPower_Max, "Stat.MagicPower.Max", "High end of the magic damage roll.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_Armor, "Stat.Armor", "Reduces physical damage taken: Armor / (Armor + Defense Constant).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MagicResist, "Stat.MagicResist", "Reduces magic damage taken: Resist / (Resist + Defense Constant).");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MaxHealth, "Stat.MaxHealth", "Max Health. When the Attribute Component has it, it drives the Resource Component.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MaxFocus, "Stat.MaxFocus", "Max Focus. When the Attribute Component has it, it drives the Resource Component.");
+
 }

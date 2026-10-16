@@ -1,5 +1,6 @@
 #include "ExperienceComponent.h"
 
+#include "AttributeComponent.h"
 #include "BaseEnemy.h"
 #include "CombatantComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -7,6 +8,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "ResourceComponent.h"
 #include "SkillTreeComponent.h"
 #include "Sound/SoundBase.h"
 
@@ -24,6 +26,14 @@ void UExperienceComponent::BeginPlay()
 
 	CombatantComponent = GetOwner()->FindComponentByClass<UCombatantComponent>();
 	SkillTreeComponent = GetOwner()->FindComponentByClass<USkillTreeComponent>();
+	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
+	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
+
+	// This component owns the level: attributes start at it.
+	if (IsValid(AttributeComponent))
+	{
+		AttributeComponent->SetCharacterLevel(Level);
+	}
 
 	if (IsValid(CombatantComponent))
 	{
@@ -65,6 +75,12 @@ void UExperienceComponent::AddExperience(const int32 Amount)
 			SkillTreeComponent->AddSkillPoints(SkillPointsPerLevel);
 		}
 
+		if (IsValid(AttributeComponent))
+		{
+			AttributeComponent->SetCharacterLevel(Level);
+			AttributeComponent->AddAttributePoints(AttributePointsPerLevel);
+		}
+
 		OnLevelUp.Broadcast(Level);
 	}
 
@@ -76,6 +92,12 @@ void UExperienceComponent::AddExperience(const int32 Amount)
 	// One effect and sound for the whole gain, not one per level stacked on top of each other.
 	if (Level > LevelBefore)
 	{
+		// After the level is applied, so the refill fills the new, higher max.
+		if (bRefillResourcesOnLevelUp && IsValid(ResourceComponent))
+		{
+			ResourceComponent->RefillResources();
+		}
+
 		PlayLevelUpFeedback();
 	}
 

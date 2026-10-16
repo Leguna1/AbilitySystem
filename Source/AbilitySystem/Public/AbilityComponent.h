@@ -292,6 +292,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Ability")
 	void FlushActivationRequests();
 	
+	/* -------------------- Input binding -------------------- */
+
+	/**
+	 * The input that starts AbilityId: its action bar slot when placed there. Without an action bar,
+	 * or for abilities that don't use it, the ability's own Activation Input Tag. None = can't be pressed.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Ability|Input")
+	FGameplayTag GetAbilityInputTag(FGameplayTag AbilityId) const;
+
+	/** Set by the Action Bar Component. */
+	void SetActionBarDrivesInput(bool bDrives) { bActionBarDrivesInput = bDrives; }
+	void SetAbilityInputOverride(FGameplayTag AbilityId, FGameplayTag InputTag);
+	void ClearAbilityInputOverrides() { AbilityInputOverrides.Reset(); }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void InitializeComponent() override;
@@ -458,5 +472,10 @@ private:
 	
 	UFUNCTION()
     void HandleOwnerResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
+	
+	/** Ability id -> the action bar slot's input. */
+	TMap<FGameplayTag, FGameplayTag> AbilityInputOverrides;
+
+	bool bActionBarDrivesInput = false;
 	
 };

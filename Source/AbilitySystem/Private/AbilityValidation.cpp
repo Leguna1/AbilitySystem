@@ -1,4 +1,5 @@
 #include "AbilityValidation.h"
+#include "Algo/Find.h"
 
 #if WITH_EDITOR
 
@@ -31,15 +32,30 @@ EDataValidationResult AbilityValidation::ValidateModifiers(
 			Result = EDataValidationResult::Invalid;
 		}
 
-		// Character attributes are evaluated without ability tags, so a scope never matches.
-		const bool bCharacterAttribute =
-			Modifier.Stat == AbilitySystemTags::Stat_MoveSpeed ||
-			Modifier.Stat == AbilitySystemTags::Stat_AttackSpeed;
+		// Read once for the whole character (walk speed, the damage formula), so a scope never matches.
+		// Attack Speed isn't here: abilities read it with their own tags.
+		static const FGameplayTag CharacterOnlyStats[] =
+		{
+			AbilitySystemTags::Stat_MoveSpeed,
+			AbilitySystemTags::Stat_AttackPower,
+			AbilitySystemTags::Stat_AttackPower_Min,
+			AbilitySystemTags::Stat_AttackPower_Max,
+			AbilitySystemTags::Stat_MagicPower,
+			AbilitySystemTags::Stat_MagicPower_Min,
+			AbilitySystemTags::Stat_MagicPower_Max,
+			AbilitySystemTags::Stat_Armor,
+			AbilitySystemTags::Stat_MagicResist,
+			AbilitySystemTags::Stat_MaxHealth,
+			AbilitySystemTags::Stat_MaxFocus
+		};
+
+
+		const bool bCharacterAttribute = Algo::Find(CharacterOnlyStats, Modifier.Stat) != nullptr;
 
 		if (bCharacterAttribute && !Modifier.AbilityScope.IsEmpty())
 		{
 			Context.AddError(FText::Format(LOCTEXT("ScopedAttribute",
-				"{0}: {1} is a character attribute, so a scoped modifier never applies. Clear Ability Scope."),
+				"{0}: {1} belongs to the whole character, so a scoped modifier never applies. Clear Ability Scope, or use Stat.Damage for an ability-only bonus."),
 				Where, FText::FromName(Modifier.Stat.GetTagName())));
 			Result = EDataValidationResult::Invalid;
 		}

@@ -4,7 +4,9 @@
 #include "Components/ActorComponent.h"
 #include "ExperienceComponent.generated.h"
 
+class UAttributeComponent;
 class UCombatantComponent;
+class UResourceComponent;
 class UNiagaraSystem;
 class USkillTreeComponent;
 class USoundBase;
@@ -13,8 +15,10 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FExperienceChangedSignature, int3
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLevelUpSignature, int32, NewLevel);
 
 /**
- * Experience and levels. Kills give experience (the victim's Experience Reward), and every level
- * gained gives skill points to the owner's Skill Tree Component.
+ * Experience and levels. Kills give experience (the victim's Experience Reward). Every level gained:
+ *   - sets the Attribute Component's level (its Growth Per Level applies) and gives attribute points,
+ *   - gives skill points to the Skill Tree Component,
+ *   - refills Health and Focus (optional).
  *
  * Experience to go from level L to L+1 = Base Experience x L ^ Experience Growth.
  * With 100 and 1.5: 100, 283, 520, 800, 1118... so later levels take longer.
@@ -88,6 +92,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Experience|Rewards", meta = (ClampMin = "0"))
 	int32 SkillPointsPerLevel = 1;
 
+	/** Given to the Attribute Component per level gained, to spend on core stats. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Experience|Rewards", meta = (ClampMin = "0"))
+	int32 AttributePointsPerLevel = 5;
+
+	/** Level up fills Health and Focus: one more kill to level can save the fight. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Experience|Rewards")
+	bool bRefillResourcesOnLevelUp = true;
+
 	/** Played on the owner when a level is gained (once, even when one kill gives several levels). */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Experience|Level Up")
 	TObjectPtr<UNiagaraSystem> LevelUpEffect;
@@ -113,6 +125,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<USkillTreeComponent> SkillTreeComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAttributeComponent> AttributeComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UResourceComponent> ResourceComponent;
 
 	int32 Level = 1;
 	int32 Experience = 0;

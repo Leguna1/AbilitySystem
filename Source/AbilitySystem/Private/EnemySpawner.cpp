@@ -179,8 +179,8 @@ bool AEnemySpawner::FindSpawnLocation(FVector& OutLocation) const
 	const FVector Origin = GetActorLocation();
 	OutLocation = Origin;
 
-		if (const UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
-		{
+	if (const UNavigationSystemV1* NavSystem = FNavigationSystem::GetCurrent<UNavigationSystemV1>(GetWorld()))
+	{
 		FNavLocation NavLocation;
 
 		if (NavSystem->GetRandomReachablePointInRadius(Origin, SpawnRadius, NavLocation))

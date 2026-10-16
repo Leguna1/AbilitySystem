@@ -158,8 +158,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|References")
 	UMotionWarpingComponent* GetMotionWarpingComponent() const { return MotionWarpingComponent; }
 
-	UFUNCTION(BlueprintPure, Category = "Ability|Input")
-	FGameplayTag GetActivationInputTag() const { return ActivationInputTag; }
+	/** The input this ability answers to right now: its action bar slot when it's on the bar, otherwise its own. */
+	FGameplayTag GetActivationInputTag() const;
+
+	
+	/** The Activation Input Tag set in class defaults, ignoring the action bar. */
+	FGameplayTag GetDefaultActivationInputTag() const { return ActivationInputTag; }
+
+	/** True when this ability is placed on the action bar instead of having a fixed key. */
+	bool UsesActionBar() const { return bPlaceOnActionBar; }
+
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
 	float GetFocusCost() const { return FocusCost; }
@@ -349,6 +357,15 @@ protected:
 	/** Optional features for this ability. Click + and pick one to add it, e.g. Pierce or Apply Status on Hit. */
 	UPROPERTY(EditDefaultsOnly, Instanced, BlueprintReadOnly, Category = "Features")
 	TArray<TObjectPtr<UAbilityFragment>> Fragments;
+	
+	/**
+	 * Placed on the action bar by the player; fires from its slot's key, and not at all while unplaced.
+	 * Off for fixed-key abilities (basic attack, dodge): they keep Activation Input Tag.
+	 * Only matters when the owner has an Action Bar Component.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Input")
+	bool bPlaceOnActionBar = true;
+
 
 private:
 	friend class UAbilityComponent;

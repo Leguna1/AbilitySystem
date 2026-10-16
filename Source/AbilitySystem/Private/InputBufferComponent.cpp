@@ -160,8 +160,8 @@ void UInputBufferComponent::BuildActivationCandidates(TArray<FInputActivationCan
 			const UActiveAbility* AbilityDefaults = Cast<UActiveAbility>(AbilityComponent->GetAbilityDefaults(AbilityClass));
 
 			if (!IsValid(AbilityDefaults) ||
-				!AbilityDefaults->GetActivationInputTag().IsValid() ||
-				!AbilityDefaults->GetActivationInputTag().MatchesTagExact(WaitingInput.InputTag) ||
+				!AbilityComponent->GetAbilityInputTag(AbilityDefaults->GetAbilityId()).IsValid() ||
+				!AbilityComponent->GetAbilityInputTag(AbilityDefaults->GetAbilityId()).MatchesTagExact(WaitingInput.InputTag) ||
 				AbilityComponent->GetAbilityRank(AbilityClass) <= 0)
 			{
 				continue;
@@ -209,7 +209,7 @@ float UInputBufferComponent::GetLongestBufferDurationForInput(const FGameplayTag
 	{
 		const UActiveAbility* AbilityDefaults = Cast<UActiveAbility>(AbilityComponent->GetAbilityDefaults(AbilityClass));
 
-		if (!IsValid(AbilityDefaults) || !AbilityDefaults->GetActivationInputTag().MatchesTagExact(InputTag))
+		if (!IsValid(AbilityDefaults) || !AbilityComponent->GetAbilityInputTag(AbilityDefaults->GetAbilityId()).MatchesTagExact(InputTag))
 		{
 			continue;
 		}

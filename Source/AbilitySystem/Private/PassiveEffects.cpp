@@ -9,6 +9,7 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "ReactiveAbility.h"
+#include "ResourceComponent.h"
 #include "Sound/SoundBase.h"
 
 #if WITH_EDITOR
@@ -261,5 +262,29 @@ void UPassiveEffect_SendGameplayEvent::Execute(UReactiveAbility& Reactive, const
 	if (UAbilityComponent* OwnerAbilities = Reactive.GetAbilityComponent(); IsValid(OwnerAbilities) && EventTag.IsValid())
 	{
 		OwnerAbilities->BroadcastGameplayEvent(EventTag, nullptr);
+	}
+}
+
+void UPassiveEffect_RestoreResource::Execute(UReactiveAbility& Reactive, const FPassiveEventContext& Event) const
+{
+	AActor* Target = ResolveTarget(Reactive, Event, ApplyTo);
+	UResourceComponent* Resources = IsValid(Target) ? Target->FindComponentByClass<UResourceComponent>() : nullptr;
+
+	if (!IsValid(Resources) || Resources->IsDead())
+	{
+		return;
+	}
+
+	const int32 Rank = Reactive.GetAbilityRank();
+	const float MaxValue = Resources->GetResourceValue(Resource, EResourceValueType::Max);
+
+	const float Amount =
+		AmountByRank.Get(Rank) +
+		MaxValue * PercentOfMaxByRank.Get(Rank) +
+		FMath::Max(Event.Damage, 0.0f) * PercentOfDamageByRank.Get(Rank);
+
+	if (Amount > 0.0f)
+	{
+		Resources->ModifyResource(Resource, EResourceValueType::Current, Amount);
 	}
 }

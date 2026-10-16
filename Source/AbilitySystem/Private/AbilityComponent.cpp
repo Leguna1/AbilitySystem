@@ -1572,3 +1572,30 @@ int32 UAbilityComponent::ReduceCooldowns(const FGameplayTagContainer& AbilityIds
 
 	return ChangedCount;
 }
+FGameplayTag UAbilityComponent::GetAbilityInputTag(const FGameplayTag AbilityId) const
+{
+	if (const FGameplayTag* SlotInput = AbilityInputOverrides.Find(AbilityId))
+	{
+		return *SlotInput;
+	}
+
+	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(FindAbilityClassById(AbilityId)));
+
+	if (!IsValid(Defaults))
+	{
+		return FGameplayTag();
+	}
+
+	// A bar ability that isn't on the bar has no key.
+	return bActionBarDrivesInput && Defaults->UsesActionBar()
+		? FGameplayTag()
+		: Defaults->GetDefaultActivationInputTag();
+}
+
+void UAbilityComponent::SetAbilityInputOverride(const FGameplayTag AbilityId, const FGameplayTag InputTag)
+{
+	if (AbilityId.IsValid() && InputTag.IsValid())
+	{
+		AbilityInputOverrides.Add(AbilityId, InputTag);
+	}
+}

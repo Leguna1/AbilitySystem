@@ -1,11 +1,16 @@
 #include "ResourceComponent.h"
 
+#include "AbilitySystemTags.h"
+#include "AttributeComponent.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
 UResourceComponent::UResourceComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
+
+	MaxHealthAttribute = AbilitySystemTags::Stat_MaxHealth;
+	MaxFocusAttribute = AbilitySystemTags::Stat_MaxFocus;
 }
 
 void UResourceComponent::BeginPlay()
@@ -28,6 +33,18 @@ void UResourceComponent::BeginPlay()
 
 	bIsDead = CurrentHealth <= 0.0f;
 
+	// Max values follow the attributes from here on. If the Attribute Component starts after us,
+	// its first recalculation arrives as an attribute change and is applied the same way.
+	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
+
+	if (IsValid(AttributeComponent))
+	{
+		InitializeMaxFromAttribute(EResourceType::Health, MaxHealthAttribute);
+		InitializeMaxFromAttribute(EResourceType::Focus, MaxFocusAttribute);
+
+		AttributeComponent->OnAttributeChanged.AddDynamic(this, &UResourceComponent::HandleAttributeChanged);
+	}
+
 	RestartFocusRegeneration();
 }
 
@@ -35,6 +52,11 @@ void UResourceComponent::EndPlay(
 	const EEndPlayReason::Type EndPlayReason)
 {
 	StopAllRegeneration();
+
+	if (IsValid(AttributeComponent))
+	{
+		AttributeComponent->OnAttributeChanged.RemoveDynamic(this, &UResourceComponent::HandleAttributeChanged);
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -92,6 +114,12 @@ float UResourceComponent::ModifyCurrentResource(
 	{
 	case EResourceType::Health:
 	{
+		// The dead stay dead until Revive; healing is ignored (before changing anything).
+		if (bIsDead && ModifyValue > 0.0f)
+		{
+			return CurrentHealth;
+		}
+
 		const float OldHealth = CurrentHealth;
 
 		CurrentHealth = FMath::Clamp(
@@ -102,11 +130,6 @@ float UResourceComponent::ModifyCurrentResource(
 
 		if (!FMath::IsNearlyEqual(OldHealth, CurrentHealth))
 		{
-			// The dead stay dead until Revive; healing is ignored.
-			if (bIsDead && ModifyValue > 0.0f)
-			{
-				return CurrentHealth;
-			}
 			BroadcastResourceChange(
 				EResourceType::Health,
 				EResourceValueType::Current,
@@ -508,4 +531,56 @@ bool UResourceComponent::Revive(const float HealthFraction)
 	BroadcastResourceChange(EResourceType::Health, EResourceValueType::Current, OldHealth, CurrentHealth);
 	OnRevived.Broadcast();
 	return true;
+}
+
+void UResourceComponent::RefillResources()
+{
+	if (!bIsDead)
+	{
+		ModifyResource(EResourceType::Health, EResourceValueType::Current, MaxHealth - CurrentHealth);
+	}
+
+	ModifyResource(EResourceType::Focus, EResourceValueType::Current, MaxFocus - CurrentFocus);
+}
+
+void UResourceComponent::HandleAttributeChanged(const FGameplayTag Attribute, const float OldValue, const float NewValue)
+{
+	if (Attribute.IsValid() && Attribute == MaxHealthAttribute)
+	{
+		ApplyMaxFromAttribute(EResourceType::Health, NewValue);
+	}
+	else if (Attribute.IsValid() && Attribute == MaxFocusAttribute)
+	{
+		ApplyMaxFromAttribute(EResourceType::Focus, NewValue);
+	}
+}
+
+void UResourceComponent::ApplyMaxFromAttribute(const EResourceType ResourceType, const float NewMax)
+{
+	const float OldMax = GetResourceValue(ResourceType, EResourceValueType::Max);
+	const float Difference = FMath::Max(NewMax, 0.0f) - OldMax;
+
+	ModifyResource(ResourceType, EResourceValueType::Max, Difference);
+
+	// More max = the same amount more current: +30 Max Health on level up isn't 30 missing health.
+	if (Difference > 0.0f)
+	{
+		ModifyResource(ResourceType, EResourceValueType::Current, Difference);
+	}
+}
+
+void UResourceComponent::InitializeMaxFromAttribute(const EResourceType ResourceType, const FGameplayTag Attribute)
+{
+	if (!Attribute.IsValid() || !AttributeComponent->HasAttribute(Attribute))
+	{
+		return;
+	}
+
+	float& Max = ResourceType == EResourceType::Health ? MaxHealth : MaxFocus;
+	float& Current = ResourceType == EResourceType::Health ? CurrentHealth : CurrentFocus;
+
+	const float Fraction = Max > 0.0f ? Current / Max : 1.0f;
+
+	Max = FMath::Max(AttributeComponent->GetAttributeValue(Attribute), 0.0f);
+	Current = FMath::Clamp(Max * Fraction, 0.0f, Max);
 }

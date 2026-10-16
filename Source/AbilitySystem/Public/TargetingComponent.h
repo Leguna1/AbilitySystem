@@ -156,6 +156,20 @@ protected:
 	TEnumAsByte<ECollisionChannel> LineOfSightTraceChannel = ECC_Visibility;
 
 	/**
+	 * Other characters don't block line of sight. Without this, a golem walking between you and
+	 * your target breaks the lock instantly.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting|Search", meta = (EditCondition = "bRequireLineOfSight"))
+	bool bPawnsBlockLineOfSight = false;
+
+	/**
+	 * Seconds the held target may stay out of sight (behind a pillar, a tree) before it's released.
+	 * New targets still need clear sight to be picked.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting|Search", meta = (ClampMin = "0.0", EditCondition = "bRequireLineOfSight"))
+	float LostSightGraceTime = 1.5f;
+
+	/**
 	 * Full cone in degrees around the CAMERA look direction within which a
 	 * candidate accrues framing intent. Keep it tighter than AcquisitionAngle
 	 * so not everything on screen accumulates; 70 means 35 degrees either side.
@@ -215,6 +229,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting|Intent", meta = (ClampMin = "0.0"))
 	float TargetStickinessBonus = 0.4f;
 
+	/**
+	 * Intent per second every candidate gains just by being near: full at your feet, none at
+	 * Acquisition Range. Keeps the enemy that's on you targeted while you run with the camera
+	 * pointed ahead, and gives a target when you aren't framing anyone. 0 = framing and movement only.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting|Intent", meta = (ClampMin = "0.0"))
+	float ProximityWeight = 0.6f;
+
+	/** After a switch, no other switch for this long (a lost or dead target is still replaced at once). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting|Intent", meta = (ClampMin = "0.0"))
+	float MinTimeBetweenSwitches = 0.75f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Targeting")
 	bool bAutoRefresh = true;
 
@@ -231,6 +257,10 @@ private:
 	void FindTargetCandidates(TArray<AActor*>& OutCandidates) const;
 	bool IsInsideAcquisitionAngle(AActor* Candidate) const;
 	bool HasLineOfSightTo(AActor* Candidate) const;
+
+	/** True while the held target is still in range, targetable and seen (or within the lost-sight grace). */
+	bool ShouldKeepCurrentTarget(float DeltaTime);
+
 	FVector GetTargetingOrigin() const;
 	FVector GetTargetingForwardVector() const;
 
@@ -255,7 +285,12 @@ private:
 	FVector PreviousMoveDir = FVector::ForwardVector;
 
 	FTimerHandle RefreshTimerHandle;
-	
+
+	/** How long the held target has been out of sight. */
+	float TimeWithoutSight = 0.0f;
+
+	double LastSwitchTime = -1.0e9;
+
 	UFUNCTION()
 	void HandleTargetDied(AActor* Killer);
 };

@@ -2,7 +2,10 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "ResourceComponent.generated.h"
+
+class UAttributeComponent;
 
 UENUM(BlueprintType)
 enum class EResourceType : uint8
@@ -89,12 +92,28 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Resources|Events")
 	FOnRevived OnRevived;
 
+	/** Fills Health and Focus to max (not while dead: that's Revive). Used on level up. */
+	UFUNCTION(BlueprintCallable, Category = "Resources")
+	void RefillResources();
+
 protected:
 	virtual void BeginPlay() override;
 
 	virtual void EndPlay(
 		const EEndPlayReason::Type EndPlayReason
 	) override;
+
+	/* -------------------- Max from attributes -------------------- */
+
+	/**
+	 * When the Attribute Component has this attribute, it decides Max Health (levels, Vitality, buffs).
+	 * Max Health below is then only the fallback for characters without it.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resources|Attributes", meta = (Categories = "Stat"))
+	FGameplayTag MaxHealthAttribute;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resources|Attributes", meta = (Categories = "Stat"))
+	FGameplayTag MaxFocusAttribute;
 
 	/* -------------------- Health -------------------- */
 
@@ -243,6 +262,18 @@ private:
 	);
 
 	void HandleHealthReduced();
+
+	UFUNCTION()
+	void HandleAttributeChanged(FGameplayTag Attribute, float OldValue, float NewValue);
+
+	/** Sets Max to NewMax. A higher max also adds the difference to Current, so growing never looks like damage. */
+	void ApplyMaxFromAttribute(EResourceType ResourceType, float NewMax);
+
+	/** At start: Max from the attribute, Current kept at the same fraction (full stays full). */
+	void InitializeMaxFromAttribute(EResourceType ResourceType, FGameplayTag Attribute);
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAttributeComponent> AttributeComponent;
 
 	void StartHealthRegeneration();
 	void RegenerateHealth();

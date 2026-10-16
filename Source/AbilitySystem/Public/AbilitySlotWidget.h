@@ -8,18 +8,21 @@
 #include "AbilitySlotWidget.generated.h"
 
 class UAbility;
-class UActiveAbility;
 class UAbilityComponent;
+class UActionBarComponent;
+class UActiveAbility;
 class UTexture2D;
 class UWidget;
 
 /**
- * Displays a single granted ability: icon, display name, keybind, and live
- * active/inactive state.
+ * One action bar slot: icon, name, keybind, cooldown, affordability, active state. May be empty.
  *
- * The C++ base owns the data plumbing. Bind the visuals in a UMG subclass:
- * override the BlueprintImplementableEvents below to push values into your
- * widgets, or read the BlueprintReadOnly getters directly in the graph.
+ * On an action bar it also edits the bar:
+ *   - drag it onto another slot to swap them,
+ *   - drag it off the bar, or right-click it, to empty it,
+ *   - drop an ability on it (from the skill tree or another slot) to place it here.
+ *
+ * The C++ base owns the data; the Widget Blueprint owns the look through the events below.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UAbilitySlotWidget : public UUserWidget
@@ -27,12 +30,22 @@ class ABILITYSYSTEM_API UAbilitySlotWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
-	/**
-	 * Points this slot at an ability class granted on the given component.
-	 * Reads display data from the class default object; no instance required.
-	 */
+	/** Points this slot at an ability granted on the component. A null class empties the slot. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|UI")
 	void InitializeSlot(UAbilityComponent* InAbilityComponent, TSubclassOf<UAbility> InAbilityClass);
+
+	/** Makes this slot SlotIndex of an action bar: its keybind, and drag-and-drop editing. */
+	UFUNCTION(BlueprintCallable, Category = "Ability|UI")
+	void SetActionBarSlot(UActionBarComponent* InActionBar, int32 InSlotIndex);
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	bool IsEmpty() const;
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	int32 GetSlotIndex() const { return SlotIndex; }
+
+	UFUNCTION(BlueprintPure, Category = "Ability|UI")
+	TSubclassOf<UAbility> GetAbilityClass() const { return AbilityClass; }
 
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	FGameplayTag GetSlotAbilityId() const { return SlotAbilityId; }
@@ -46,13 +59,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	UTexture2D* GetIcon() const { return Icon; }
 
-	UFUNCTION(BlueprintPure, Category = "Ability|UI")
-	FGameplayTag GetActivationInputTag() const { return ActivationInputTag; }
-
+	/** The action bar slot's label, or the ability's own when not on a bar. */
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	FText GetKeybindLabel() const { return KeybindLabel; }
 
-	/** Current cost per payment, including modifiers. */
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	float GetFocusCost() const { return FocusCost; }
 
@@ -64,57 +74,61 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|UI")
 	bool IsAbilityActive() const { return bIsActive; }
-	
-	UFUNCTION(BlueprintPure, Category = "Ability|UI")
-	bool IsLocked() const { return AbilityRank <= 0; }
-
-	UFUNCTION(BlueprintPure, Category = "Ability|UI")
-	int32 GetAbilityRank() const { return AbilityRank; }
-
-	UFUNCTION(BlueprintPure, Category = "Ability|UI")
-	int32 GetMaxRank() const { return MaxRank; }
 
 protected:
 	virtual void NativeDestruct() override;
 
-	/** Called once after InitializeSlot resolves the display data. Populate static visuals here. */
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
+	virtual void NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation) override;
+	virtual bool NativeOnDrop(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragEnter(const FGeometry& InGeometry, const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragLeave(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+	virtual void NativeOnDragCancelled(const FDragDropEvent& InDragDropEvent, UDragDropOperation* InOperation) override;
+
+	/** Right-click empties the slot. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
+	bool bRightClickRemoves = true;
+
+	/** Dragging the ability off the bar and letting go empties the slot. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
+	bool bRemoveWhenDraggedOff = true;
+
+	/** Size of the default drag image (the icon) when Build Drag Visual returns nothing. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
+	FVector2D DragIconSize = FVector2D(48.0f, 48.0f);
+
+	/** Static visuals (icon, name, keybind). Called on init and whenever the slot's ability changes, empty included. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnSlotInitialized();
 
-	/**
-	 * Return the widget to show as this slot's tooltip on hover.
-	 * Build a tooltip widget here and read GetDisplayName/GetDescription/GetKeybindLabel
-	 * to fill it. Return null for no tooltip.
-	 */
+	/** Show or hide the icon and overlays. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnSlotEmptyChanged(bool bEmpty);
+
+	/** Highlight while something is dragged over this slot. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	void OnDragHoverChanged(bool bHovered);
+
+	/** The widget that follows the cursor while dragging. Null = the icon. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
+	UWidget* BuildDragVisual();
+
+	/** Return the tooltip widget on hover, or null for none. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	UWidget* BuildTooltipWidget();
 
-	/** Called whenever this ability becomes the active ability or stops being active. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnActiveStateChanged(bool bActive);
 
-	/** Called when the ability enters or leaves cooldown. Toggle your sweep overlay here. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnCooldownStateChanged(bool bOnCooldownNow);
 
-	/**
-	 * Called each poll tick while on cooldown. Drive your radial/linear sweep from
-	 * Progress (1 = just started, 0 = ready) and show Remaining seconds if desired.
-	 */
+	/** Each poll while on cooldown. Progress: 1 = just started, 0 = ready. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnCooldownUpdated(float Remaining, float Progress);
 
-	/** Called when affordability changes. Grey out / restore the slot here. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnAffordabilityChanged(bool bCanAffordNow);
-	
-	/** Called after OnSlotInitialized and whenever the rank changes. bLocked = rank 0: grey out / show a lock. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
-	void OnRankChanged(int32 NewRank, int32 NewMaxRank, bool bLocked);
-	
-	/** Called on init and whenever modifiers change the cost. */
-	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
-	void OnFocusCostChanged(float NewCost);
 
 private:
 	UFUNCTION()
@@ -132,23 +146,15 @@ private:
 	UFUNCTION()
 	void HandleResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
 
-	UFUNCTION()
-	void HandleAbilityRankChanged(FGameplayTag AbilityId, int32 OldRank, int32 NewRank);
+	void Bind();
+	void Unbind();
+	void ResetRuntimeState();
 
-	void RefreshRank();
-
-	UPROPERTY(Transient)
-	int32 AbilityRank = 0;
-
-	UPROPERTY(Transient)
-	int32 MaxRank = 0;
-	
 	void SetActive(bool bNewActive);
-
 	void BeginCooldownPoll();
+	void StopCooldownPoll();
 	void TickCooldown();
 	void RefreshAffordability();
-
 	void SetCooldownState(bool bNewOnCooldown);
 	void SetAffordable(bool bNewCanAfford);
 
@@ -156,46 +162,29 @@ private:
 	TObjectPtr<UAbilityComponent> AbilityComponent;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UActionBarComponent> ActionBar;
+
+	UPROPERTY(Transient)
 	TSubclassOf<UAbility> AbilityClass;
 
-	UPROPERTY(Transient)
+	int32 SlotIndex = INDEX_NONE;
+
 	FGameplayTag SlotAbilityId;
-
-	UPROPERTY(Transient)
 	FText DisplayName;
-
-	UPROPERTY(Transient)
 	FText Description;
+	FText KeybindLabel;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UTexture2D> Icon;
 
-	UPROPERTY(Transient)
-	FGameplayTag ActivationInputTag;
-
-	UPROPERTY(Transient)
-	FText KeybindLabel;
-
-	UPROPERTY(Transient)
 	float FocusCost = 0.0f;
-
-	UPROPERTY(Transient)
 	bool bOnCooldown = false;
-
-	UPROPERTY(Transient)
 	bool bCanAfford = true;
+	bool bIsActive = false;
 
 	/** Cooldown sweep poll rate in seconds. Runs only while on cooldown. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|UI", meta = (AllowPrivateAccess = "true"))
-	float CooldownPollInterval = 0.1f;
+	UPROPERTY(EditDefaultsOnly, Category = "Ability|UI", meta = (AllowPrivateAccess = "true"))
+	float CooldownPollInterval = 0.05f;
 
 	FTimerHandle CooldownTimerHandle;
-
-	UPROPERTY(Transient)
-	bool bIsActive = false;
-	
-	UFUNCTION()
-	void HandleModifiersChanged();
-
-	void RefreshFocusCost();
 };

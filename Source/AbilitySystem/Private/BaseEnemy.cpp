@@ -13,6 +13,7 @@
 #include "Components/WidgetComponent.h"
 #include "ResourceWidget.h"
 #include "ActiveEffectsBarWidget.h"
+#include "PoiseBarWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "Blueprint/WidgetTree.h"
 
@@ -89,6 +90,10 @@ void ABaseEnemy::InitializeNameplate()
 		else if (UActiveEffectsBarWidget* EffectsBar = Cast<UActiveEffectsBarWidget>(NameplateWidget))
 		{
 			EffectsBar->InitializeEffectsBar(GetCombatantComponent());
+		}
+		else if (UPoiseBarWidget* PoiseBar = Cast<UPoiseBarWidget>(NameplateWidget))
+		{
+			PoiseBar->SetCombatantComponent(GetCombatantComponent());
 		}
 	}
 }

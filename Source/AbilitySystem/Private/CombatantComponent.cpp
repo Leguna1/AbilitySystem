@@ -265,6 +265,11 @@ float UCombatantComponent::GetPoise() const
 	return FMath::Min(StoredPoise + Recovered, MaxPoise);
 }
 
+float UCombatantComponent::GetPoisePercent() const
+{
+	return MaxPoise > 0.0f ? FMath::Clamp(GetPoise() / MaxPoise, 0.0f, 1.0f) : 0.0f;
+}
+
 bool UCombatantComponent::IsStaggerImmune() const
 {
 	return GetWorldTime() < StaggerImmuneUntil;
@@ -304,12 +309,18 @@ FHitReactionResult UCombatantComponent::ResolveHitReaction(const FAbilityPayload
 	const bool bBreaksPoise = Impact.bForceReaction || StoredPoise <= 0.0f;
 	const bool bCanBreak = !IsStaggerImmune() && !HasCombatTag(AbilitySystemTags::State_SuperArmor);
 
+	const float PoiseAfterHit = StoredPoise;
+
 	if (Impact.Reaction == EHitReactionType::Flinch || !bBreaksPoise || !bCanBreak)
 	{
 		Result.Reaction = EHitReactionType::Flinch;
+		OnPoiseDamaged.Broadcast(PoiseAfterHit, MaxPoise, false);
 	}
 	else
 	{
+		// Announced at 0 before the refill below, so bars can show the break.
+		OnPoiseDamaged.Broadcast(0.0f, MaxPoise, true);
+
 		Result.Reaction = Impact.Reaction;
 		Result.KnockbackSpeed = Impact.KnockbackSpeed;
 		Result.KnockbackLift = Impact.KnockbackLift;

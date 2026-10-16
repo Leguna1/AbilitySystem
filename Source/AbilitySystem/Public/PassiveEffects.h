@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "ModifierTypes.h"
 #include "PassiveTypes.h"
+#include "ResourceComponent.h"
 #include "UObject/Object.h"
 #include "PassiveEffects.generated.h"
 
@@ -206,4 +207,36 @@ public:
 protected:
 	UPROPERTY(EditAnywhere, Category = "Event", meta = (Categories = "Event"))
 	FGameplayTag EventTag;
+};
+
+/**
+ * Restores Health or Focus: a flat amount, a share of max, and/or a share of the damage in the event.
+ * Second Wind (focus on cast), lifesteal (health from Damage Dealt), a heal on kill.
+ */
+UCLASS(meta = (DisplayName = "Restore Resource"))
+class ABILITYSYSTEM_API UPassiveEffect_RestoreResource : public UPassiveEffect
+{
+	GENERATED_BODY()
+
+public:
+	virtual void Execute(UReactiveAbility& Reactive, const FPassiveEventContext& Event) const override;
+
+protected:
+	UPROPERTY(EditAnywhere, Category = "Restore")
+	EPassiveEffectTarget ApplyTo = EPassiveEffectTarget::Self;
+
+	UPROPERTY(EditAnywhere, Category = "Restore")
+	EResourceType Resource = EResourceType::Health;
+
+	/** Flat amount, by rank. */
+	UPROPERTY(EditAnywhere, Category = "Restore")
+	FAbilityRankedFloat AmountByRank = FAbilityRankedFloat(0.0f);
+
+	/** Share of the resource's max, by rank: 0.4 = 40%. */
+	UPROPERTY(EditAnywhere, Category = "Restore")
+	FAbilityRankedFloat PercentOfMaxByRank = FAbilityRankedFloat(0.0f);
+
+	/** Share of the event's damage, by rank: 0.1 = 10% lifesteal. Only Damage Dealt and Hit Received carry damage. */
+	UPROPERTY(EditAnywhere, Category = "Restore")
+	FAbilityRankedFloat PercentOfDamageByRank = FAbilityRankedFloat(0.0f);
 };

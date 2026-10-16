@@ -18,6 +18,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantKilledSignature, AActor*, 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantRevivedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCombatantEffectsChangedSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCombatantHitReactionSignature, const FHitReactionResult&, Result);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCombatantPoiseDamagedSignature, float, Poise, float, MaxPoise, bool, bBroken);
 
 /**
  * Makes an actor a combat participant: receives payloads, applies damage to
@@ -139,6 +140,17 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
 	float GetMaxPoise() const { return MaxPoise; }
+
+	/** 0..1, including recovery. */
+	UFUNCTION(BlueprintPure, Category = "Combat|Poise")
+	float GetPoisePercent() const;
+
+	/**
+	 * A hit took poise. Poise is what's left (0 on a break, before it refills).
+	 * Recovery fires no event: read Get Poise while showing it (the poise bar does).
+	 */
+	UPROPERTY(BlueprintAssignable, Category = "Combat|Events")
+	FCombatantPoiseDamagedSignature OnPoiseDamaged;
 
 	/** True while a recent break prevents another one. */
 	UFUNCTION(BlueprintPure, Category = "Combat|Poise")

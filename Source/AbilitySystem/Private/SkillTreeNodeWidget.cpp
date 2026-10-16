@@ -3,6 +3,10 @@
 #include "Ability.h"
 #include "SkillTreeAsset.h"
 #include "InputCoreTypes.h"
+#include "AbilityDragDropOperation.h"
+#include "ActionBarComponent.h"
+#include "Blueprint/WidgetBlueprintLibrary.h"
+#include "Components/Image.h"
 
 void USkillTreeNodeWidget::InitializeNode(USkillTreeComponent* InTreeComponent, FGameplayTag InNodeId)
 {
@@ -27,6 +31,7 @@ void USkillTreeNodeWidget::InitializeNode(USkillTreeComponent* InTreeComponent, 
 	}
 
 	Kind = Node->Kind;
+	AbilityClass = Node->AbilityClass;
 	Cost = Node->Cost;
 	CanvasPosition = Node->CanvasPosition;
 
@@ -82,6 +87,19 @@ FReply USkillTreeNodeWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 
 	if (Button == EKeys::LeftMouseButton)
 	{
+		if (InMouseEvent.IsShiftDown())
+		{
+			ToggleOnActionBar();
+			return FReply::Handled();
+		}
+
+		// Placeable: wait to see whether this is a click (learn) or a drag (to the bar).
+		if (CanPlaceOnActionBar())
+		{
+			bPendingClick = true;
+			return UWidgetBlueprintLibrary::DetectDragIfPressed(InMouseEvent, this, EKeys::LeftMouseButton).NativeReply;
+		}
+
 		TryUnlock();
 		return FReply::Handled();
 	}
@@ -93,6 +111,71 @@ FReply USkillTreeNodeWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry
 	}
 
 	return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+}
+
+FReply USkillTreeNodeWidget::NativeOnMouseButtonUp(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (InMouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && bPendingClick)
+	{
+		bPendingClick = false;
+		TryUnlock();
+		return FReply::Handled().ReleaseMouseCapture();
+	}
+
+	return Super::NativeOnMouseButtonUp(InGeometry, InMouseEvent);
+}
+
+void USkillTreeNodeWidget::NativeOnDragDetected(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent, UDragDropOperation*& OutOperation)
+{
+	bPendingClick = false;
+
+	if (!CanPlaceOnActionBar())
+	{
+		return;
+	}
+
+	UAbilityDragDropOperation* Operation = NewObject<UAbilityDragDropOperation>(this);
+	Operation->AbilityClass = AbilityClass;
+	Operation->SourceSlotIndex = INDEX_NONE;
+	Operation->Pivot = EDragPivot::CenterCenter;
+
+	UWidget* Visual = BuildDragVisual();
+
+	if (!IsValid(Visual) && IsValid(Icon))
+	{
+		UImage* IconImage = NewObject<UImage>(this);
+		IconImage->SetBrushFromTexture(Icon);
+		IconImage->SetDesiredSizeOverride(DragIconSize);
+		Visual = IconImage;
+	}
+
+	Operation->DefaultDragVisual = Visual;
+	OutOperation = Operation;
+}
+
+UActionBarComponent* USkillTreeNodeWidget::FindActionBar() const
+{
+	return IsValid(TreeComponent) && IsValid(TreeComponent->GetOwner())
+		? TreeComponent->GetOwner()->FindComponentByClass<UActionBarComponent>()
+		: nullptr;
+}
+
+bool USkillTreeNodeWidget::CanPlaceOnActionBar() const
+{
+	const UActionBarComponent* ActionBar = FindActionBar();
+	return IsValid(ActionBar) && ActionBar->CanPlaceAbility(AbilityClass);
+}
+
+bool USkillTreeNodeWidget::IsOnActionBar() const
+{
+	const UActionBarComponent* ActionBar = FindActionBar();
+	return IsValid(ActionBar) && ActionBar->FindSlotOfAbility(AbilityClass) != INDEX_NONE;
+}
+
+bool USkillTreeNodeWidget::ToggleOnActionBar()
+{
+	UActionBarComponent* ActionBar = FindActionBar();
+	return IsValid(ActionBar) && ActionBar->ToggleAbility(AbilityClass);
 }
 
 void USkillTreeNodeWidget::NativeOnMouseEnter(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
