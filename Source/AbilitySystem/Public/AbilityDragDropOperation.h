@@ -5,6 +5,7 @@
 #include "AbilityDragDropOperation.generated.h"
 
 class UAbility;
+class UActionBarComponent;
 
 /** An ability being dragged: from a skill tree node (Source Slot -1) or from an action bar slot. */
 UCLASS()
@@ -19,4 +20,8 @@ public:
 	/** The action bar slot it came from, or -1 when dragged from outside the bar. */
 	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
 	int32 SourceSlotIndex = INDEX_NONE;
+
+	/** The bar Source Slot Index belongs to (yours or the companion's), so slots only swap within one bar. */
+	UPROPERTY(BlueprintReadOnly, Category = "Action Bar")
+	TWeakObjectPtr<UActionBarComponent> SourceActionBar;
 };

@@ -1,0 +1,167 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
+#include "CompanionAIController.h"
+#include "CompanionComponent.generated.h"
+
+class ACharacter;
+class ACompanionCharacter;
+class UAbility;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCompanionChangedSignature, ACompanionCharacter*, Companion);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCompanionStanceChangedSignature, ECompanionStance, Stance);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FCompanionAutoCastChangedSignature, FGameplayTag, AbilityId, bool, bAutoCast);
+
+/** "While the leader has Required Ability learned, the companion has Companion Ability." */
+USTRUCT(BlueprintType)
+struct FCompanionAbilityGrant
+{
+	GENERATED_BODY()
+
+	/** The leader's skill (a summon path, an upgrade). Empty = always granted. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Companion")
+	TSubclassOf<UAbility> RequiredAbility;
+
+	/** Given to the companion: an attack for its bar, or a passive (Feral Bond). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Companion")
+	TSubclassOf<UAbility> CompanionAbility;
+
+	/** The companion's ability has the same rank as the leader's Required Ability. Off = its own starting rank. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Companion")
+	bool bRankFollowsRequiredAbility = true;
+};
+
+/**
+ * The leader's side of a companion. Put it on the player.
+ *   - Spawns it and tracks it; starts the summon cooldown when it dies.
+ *   - Keeps its level in step with the leader's.
+ *   - Gives it abilities from the leader's learned skills (Ability Grants), live as skills are learned.
+ *   - Stance and auto-cast choices, kept across deaths and re-summons.
+ *   - Companion bar input: Activate Companion Slot uses that slot's ability on the leader's target.
+ * The HUD binds On Companion Changed to show (or hide) the companion's health and bar.
+ */
+UCLASS(ClassGroup = (Companion), meta = (BlueprintSpawnableComponent))
+class ABILITYSYSTEM_API UCompanionComponent : public UActorComponent
+{
+	GENERATED_BODY()
+
+public:
+	UCompanionComponent();
+
+	/** The living companion, or null. */
+	UFUNCTION(BlueprintPure, Category = "Companion")
+	ACompanionCharacter* GetCompanion() const;
+
+	UFUNCTION(BlueprintPure, Category = "Companion")
+	bool HasCompanion() const;
+
+	/**
+	 * Spawns CompanionClass at Location (feet), replacing any previous companion.
+	 * Level = the leader's level + LevelOffset. When it dies, SourceAbilityId goes on its own cooldown
+	 * (Cooldown Duration with the leader's Stat.Cooldown modifiers): the respawn wait.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Companion")
+	ACompanionCharacter* SpawnCompanion(TSubclassOf<ACompanionCharacter> CompanionClass, FVector Location, int32 LevelOffset,
+		const TArray<FCompanionAbilityGrant>& AbilityGrants, FGameplayTag SourceAbilityId);
+
+	/**
+	 * A spot for a companion near Leader, as the ground point (feet). Tries directions around PreferredDirection
+	 * (its sides, behind, in front...) and takes the first that's reachable from Leader without a wall in between
+	 * and has walkable ground near the leader's height (so not off a platform's edge, not on the floor below it).
+	 * Snaps to the nav mesh nearby when it can. Falls back to the leader's own feet.
+	 */
+	static FVector FindPlacementNearLeader(const ACharacter* Leader, FVector PreferredDirection, float Distance);
+
+	/** Removes the companion without a death (no respawn cooldown). */
+	UFUNCTION(BlueprintCallable, Category = "Companion")
+	void DismissCompanion();
+
+	/* -------------------- Commands -------------------- */
+
+	/** Uses the ability in the companion bar's SlotIndex on the leader's target. Wire Shift+1..4 here. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Commands")
+	bool ActivateCompanionSlot(int32 SlotIndex);
+
+	/** Uses AbilityId on the leader's target (attacks), or right away (anything else). */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Commands")
+	bool CommandAbility(FGameplayTag AbilityId);
+
+	/** Attack Target, opening with a ready command-only attack. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Commands")
+	bool CommandAttack(AActor* Target);
+
+	/** Drop the fight and come back. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Commands")
+	void Recall();
+
+	/* -------------------- Stance and auto-cast -------------------- */
+
+	UFUNCTION(BlueprintCallable, Category = "Companion|Stance")
+	void SetStance(ECompanionStance NewStance);
+
+	UFUNCTION(BlueprintPure, Category = "Companion|Stance")
+	ECompanionStance GetStance() const { return Stance; }
+
+	UFUNCTION(BlueprintPure, Category = "Companion|Stance")
+	bool IsAutoCast(FGameplayTag AbilityId) const;
+
+	UFUNCTION(BlueprintCallable, Category = "Companion|Stance")
+	void SetAutoCast(FGameplayTag AbilityId, bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category = "Companion|Stance")
+	void ToggleAutoCast(FGameplayTag AbilityId);
+
+	/* -------------------- Events -------------------- */
+
+	/** A companion was spawned, died or was dismissed (null). */
+	UPROPERTY(BlueprintAssignable, Category = "Companion")
+	FCompanionChangedSignature OnCompanionChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Companion")
+	FCompanionStanceChangedSignature OnStanceChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Companion")
+	FCompanionAutoCastChangedSignature OnAutoCastChanged;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/** Stance of the first summon. Later changes are remembered. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Stance")
+	ECompanionStance DefaultStance = ECompanionStance::Defensive;
+
+private:
+	UFUNCTION()
+	void HandleCompanionDied(AActor* Killer);
+
+	UFUNCTION()
+	void HandleLeaderLevelUp(int32 NewLevel);
+
+	UFUNCTION()
+	void HandleLeaderAbilityRankChanged(FGameplayTag AbilityId, int32 OldRank, int32 NewRank);
+
+	/** Grants, revokes and re-ranks the companion's abilities to match the leader's learned skills. */
+	void ApplyAbilityGrants();
+
+	/** Pushes stance and auto-cast choices to the companion's AI. */
+	void ApplyChoicesToCompanion() const;
+
+	ACompanionAIController* GetCompanionController() const;
+	AActor* GetLeaderTarget() const;
+	int32 GetLeaderLevel() const;
+	void ReleaseCompanion();
+
+	TWeakObjectPtr<ACompanionCharacter> Companion;
+
+	UPROPERTY(Transient)
+	TArray<FCompanionAbilityGrant> ActiveGrants;
+
+	ECompanionStance Stance = ECompanionStance::Defensive;
+	TMap<FGameplayTag, bool> AutoCastChoices;
+
+	int32 CompanionLevelOffset = 0;
+	FGameplayTag RespawnAbilityId;
+};

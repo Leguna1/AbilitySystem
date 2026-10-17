@@ -37,7 +37,7 @@ void UExperienceComponent::BeginPlay()
 
 	if (IsValid(CombatantComponent))
 	{
-		CombatantComponent->OnKilled.AddDynamic(this, &UExperienceComponent::HandleKilled);
+		CombatantComponent->OnKilled.AddDynamic(this, &UExperienceComponent::AwardKill);
 	}
 
 	BroadcastExperienceChanged();
@@ -47,7 +47,7 @@ void UExperienceComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (IsValid(CombatantComponent))
 	{
-		CombatantComponent->OnKilled.RemoveDynamic(this, &UExperienceComponent::HandleKilled);
+		CombatantComponent->OnKilled.RemoveDynamic(this, &UExperienceComponent::AwardKill);
 	}
 
 	Super::EndPlay(EndPlayReason);
@@ -148,12 +148,12 @@ int32 UExperienceComponent::GetExperienceForKill_Implementation(AActor* Victim) 
 	return IsValid(Enemy) ? Enemy->GetExperienceReward() : 0;
 }
 
-void UExperienceComponent::HandleKilled(AActor* Victim)
-{
-	AddExperience(GetExperienceForKill(Victim));
-}
-
 void UExperienceComponent::BroadcastExperienceChanged()
 {
 	OnExperienceChanged.Broadcast(Experience, GetExperienceToNextLevel(), Level);
 }
+void UExperienceComponent::AwardKill(AActor* Victim)
+{
+	AddExperience(GetExperienceForKill(Victim));
+}
+

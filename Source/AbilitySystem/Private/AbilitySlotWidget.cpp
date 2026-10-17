@@ -65,6 +65,7 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, c
 		ToolTipWidgetDelegate.BindDynamic(this, &UAbilitySlotWidget::GetTooltipWidget);
 	}
 
+	NativeOnSlotChanged();
 	OnSlotEmptyChanged(IsEmpty());
 	OnSlotInitialized();
 }
@@ -125,6 +126,7 @@ void UAbilitySlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const
 	UAbilityDragDropOperation* Operation = NewObject<UAbilityDragDropOperation>(this);
 	Operation->AbilityClass = AbilityClass;
 	Operation->SourceSlotIndex = SlotIndex;
+	Operation->SourceActionBar = ActionBar;
 	Operation->Pivot = EDragPivot::CenterCenter;
 
 	UWidget* Visual = BuildDragVisual();
@@ -152,10 +154,14 @@ bool UAbilitySlotWidget::NativeOnDrop(const FGeometry& InGeometry, const FDragDr
 		return Super::NativeOnDrop(InGeometry, InDragDropEvent, InOperation);
 	}
 
-	// From another slot: swap. From the skill tree: place here.
+	// From another slot of this bar: swap. From the skill tree: place here.
+	// From a different bar (the companion's onto yours): nothing, each bar keeps its own abilities.
 	if (Operation->SourceSlotIndex != INDEX_NONE)
 	{
-		ActionBar->MoveSlot(Operation->SourceSlotIndex, SlotIndex);
+		if (Operation->SourceActionBar.Get() == ActionBar)
+		{
+			ActionBar->MoveSlot(Operation->SourceSlotIndex, SlotIndex);
+		}
 	}
 	else
 	{
@@ -212,6 +218,7 @@ void UAbilitySlotWidget::Bind()
 	AbilityComponent->AbilityActivatedEvent.AddUniqueDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 	AbilityComponent->AbilityEndedEvent.AddUniqueDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 	AbilityComponent->AbilityCommittedEvent.AddUniqueDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
+	AbilityComponent->AbilityCooldownStartedEvent.AddUniqueDynamic(this, &UAbilitySlotWidget::HandleCooldownStarted);
 
 	if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 	{
@@ -229,6 +236,7 @@ void UAbilitySlotWidget::Unbind()
 	AbilityComponent->AbilityActivatedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityActivated);
 	AbilityComponent->AbilityEndedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityEnded);
 	AbilityComponent->AbilityCommittedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleAbilityCommitted);
+	AbilityComponent->AbilityCooldownStartedEvent.RemoveDynamic(this, &UAbilitySlotWidget::HandleCooldownStarted);
 
 	if (UResourceComponent* Resources = AbilityComponent->GetResourceComponent())
 	{
@@ -285,6 +293,16 @@ void UAbilitySlotWidget::HandleAbilityCommitted(const FGameplayTag AbilityId, UA
 	}
 
 	RefreshAffordability();
+}
+
+void UAbilitySlotWidget::HandleCooldownStarted(const FGameplayTag AbilityId, float Duration)
+{
+	if (AbilityId.MatchesTagExact(SlotAbilityId))
+	{
+		// Restart even if already sweeping: the new cooldown may be longer.
+		StopCooldownPoll();
+		BeginCooldownPoll();
+	}
 }
 
 void UAbilitySlotWidget::HandleResourceChanged(const EResourceType ResourceType, const EResourceValueType ValueType, float OldValue, float NewValue)

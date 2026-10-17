@@ -257,15 +257,35 @@ void UActionBarComponent::HandleAbilityRankChanged(const FGameplayTag AbilityId,
 
 void UActionBarComponent::HandleGrantedAbilitiesChanged()
 {
-	// A revoked ability (weapon swap) leaves the bar.
 	bool bChanged = false;
 
+	// A revoked ability (weapon swap) leaves the bar.
 	for (TSubclassOf<UAbility>& AbilityClass : Slots)
 	{
 		if (AbilityClass && !CanPlaceAbility(AbilityClass))
 		{
 			AbilityClass = nullptr;
 			bChanged = true;
+		}
+	}
+
+	// A newly granted, already learned ability (a weapon kit, a companion's new skill) joins it.
+	if (bAutoPlaceLearnedAbilities && IsValid(AbilityComponent))
+	{
+		for (const TSubclassOf<UAbility>& AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
+		{
+			if (CanPlaceAbility(AbilityClass) && FindSlotOfAbility(AbilityClass) == INDEX_NONE)
+			{
+				const int32 Free = FindFirstAutoFillSlot();
+
+				if (Free == INDEX_NONE)
+				{
+					break;
+				}
+
+				Slots[Free] = AbilityClass;
+				bChanged = true;
+			}
 		}
 	}
 

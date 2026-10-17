@@ -56,7 +56,11 @@ enum class EAbilityCooldownTrigger : uint8
 	OnCommit UMETA(DisplayName = "On Commit"),
 
 	/** Starts when the ability ends, for any reason, if it committed. */
-	OnAbilityEnd UMETA(DisplayName = "On Ability End")
+	OnAbilityEnd UMETA(DisplayName = "On Ability End"),
+	
+	/** Never starts by itself: game code starts it (the summon's respawn wait, when the companion dies). */
+	Manual UMETA(DisplayName = "Manual")
+
 };
 
 /** A float that scales with ability rank. Rank 1 reads Values[0]; ranks past the end reuse the last entry. */

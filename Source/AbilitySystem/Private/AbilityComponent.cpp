@@ -1067,6 +1067,8 @@ void UAbilityComponent::StartCooldown(const FGameplayTag AbilityId, const float 
 		CooldownState.EndTimes.Add(EndTime);
 		CooldownState.Durations.Add(Duration);
 	}
+	AbilityCooldownStartedEvent.Broadcast(AbilityId, Duration);
+
 }
 
 float UAbilityComponent::GetAbilityCooldownRemaining(const FGameplayTag AbilityId) const
@@ -1342,6 +1344,13 @@ float UAbilityComponent::GetAbilityFocusCost(const FGameplayTag AbilityId) const
 	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(FindAbilityClassById(AbilityId)));
 	return IsValid(Defaults) ? ResolveFocusCost(Defaults) : 0.0f;
 }
+
+float UAbilityComponent::GetAbilityCooldownDuration(FGameplayTag AbilityId) const
+{
+	const UActiveAbility* Defaults = Cast<UActiveAbility>(GetAbilityCDO(FindAbilityClassById(AbilityId)));
+	return IsValid(Defaults) ? ResolveCooldownDuration(Defaults) : 0.0f;
+}
+
 UPassiveAbility* UAbilityComponent::FindPassiveInstance(const TSubclassOf<UAbility> AbilityClass) const
 {
 	for (UPassiveAbility* Passive : PassiveInstances)

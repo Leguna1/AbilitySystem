@@ -8,6 +8,7 @@
 #include "TargetableInterface.h"
 #include "TimerManager.h"
 #include "DrawDebugHelpers.h"
+#include "GenericTeamAgentInterface.h"
 
 UTargetingComponent::UTargetingComponent()
 {
@@ -218,6 +219,12 @@ bool UTargetingComponent::IsValidTarget(AActor* Candidate) const
 	}
 
 	if (!ITargetableInterface::Execute_IsTargetable(Candidate))
+	{
+		return false;
+	}
+
+	// Never your own side: your companion, allies. Actors without a team (dummies, destructibles) stay targetable.
+	if (FGenericTeamId::GetAttitude(GetOwner(), Candidate) == ETeamAttitude::Friendly)
 	{
 		return false;
 	}

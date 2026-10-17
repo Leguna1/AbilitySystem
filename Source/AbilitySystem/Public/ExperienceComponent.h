@@ -64,6 +64,11 @@ public:
 	/** A level was gained. Fires once per level, even when one kill gives several. */
 	UPROPERTY(BlueprintAssignable, Category = "Experience")
 	FLevelUpSignature OnLevelUp;
+	
+	/** Experience for Victim, as if the owner had killed it (a companion's kills). */
+	UFUNCTION(BlueprintCallable, Category = "Experience")
+	void AwardKill(AActor* Victim);
+
 
 protected:
 	virtual void BeginPlay() override;
@@ -114,9 +119,6 @@ protected:
 
 private:
 	void PlayLevelUpFeedback() const;
-
-	UFUNCTION()
-	void HandleKilled(AActor* Victim);
 
 	void BroadcastExperienceChanged();
 

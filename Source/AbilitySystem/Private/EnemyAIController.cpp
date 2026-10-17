@@ -3,16 +3,14 @@
 #include "AbilityComponent.h"
 #include "AbilitySystemTags.h"
 #include "BaseEnemy.h"
-#include "CombatantComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
+#include "NavigationSystem.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "Perception/AISense_Sight.h"
-#include "TimerManager.h"
-#include "NavigationSystem.h"
-#include "Components/CapsuleComponent.h"
 
 AEnemyAIController::AEnemyAIController()
 {
@@ -25,7 +23,7 @@ AEnemyAIController::AEnemyAIController()
 	SightConfig->PeripheralVisionAngleDegrees = 70.0f;
 	SightConfig->SetMaxAge(ForgetTargetAfter);
 
-	// Only hostiles (a different team) are noticed.
+	// Only hostiles (a different team) are noticed: the player and the player's companion.
 	SightConfig->DetectionByAffiliation.bDetectEnemies = true;
 	SightConfig->DetectionByAffiliation.bDetectNeutrals = false;
 	SightConfig->DetectionByAffiliation.bDetectFriendlies = false;
@@ -43,9 +41,6 @@ void AEnemyAIController::OnPossess(APawn* InPawn)
 
 	if (Enemy.IsValid())
 	{
-		// Perception filters by this controller's team, so it mirrors the enemy's.
-		SetGenericTeamId(Enemy->GetGenericTeamId());
-
 		SightConfig->SightRadius = Enemy->GetAggroRadius();
 		SightConfig->LoseSightRadius = Enemy->GetAggroRadius() * 1.25f;
 		SightConfig->PointOfViewBackwardOffset = Enemy->GetSightBackwardOffset();
@@ -56,56 +51,21 @@ void AEnemyAIController::OnPossess(APawn* InPawn)
 	}
 
 	Perception->OnTargetPerceptionUpdated.AddUniqueDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
-
-	FTimerManager& TimerManager = GetWorldTimerManager();
-	TimerManager.SetTimer(EvaluateTimerHandle, this, &AEnemyAIController::EvaluateTarget, EvaluateInterval, true);
-
-	// Random first delay so a pack doesn't think on the same frame.
-	TimerManager.SetTimer(ThinkTimerHandle, this, &AEnemyAIController::Think, ThinkInterval, true,
-		FMath::FRandRange(0.0f, ThinkInterval));
 }
 
 void AEnemyAIController::OnUnPossess()
 {
-	FTimerManager& TimerManager = GetWorldTimerManager();
-	TimerManager.ClearTimer(EvaluateTimerHandle);
-	TimerManager.ClearTimer(ThinkTimerHandle);
-
 	Perception->OnTargetPerceptionUpdated.RemoveDynamic(this, &AEnemyAIController::HandleTargetPerceptionUpdated);
-	
 	SetReturningHome(false);
-	ClearTarget();
 
 	Super::OnUnPossess();
 }
 
 /* ============================== Target ============================== */
 
-void AEnemyAIController::SetCurrentTarget(AActor* NewTarget)
+void AEnemyAIController::OnTargetAcquired(AActor* NewTarget)
 {
-	if (!IsValidTarget(NewTarget) || NewTarget == CurrentTarget.Get())
-	{
-		return;
-	}
-
-	CurrentTarget = NewTarget;
 	LastSeenTime = GetWorldTime();
-
-	// Focus turns the enemy to face its target while it acts.
-	SetFocus(NewTarget);
-	OnTargetChanged.Broadcast(NewTarget);
-}
-
-void AEnemyAIController::ClearTarget()
-{
-	if (!CurrentTarget.IsValid())
-	{
-		return;
-	}
-
-	CurrentTarget.Reset();
-	ClearFocus(EAIFocusPriority::Gameplay);
-	OnTargetChanged.Broadcast(nullptr);
 }
 
 void AEnemyAIController::NotifyAttackedBy(AActor* Attacker)
@@ -123,7 +83,7 @@ void AEnemyAIController::HandleTargetPerceptionUpdated(AActor* Actor, const FAIS
 		return;
 	}
 
-	if (Actor == CurrentTarget.Get())
+	if (Actor == GetCurrentTarget())
 	{
 		LastSeenTime = GetWorldTime();
 		return;
@@ -154,7 +114,7 @@ void AEnemyAIController::EvaluateTarget()
 
 	bool bLostTarget = false;
 
-	if (AActor* Target = CurrentTarget.Get())
+	if (AActor* Target = GetCurrentTarget())
 	{
 		if (!IsValidTarget(Target))
 		{
@@ -164,7 +124,7 @@ void AEnemyAIController::EvaluateTarget()
 		}
 		else if (DistanceFromHome > Enemy->GetLeashRadius())
 		{
-			// Leash: dragged too far from home, give up and go back. Think() walks it home.
+			// Leash: dragged too far from home, give up and go back.
 			ClearTarget();
 			SetReturningHome(true);
 			return;
@@ -214,17 +174,6 @@ void AEnemyAIController::EvaluateTarget()
 float AEnemyAIController::GetHomeAreaRadius() const
 {
 	return Enemy.IsValid() ? FMath::Max(HomeReachedDistance, Enemy->RoamRadius) : HomeReachedDistance;
-}
-
-bool AEnemyAIController::IsValidTarget(const AActor* Actor) const
-{
-	if (!IsValid(Actor) || Actor == GetPawn() || GetTeamAttitudeTowards(*Actor) != ETeamAttitude::Hostile)
-	{
-		return false;
-	}
-
-	const UCombatantComponent* Combatant = Actor->FindComponentByClass<UCombatantComponent>();
-	return IsValid(Combatant) && !Combatant->IsDead();
 }
 
 AActor* AEnemyAIController::FindNearestSeenTarget() const
@@ -308,78 +257,29 @@ AActor* AEnemyAIController::FindNearestTargetInProximity() const
 	return Nearest;
 }
 
-double AEnemyAIController::GetWorldTime() const
-{
-	const UWorld* World = GetWorld();
-	return IsValid(World) ? World->GetTimeSeconds() : 0.0;
-}
-
 /* ============================== Behavior ============================== */
 
-void AEnemyAIController::Think()
+bool AEnemyAIController::ThinkOverride()
 {
-	ABaseEnemy* EnemyPawn = Enemy.Get();
-
-	if (!IsValid(EnemyPawn))
+	if (!bReturningHome)
 	{
-		return;
+		return false;
 	}
 
-	if (EnemyPawn->IsDead())
-	{
-		GetWorldTimerManager().ClearTimer(ThinkTimerHandle);
-		SetBehaviorState(EEnemyBehaviorState::Dead);
-		return;
-	}
-
-	UAbilityComponent* Abilities = EnemyPawn->GetAbilityComponent();
-
-	// An attack or hit reaction is playing: let it finish.
-	if (!IsValid(Abilities) || Abilities->HasActiveAbility())
-	{
-		return;
-	}
-
-	// An attack just finished: start recovery before the next one.
-	if (BehaviorState == EEnemyBehaviorState::Attacking)
-	{
-		NextAttackTime = GetWorldTime() + FMath::FRandRange(EnemyPawn->AttackRecoveryMin, EnemyPawn->AttackRecoveryMax);
-		SetBehaviorState(EEnemyBehaviorState::Engaging);
-	}
-
-	if (IsReturningHome())
-	{
-		ThinkReturnHome();
-		UpdateCombatState();
-	}
-	else if (AActor* Target = GetCurrentTarget())
-	{
-		ThinkCombat(Abilities, Target);
-		UpdateCombatState();
-	}
-	else
-	{
-		ThinkIdle();
-		UpdateCombatState();
-	}
-
-	if (bDrawBehaviorDebug)
-	{
-		DrawDebugString(GetWorld(), FVector(0.0f, 0.0f, 120.0f), UEnum::GetDisplayValueAsText(BehaviorState).ToString(),
-			EnemyPawn, FColor::Yellow, ThinkInterval, true);
-
-		DrawDebugCircle(GetWorld(), EnemyPawn->GetHomeLocation(), EnemyPawn->RoamRadius, 32, FColor::Green,
-			false, ThinkInterval, 0, 2.0f, FVector::ForwardVector, FVector::RightVector, false);
-	}
+	ThinkReturnHome();
+	return true;
 }
 
-
+void AEnemyAIController::ThinkWithoutTarget()
+{
+	ThinkIdle();
+}
 
 void AEnemyAIController::ThinkReturnHome()
 {
-	PlannedAttackIndex = INDEX_NONE;
+	ResetAttackPlan();
 
-	if (BehaviorState == EEnemyBehaviorState::ReturningHome)
+	if (BehaviorState == EAIBehaviorState::ReturningHome)
 	{
 		// The walk home has finished (arrived, or got as close as it can): it's home.
 		if (GetMoveStatus() == EPathFollowingStatus::Idle)
@@ -396,7 +296,7 @@ void AEnemyAIController::ThinkReturnHome()
 
 	if (MoveResult == EPathFollowingRequestResult::RequestSuccessful)
 	{
-		SetBehaviorState(EEnemyBehaviorState::ReturningHome);
+		SetBehaviorState(EAIBehaviorState::ReturningHome);
 	}
 	else
 	{
@@ -404,179 +304,14 @@ void AEnemyAIController::ThinkReturnHome()
 		SetReturningHome(false);
 	}
 }
-void AEnemyAIController::ThinkCombat(UAbilityComponent* Abilities, AActor* Target)
-{
-	const float Gap = Enemy->GetEdgeDistanceTo(Target);
 
-	// Re-plan when the plan can't be used from here anymore, or something better became usable
-	// (a big spell came off cooldown). Otherwise keep it, so the chase doesn't flip between attacks.
-	int32 HighestPriority = 0;
-
-	if (!FindHighestUsablePriority(Abilities, Gap, HighestPriority))
-	{
-		PlannedAttackIndex = INDEX_NONE;
-	}
-	else if (!IsAttackUsable(Abilities, PlannedAttackIndex, Gap) ||
-		Enemy->Attacks[PlannedAttackIndex].Priority < HighestPriority)
-	{
-		PlannedAttackIndex = PickAttack(Abilities, Gap);
-	}
-
-	// Nothing usable from here: hold position and keep facing the target.
-	if (PlannedAttackIndex == INDEX_NONE)
-	{
-		if (BehaviorState != EEnemyBehaviorState::Engaging)
-		{
-			StopMovement();
-			SetBehaviorState(EEnemyBehaviorState::Engaging);
-		}
-		return;
-	}
-
-	const FEnemyAttack& PlannedAttack = Enemy->Attacks[PlannedAttackIndex];
-	const bool bInRange = Gap <= PlannedAttack.MaxRange;
-	const bool bHasLineOfSight = !PlannedAttack.bRequiresLineOfSight || LineOfSightTo(Target);
-
-	// Out of range: close in. In range but blocked: walk in until the view is clear.
-	if (!bInRange || !bHasLineOfSight)
-	{
-		const float ChaseAcceptance = bInRange
-			? LineOfSightChaseRadius
-			: PlannedAttack.MaxRange * ChaseRangeFraction;
-
-		const bool bNeedsNewMove =
-			BehaviorState != EEnemyBehaviorState::Chasing ||
-			GetMoveStatus() != EPathFollowingStatus::Moving ||
-			!FMath::IsNearlyEqual(ChaseAcceptance, LastChaseAcceptance);
-
-		if (bNeedsNewMove)
-		{
-			// With bStopOnOverlap (the default) the acceptance radius is measured edge to edge, like GetEdgeDistanceTo.
-			MoveToActor(Target, ChaseAcceptance);
-			LastChaseAcceptance = ChaseAcceptance;
-			SetBehaviorState(EEnemyBehaviorState::Chasing);
-		}
-		return;
-	}
-
-	// In range with a clear view.
-	if (GetMoveStatus() == EPathFollowingStatus::Moving)
-	{
-		StopMovement();
-	}
-	SetBehaviorState(EEnemyBehaviorState::Engaging);
-
-	if (GetWorldTime() < NextAttackTime || !IsFacing(Target))
-	{
-		return;
-	}
-
-	if (Abilities->TryActivateAbility(PlannedAttack.AbilityTag))
-	{
-		SetBehaviorState(EEnemyBehaviorState::Attacking);
-	}
-
-	// Pick fresh next time, whether it activated or not.
-	PlannedAttackIndex = INDEX_NONE;
-}
-
-bool AEnemyAIController::IsAttackUsable(const UAbilityComponent* Abilities, const int32 AttackIndex, const float Gap) const
-{
-	if (!Enemy->Attacks.IsValidIndex(AttackIndex))
-	{
-		return false;
-	}
-
-	const FEnemyAttack& Candidate = Enemy->Attacks[AttackIndex];
-
-	return !Abilities->IsAbilityOnCooldown(Candidate.AbilityTag) &&
-		Gap >= Candidate.MinRange &&
-		(Candidate.bChaseIntoRange || Gap <= Candidate.MaxRange);
-}
-
-bool AEnemyAIController::FindHighestUsablePriority(const UAbilityComponent* Abilities, const float Gap, int32& OutPriority) const
-{
-	bool bFound = false;
-
-	for (int32 Index = 0; Index < Enemy->Attacks.Num(); ++Index)
-	{
-		if (!IsAttackUsable(Abilities, Index, Gap))
-		{
-			continue;
-		}
-
-		const int32 CandidatePriority = Enemy->Attacks[Index].Priority;
-		OutPriority = bFound ? FMath::Max(OutPriority, CandidatePriority) : CandidatePriority;
-		bFound = true;
-	}
-
-	return bFound;
-}
-
-int32 AEnemyAIController::PickAttack(const UAbilityComponent* Abilities, const float Gap) const
-{
-	int32 HighestPriority = 0;
-
-	if (!FindHighestUsablePriority(Abilities, Gap, HighestPriority))
-	{
-		return INDEX_NONE;
-	}
-
-	const TArray<FEnemyAttack>& EnemyAttacks = Enemy->Attacks;
-
-	// Only the best priority competes; Weight decides among those.
-	const auto IsCandidate = [this, Abilities, Gap, HighestPriority, &EnemyAttacks](const int32 Index)
-	{
-		return EnemyAttacks[Index].Priority == HighestPriority && IsAttackUsable(Abilities, Index, Gap);
-	};
-
-	float TotalWeight = 0.0f;
-
-	for (int32 Index = 0; Index < EnemyAttacks.Num(); ++Index)
-	{
-		if (IsCandidate(Index))
-		{
-			TotalWeight += EnemyAttacks[Index].Weight;
-		}
-	}
-
-	float Roll = FMath::FRandRange(0.0f, TotalWeight);
-
-	for (int32 Index = 0; Index < EnemyAttacks.Num(); ++Index)
-	{
-		if (IsCandidate(Index))
-		{
-			Roll -= EnemyAttacks[Index].Weight;
-
-			if (Roll <= 0.0f)
-			{
-				return Index;
-			}
-		}
-	}
-
-	return INDEX_NONE;
-}
-
-bool AEnemyAIController::IsFacing(const AActor* Target) const
-{
-	const FVector Forward = Enemy->GetActorForwardVector().GetSafeNormal2D();
-	const FVector ToTarget = (Target->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
-
-	return FVector::DotProduct(Forward, ToTarget) >= FMath::Cos(FMath::DegreesToRadians(Enemy->MaxAttackAngle));
-}
-
-void AEnemyAIController::SetBehaviorState(EEnemyBehaviorState NewState)
-{
-	BehaviorState = NewState;
-}
 void AEnemyAIController::ThinkIdle()
 {
-	PlannedAttackIndex = INDEX_NONE;
+	ResetAttackPlan();
 
 	switch (BehaviorState)
 	{
-	case EEnemyBehaviorState::Roaming:
+	case EAIBehaviorState::Roaming:
 		// Still walking to the roam point.
 		if (GetMoveStatus() == EPathFollowingStatus::Moving)
 		{
@@ -585,17 +320,17 @@ void AEnemyAIController::ThinkIdle()
 
 		// Arrived (or the path failed): pause before the next walk.
 		StartIdleWait();
-		SetBehaviorState(EEnemyBehaviorState::Idle);
+		SetBehaviorState(EAIBehaviorState::Idle);
 		return;
 
-	case EEnemyBehaviorState::Idle:
+	case EAIBehaviorState::Idle:
 		break;
 
 	default:
 		// Just out of combat or back home: stop and pause before wandering.
 		StopMovement();
 		StartIdleWait();
-		SetBehaviorState(EEnemyBehaviorState::Idle);
+		SetBehaviorState(EAIBehaviorState::Idle);
 		return;
 	}
 
@@ -608,7 +343,7 @@ void AEnemyAIController::ThinkIdle()
 
 	if (FindRoamPoint(RoamPoint) && MoveToLocation(RoamPoint) == EPathFollowingRequestResult::RequestSuccessful)
 	{
-		SetBehaviorState(EEnemyBehaviorState::Roaming);
+		SetBehaviorState(EAIBehaviorState::Roaming);
 	}
 	else
 	{
@@ -619,7 +354,10 @@ void AEnemyAIController::ThinkIdle()
 
 void AEnemyAIController::StartIdleWait()
 {
-	NextRoamTime = GetWorldTime() + FMath::FRandRange(Enemy->RoamWaitMin, Enemy->RoamWaitMax);
+	if (Enemy.IsValid())
+	{
+		NextRoamTime = GetWorldTime() + FMath::FRandRange(Enemy->RoamWaitMin, Enemy->RoamWaitMax);
+	}
 }
 
 bool AEnemyAIController::FindRoamPoint(FVector& OutPoint) const
@@ -658,7 +396,8 @@ bool AEnemyAIController::FindRoamPoint(FVector& OutPoint) const
 
 	return false;
 }
-void AEnemyAIController::SetReturningHome(bool bNewReturningHome)
+
+void AEnemyAIController::SetReturningHome(const bool bNewReturningHome)
 {
 	if (bReturningHome == bNewReturningHome)
 	{
@@ -683,10 +422,12 @@ void AEnemyAIController::SetReturningHome(bool bNewReturningHome)
 		Abilities->RemoveLooseOwnerTag(AbilitySystemTags::State_Invulnerable);
 	}
 }
-void AEnemyAIController::UpdateCombatState()
+
+void AEnemyAIController::DrawBehaviorDebug() const
 {
-	if (ABaseEnemy* EnemyPawn = Enemy.Get())
+	if (Enemy.IsValid())
 	{
-		EnemyPawn->SetInCombat(IsValid(GetCurrentTarget()) && !bReturningHome);
+		DrawDebugCircle(GetWorld(), Enemy->GetHomeLocation(), Enemy->RoamRadius, 32, FColor::Green,
+			false, ThinkInterval, 0, 2.0f, FVector::ForwardVector, FVector::RightVector, false);
 	}
 }

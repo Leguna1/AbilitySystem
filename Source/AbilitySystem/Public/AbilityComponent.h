@@ -28,6 +28,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOwnedTagsChangedEventSignature, FGa
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FGrantedAbilitiesChangedEventSignature);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FAbilityRankChangedEventSignature, FGameplayTag, AbilityId, int32, OldRank, int32, NewRank);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FModifiersChangedEventSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAbilityCooldownStartedEventSignature, FGameplayTag, AbilityId, float, Duration);
+
 
 /** Activation timing news for whoever requests abilities on a schedule (the player's input buffer). */
 UENUM(BlueprintType)
@@ -245,6 +247,11 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FAbilityCommittedEventSignature AbilityCommittedEvent;
+	
+	/** Any cooldown started: on commit, on ability end, or from outside (a companion's respawn wait). */
+	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
+	FAbilityCooldownStartedEventSignature AbilityCooldownStartedEvent;
+
 
 	UPROPERTY(BlueprintAssignable, Category = "Ability|Events")
 	FAbilityEndedEventSignature AbilityEndedEvent;
@@ -267,6 +274,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability|Cost")
 	float GetAbilityFocusCost(FGameplayTag AbilityId) const;
 	
+	/** Cooldown Duration of AbilityId with Stat.Cooldown modifiers applied (what a commit would start). */
+	UFUNCTION(BlueprintPure, Category = "Ability|Cooldown")
+	float GetAbilityCooldownDuration(FGameplayTag AbilityId) const;
+	
 	/** Forwards a gameplay event from an ability to every active passive. */
 	UFUNCTION(BlueprintCallable, Category = "Ability|Events")
 	void BroadcastGameplayEvent(FGameplayTag EventTag, UActiveAbility* Source);
@@ -285,12 +296,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Ability")
 	UAttributeComponent* GetAttributeComponent() const { return AttributeComponent; }
 	
+	/** Puts AbilityId on cooldown for Duration seconds (replaces a running one). */
+	UFUNCTION(BlueprintCallable, Category = "Ability|Cooldown")
+	void StartCooldown(FGameplayTag AbilityId, float Duration);
+	
 	/**
  * Drops anything waiting to activate (e.g. the player's buffered presses). For moments that make
  * earlier requests stale: death, a stagger, a weapon swap.
  */
 	UFUNCTION(BlueprintCallable, Category = "Ability")
 	void FlushActivationRequests();
+	
 	
 	/* -------------------- Input binding -------------------- */
 
@@ -367,7 +383,7 @@ private:
 	static const UAbility* GetAbilityCDO(TSubclassOf<UAbility> AbilityClass);
 
 	int32 FindCooldownIndex(FGameplayTag AbilityId) const;
-	void StartCooldown(FGameplayTag AbilityId, float Duration);
+	
 	void SpendAbilityCost(const UActiveAbility* Ability);
 	bool ChargeRepeatedCost(const UActiveAbility* Ability);
 

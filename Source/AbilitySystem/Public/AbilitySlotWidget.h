@@ -97,6 +97,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
 	FVector2D DragIconSize = FVector2D(48.0f, 48.0f);
 
+	/** C++ children: the slot's ability changed (empty included). Runs before On Slot Initialized. */
+	virtual void NativeOnSlotChanged() {}
+
+	UAbilityComponent* GetSlotAbilityComponent() const { return AbilityComponent; }
+	UActionBarComponent* GetSlotActionBar() const { return ActionBar; }
+
 	/** Static visuals (icon, name, keybind). Called on init and whenever the slot's ability changes, empty included. */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Ability|UI")
 	void OnSlotInitialized();
@@ -142,6 +148,10 @@ private:
 
 	UFUNCTION()
 	void HandleAbilityCommitted(FGameplayTag AbilityId, UActiveAbility* Ability);
+
+	/** Cooldowns started outside a commit (a companion's respawn wait). */
+	UFUNCTION()
+	void HandleCooldownStarted(FGameplayTag AbilityId, float Duration);
 
 	UFUNCTION()
 	void HandleResourceChanged(EResourceType ResourceType, EResourceValueType ValueType, float OldValue, float NewValue);
