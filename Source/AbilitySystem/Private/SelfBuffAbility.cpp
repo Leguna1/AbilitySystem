@@ -3,6 +3,8 @@
 #include "CombatantComponent.h"
 #include "AbilityComponent.h"
 #include "GameFramework/Character.h"
+#include "Engine/OverlapResult.h"
+#include "GenericTeamAgentInterface.h"
 
 #if WITH_EDITOR
 #include "AbilityValidation.h"
@@ -37,6 +39,55 @@ void USelfBuffAbility::OnAnimationEvent_Implementation(const FGameplayTag EventT
 	}
 }
 
+void USelfBuffAbility::GatherBuffTargets(TArray<UCombatantComponent*>& OutTargets) const
+{
+	ACharacter* Caster = GetOwningCharacter();
+
+	if (!IsValid(Caster))
+	{
+		return;
+	}
+
+	if (bBuffSelf || AllyRadius <= 0.0f)
+	{
+		if (UCombatantComponent* Own = Caster->FindComponentByClass<UCombatantComponent>())
+		{
+			OutTargets.Add(Own);
+		}
+	}
+
+	UWorld* World = Caster->GetWorld();
+
+	if (AllyRadius <= 0.0f || !IsValid(World))
+	{
+		return;
+	}
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BuffAllies), false, Caster);
+	TArray<FOverlapResult> Overlaps;
+
+	World->OverlapMultiByObjectType(Overlaps, Caster->GetActorLocation(), FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(AllyRadius), QueryParams);
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AActor* Ally = Overlap.GetActor();
+
+		if (!IsValid(Ally) || FGenericTeamId::GetAttitude(Caster, Ally) != ETeamAttitude::Friendly)
+		{
+			continue;
+		}
+
+		UCombatantComponent* AllyCombatant = Ally->FindComponentByClass<UCombatantComponent>();
+
+		// One overlap per component, so a character can show up more than once.
+		if (IsValid(AllyCombatant) && !AllyCombatant->IsDead())
+		{
+			OutTargets.AddUnique(AllyCombatant);
+		}
+	}
+}
+
 void USelfBuffAbility::ApplyBuffs_Implementation()
 {
 	if (bBuffsApplied)
@@ -44,10 +95,10 @@ void USelfBuffAbility::ApplyBuffs_Implementation()
 		return;
 	}
 
-	const ACharacter* Character = GetOwningCharacter();
-	UCombatantComponent* Combatant = IsValid(Character) ? Character->FindComponentByClass<UCombatantComponent>() : nullptr;
+	TArray<UCombatantComponent*> Targets;
+	GatherBuffTargets(Targets);
 
-	if (!IsValid(Combatant))
+	if (Targets.IsEmpty())
 	{
 		return;
 	}
@@ -65,6 +116,7 @@ void USelfBuffAbility::ApplyBuffs_Implementation()
 
 	for (const FStatusEffectSpec& Spec : Buffs)
 	{
+		// Required Owner Tags are the caster's (a path the caster learned), not the target's.
 		if (!Spec.StatusTag.IsValid() || !OwnerTags.HasAll(Spec.RequiredOwnerTags))
 		{
 			continue;
@@ -78,7 +130,10 @@ void USelfBuffAbility::ApplyBuffs_Implementation()
 		Application.Rank = Rank;
 		Application.Duration = FMath::Max(Spec.DurationByRank.Get(Rank), 0.0f);
 
-		Combatant->ApplyStatus(Application, BuffSource);
+		for (UCombatantComponent* Target : Targets)
+		{
+			Target->ApplyStatus(Application, BuffSource);
+		}
 	}
 
 	OnBuffsApplied();

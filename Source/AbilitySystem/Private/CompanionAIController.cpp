@@ -1,5 +1,6 @@
 #include "CompanionAIController.h"
 
+#include "AbilityComponent.h"
 #include "BaseAICharacter.h"
 #include "CombatantComponent.h"
 #include "CompanionCharacter.h"
@@ -357,7 +358,8 @@ bool ACompanionAIController::ThinkOverride()
 {
 	if (!bRegrouping)
 	{
-		return false;
+		// Buffs first in a fight: a howl before the next bite.
+		return HasTarget() && TryAutoCastSupportAbility();
 	}
 
 	ResetAttackPlan();
@@ -385,6 +387,40 @@ void ACompanionAIController::ThinkWithoutTarget()
 
 		SetBehaviorState(EAIBehaviorState::Idle);
 	}
+}
+
+bool ACompanionAIController::TryAutoCastSupportAbility()
+{
+	const ABaseAICharacter* Fighter = GetAICharacter();
+	UAbilityComponent* Abilities = IsValid(Fighter) ? Fighter->GetAbilityComponent() : nullptr;
+
+	if (!IsValid(Abilities) || AutoCastOverrides.IsEmpty())
+	{
+		return false;
+	}
+
+	for (const TPair<FGameplayTag, bool>& Choice : AutoCastOverrides)
+	{
+		const FGameplayTag AbilityId = Choice.Key;
+
+		// Attacks are the fight's own business; only switched-on, ready non-attacks here.
+		const bool bIsAttack = Fighter->Attacks.ContainsByPredicate([AbilityId](const FAIAttack& Attack)
+		{
+			return Attack.AbilityTag.MatchesTagExact(AbilityId);
+		});
+
+		if (!Choice.Value || bIsAttack || !IsAbilityReady(Abilities, AbilityId))
+		{
+			continue;
+		}
+
+		if (Abilities->TryActivateAbility(AbilityId))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool ACompanionAIController::MoveToLeader()

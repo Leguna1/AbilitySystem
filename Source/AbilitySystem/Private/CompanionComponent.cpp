@@ -12,6 +12,7 @@
 #include "GameFramework/Character.h"
 #include "NavigationSystem.h"
 #include "ExperienceComponent.h"
+#include "ResourceComponent.h"
 #include "TargetingComponent.h"
 
 UCompanionComponent::UCompanionComponent()
@@ -85,6 +86,10 @@ ACompanionCharacter* UCompanionComponent::SpawnCompanion(const TSubclassOf<AComp
 	}
 
 	DismissCompanion();
+
+	// A new companion replaces the old body too.
+	ClearCorpse();
+	LastCompanionClass = CompanionClass;
 
 	// Location is the ground; the actor goes at its capsule center.
 	const float HalfHeight = CompanionClass.GetDefaultObject()->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
@@ -209,6 +214,72 @@ FVector UCompanionComponent::FindPlacementNearLeader(const ACharacter* Leader, c
 	return LeaderFeet;
 }
 
+ACompanionCharacter* UCompanionComponent::GetCompanionCorpse() const
+{
+	ACompanionCharacter* Body = Corpse.Get();
+	return IsValid(Body) && !Body->IsActorBeingDestroyed() ? Body : nullptr;
+}
+
+bool UCompanionComponent::CanReviveCompanion(const float MaxDistance) const
+{
+	const ACompanionCharacter* Body = GetCompanionCorpse();
+
+	if (!IsValid(Body) || !LastCompanionClass || HasCompanion())
+	{
+		return false;
+	}
+
+	return MaxDistance <= 0.0f || FVector::Dist(Body->GetActorLocation(), GetOwner()->GetActorLocation()) <= MaxDistance;
+}
+
+ACompanionCharacter* UCompanionComponent::ReviveCompanion(const float HealthFraction)
+{
+	if (!CanReviveCompanion())
+	{
+		return nullptr;
+	}
+
+	ACompanionCharacter* Body = GetCompanionCorpse();
+	const FVector Ground = Body->GetActorLocation() - FVector(0.0f, 0.0f, Body->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+
+	// A fresh companion where the body lies: no death state to undo, same class, level and skills.
+	// Copies first: SpawnCompanion overwrites the remembered grants and id.
+	const TArray<FCompanionAbilityGrant> Grants = ActiveGrants;
+	const FGameplayTag SourceAbilityId = RespawnAbilityId;
+
+	ACompanionCharacter* Revived = SpawnCompanion(LastCompanionClass, Ground, CompanionLevelOffset, Grants, SourceAbilityId);
+
+	if (!IsValid(Revived))
+	{
+		return nullptr;
+	}
+
+	if (UResourceComponent* Resources = Revived->GetResourceComponent())
+	{
+		const float MaxHealth = Resources->GetResourceValue(EResourceType::Health, EResourceValueType::Max);
+		const float CurrentHealth = Resources->GetResourceValue(EResourceType::Health, EResourceValueType::Current);
+		Resources->ModifyResource(EResourceType::Health, EResourceValueType::Current, MaxHealth * FMath::Clamp(HealthFraction, 0.01f, 1.0f) - CurrentHealth);
+	}
+
+	// Back without waiting: the respawn cooldown is over.
+	if (UAbilityComponent* Abilities = SourceAbilityId.IsValid() ? GetOwner()->FindComponentByClass<UAbilityComponent>() : nullptr)
+	{
+		Abilities->ReduceCooldowns(FGameplayTagContainer(SourceAbilityId), 0.0f, 1.0f, true);
+	}
+
+	return Revived;
+}
+
+void UCompanionComponent::ClearCorpse()
+{
+	if (ACompanionCharacter* Body = Corpse.Get())
+	{
+		Body->Destroy();
+	}
+
+	Corpse.Reset();
+}
+
 void UCompanionComponent::DismissCompanion()
 {
 	ACompanionCharacter* Current = Companion.Get();
@@ -238,7 +309,8 @@ void UCompanionComponent::ReleaseCompanion()
 
 void UCompanionComponent::HandleCompanionDied(AActor* Killer)
 {
-	// The corpse stays for its Corpse Lifetime; for the leader it's gone now.
+	// The body stays for its Corpse Lifetime (a revive can bring it back); as a companion it's gone now.
+	Corpse = Companion;
 	ReleaseCompanion();
 
 	// The summon ability's own cooldown is the respawn wait, reduced by any Stat.Cooldown modifiers on it.

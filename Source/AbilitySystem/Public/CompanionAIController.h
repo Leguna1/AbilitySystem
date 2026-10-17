@@ -47,7 +47,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Companion")
 	ECompanionStance GetStance() const { return Stance; }
 
-	/** Whether the companion uses AbilityId on its own. Attacks only; starts from Command Only. */
+	/**
+	 * Whether the companion uses AbilityId on its own. Attacks start from Command Only; other abilities
+	 * (a Howl) start off and, when switched on, are used whenever ready during a fight.
+	 */
 	UFUNCTION(BlueprintPure, Category = "Companion")
 	bool IsAutoCast(FGameplayTag AbilityId) const;
 
@@ -89,6 +92,9 @@ private:
 	AActor* FindRecentHostile() const;
 	AActor* FindLeaderTarget() const;
 	AActor* FindVisibleHostileNearLeader() const;
+
+	/** In a fight: uses one ready, auto-cast ability that isn't an attack (a buff). True if it used one. */
+	bool TryAutoCastSupportAbility();
 
 	/** Runs to the leader. True once within Follow Distance. Teleports when too far or stuck. */
 	bool MoveToLeader();

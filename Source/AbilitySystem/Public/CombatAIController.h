@@ -146,6 +146,9 @@ protected:
 	/** Forgets the planned attack (and any commanded one). */
 	void ResetAttackPlan();
 
+	/** Granted with a rank above 0, and off cooldown. */
+	static bool IsAbilityReady(const UAbilityComponent* Abilities, FGameplayTag AbilityId);
+
 private:
 	void Think();
 	void ThinkCombat(UAbilityComponent* Abilities, AActor* Target);
@@ -161,8 +164,6 @@ private:
 
 	bool IsFacing(const AActor* Target) const;
 
-	/** Granted with a rank above 0, and off cooldown. */
-	static bool IsAbilityReady(const UAbilityComponent* Abilities, FGameplayTag AbilityId);
 
 	TWeakObjectPtr<ABaseAICharacter> AICharacter;
 	TWeakObjectPtr<AActor> CurrentTarget;

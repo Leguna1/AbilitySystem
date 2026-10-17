@@ -74,6 +74,23 @@ public:
 	 */
 	static FVector FindPlacementNearLeader(const ACharacter* Leader, FVector PreferredDirection, float Distance);
 
+	/* -------------------- Revive -------------------- */
+
+	/** The fallen companion's body, while it lies there (its Corpse Lifetime). Null otherwise. */
+	UFUNCTION(BlueprintPure, Category = "Companion|Revive")
+	ACompanionCharacter* GetCompanionCorpse() const;
+
+	/** A body to revive, within MaxDistance of the leader (0 = any distance). */
+	UFUNCTION(BlueprintPure, Category = "Companion|Revive")
+	bool CanReviveCompanion(float MaxDistance = 0.0f) const;
+
+	/**
+	 * Brings the fallen companion back where it fell, with HealthFraction of its max health,
+	 * the same level and the same skills. Ends the summon's respawn cooldown.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Revive")
+	ACompanionCharacter* ReviveCompanion(float HealthFraction = 0.5f);
+
 	/** Removes the companion without a death (no respawn cooldown). */
 	UFUNCTION(BlueprintCallable, Category = "Companion")
 	void DismissCompanion();
@@ -155,6 +172,15 @@ private:
 	void ReleaseCompanion();
 
 	TWeakObjectPtr<ACompanionCharacter> Companion;
+
+	/** The body after a death, until it decays or a new companion is summoned. */
+	TWeakObjectPtr<ACompanionCharacter> Corpse;
+
+	/** What was summoned last, for a revive. */
+	UPROPERTY(Transient)
+	TSubclassOf<ACompanionCharacter> LastCompanionClass;
+
+	void ClearCorpse();
 
 	UPROPERTY(Transient)
 	TArray<FCompanionAbilityGrant> ActiveGrants;
