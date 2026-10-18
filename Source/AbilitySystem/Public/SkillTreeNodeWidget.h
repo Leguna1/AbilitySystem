@@ -88,6 +88,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
 	ESkillNodeKind GetKind() const { return Kind; }
 
+	/** Level needed for the next rank. 0 = no requirement (or maxed). */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	int32 GetRequiredLevel() const { return RequiredLevel; }
+
+	/** False while the character is below Get Required Level: show a "Lv X" badge, tint it red, etc. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|UI")
+	bool IsLevelRequirementMet() const { return bLevelRequirementMet; }
+
 	/** The mouse moved onto this node. The tree uses it to fill its details panel. */
 	UPROPERTY(BlueprintAssignable, Category = "Skill Tree|UI")
 	FSkillTreeNodeHoverSignature OnNodeHovered;
@@ -103,7 +111,8 @@ protected:
 
 	/**
 	 * Reflect the node's state here: grey out Locked, highlight Available,
-	 * mark Unlocked. Called on init and on every refresh.
+	 * mark Unlocked, show the level on Level Locked. Called on init and on every refresh.
+	 * Get Required Level / Is Level Requirement Met are already up to date when this runs.
 	 */
 	UFUNCTION(BlueprintImplementableEvent, Category = "Skill Tree|UI")
 	void OnNodeStateChanged(ESkillNodeState NewState, bool bCanUnlockNow, bool bCanRefundNow);
@@ -159,4 +168,10 @@ private:
 	
 	UPROPERTY(Transient)
 	ESkillNodeKind Kind = ESkillNodeKind::Skill;
+
+	UPROPERTY(Transient)
+	int32 RequiredLevel = 0;
+
+	UPROPERTY(Transient)
+	bool bLevelRequirementMet = true;
 };

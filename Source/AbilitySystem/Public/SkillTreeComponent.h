@@ -6,6 +6,8 @@
 #include "SkillTreeComponent.generated.h"
 
 class UAbilityComponent;
+class UAttributeComponent;
+class UExperienceComponent;
 class USkillTreeAsset;
 struct FSkillTreeNode;
 
@@ -26,7 +28,10 @@ enum class ESkillNodeState : uint8
 	Maxed UMETA(DisplayName = "Maxed"),
 	
 	/** Rank 0 and blocked by a bought node in the same exclusive group. */
-	Excluded UMETA(DisplayName = "Excluded")
+	Excluded UMETA(DisplayName = "Excluded"),
+
+	/** Rank 0, prerequisites met, but the character's level is below what rank 1 needs. */
+	LevelLocked UMETA(DisplayName = "Level Locked")
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FSkillTreeChangedSignature);
@@ -37,7 +42,8 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FSkillPointsChangedSignature, int32,
  * ranks live on UAbilityComponent (single source of truth), and spent points
  * are derived from them.
  *
- * Each node advances one ability by one rank per purchase. Refund policy: the
+ * Each node advances one ability by one rank per purchase. A node can ask for a
+ * character level per rank (Required Level Per Rank on the node). Refund policy: the
  * rank that would return an ability to 0 cannot be refunded while any
  * dependent node has purchased ranks.
  */
@@ -126,6 +132,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Skill Tree")
 	bool IsNodeExcluded(FGameplayTag NodeId) const;
 
+	/* -------------------- Level requirements -------------------- */
+
+	/** The owner's level: the Experience Component's, else the Attribute Component's. 0 if it has neither. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Level")
+	int32 GetCharacterLevel() const;
+
+	/** Level needed for the node's next rank. 0 = no requirement, or already maxed. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Level")
+	int32 GetNodeRequiredLevel(FGameplayTag NodeId) const;
+
+	/** True if the character is high enough level for the node's next rank. Owners with no level always pass. */
+	UFUNCTION(BlueprintPure, Category = "Skill Tree|Level")
+	bool IsNodeLevelRequirementMet(FGameplayTag NodeId) const;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -146,6 +166,17 @@ private:
 
 	UFUNCTION()
 	void HandleAbilityRankChanged(FGameplayTag AbilityId, int32 OldRank, int32 NewRank);
+
+	/** A new level can open level-locked ranks. */
+	UFUNCTION()
+	void HandleLevelUp(int32 NewLevel);
+
+	/** Level sources, found on the owner at BeginPlay. Either may be missing. */
+	UPROPERTY(Transient)
+	TObjectPtr<UExperienceComponent> ExperienceComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAttributeComponent> AttributeComponent;
 
 	void BroadcastTreeChanged();
 

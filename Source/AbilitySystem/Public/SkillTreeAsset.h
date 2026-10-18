@@ -56,6 +56,17 @@ struct FSkillTreeNode
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree")
 	FName ExclusiveGroup = NAME_None;
 
+	/**
+	 * Character level needed to buy each rank: the first entry is for rank 1, the second for rank 2, and so on.
+	 * Empty = no level requirement. Ranks past the end of the list use the last entry.
+	 * Example: 1, 5, 10 means rank 1 at level 1, rank 2 at level 5, rank 3 and up at level 10.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Requirements", meta = (ClampMin = "1"))
+	TArray<int32> RequiredLevelPerRank;
+
+	/** Level needed for ForRank (1 = the first rank). 0 = no requirement. */
+	int32 GetRequiredLevelForRank(int32 ForRank) const;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Skill Tree|Layout")
 	ESkillNodeKind Kind = ESkillNodeKind::Skill;
 
@@ -93,4 +104,9 @@ public:
 
 	const FSkillTreeNode* FindNode(FGameplayTag NodeId) const;
 	void GetDependentNodes(FGameplayTag NodeId, TArray<FGameplayTag>& OutDependents) const;
+
+#if WITH_EDITOR
+	/** Warns about level lists longer than the ability's max rank, or levels that go down. */
+	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
+#endif
 };

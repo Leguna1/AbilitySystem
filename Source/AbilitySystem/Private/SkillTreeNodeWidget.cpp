@@ -59,6 +59,8 @@ void USkillTreeNodeWidget::RefreshNode()
 	State = TreeComponent->GetNodeState(NodeId);
 	Rank = TreeComponent->GetNodeRank(NodeId);
 	MaxRank = TreeComponent->GetNodeMaxRank(NodeId);
+	RequiredLevel = TreeComponent->GetNodeRequiredLevel(NodeId);
+	bLevelRequirementMet = TreeComponent->IsNodeLevelRequirementMet(NodeId);
 
 	OnNodeStateChanged(
 		State,

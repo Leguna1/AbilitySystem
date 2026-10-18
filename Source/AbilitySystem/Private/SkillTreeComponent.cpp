@@ -2,6 +2,8 @@
 
 #include "Ability.h"
 #include "AbilityComponent.h"
+#include "AttributeComponent.h"
+#include "ExperienceComponent.h"
 #include "PassiveAbility.h"
 #include "SkillTreeAsset.h"
 
@@ -16,6 +18,13 @@ void USkillTreeComponent::BeginPlay()
 
 	TotalSkillPoints = FMath::Max(0, StartingSkillPoints);
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
+	ExperienceComponent = GetOwner()->FindComponentByClass<UExperienceComponent>();
+	AttributeComponent = GetOwner()->FindComponentByClass<UAttributeComponent>();
+
+	if (IsValid(ExperienceComponent))
+	{
+		ExperienceComponent->OnLevelUp.AddDynamic(this, &USkillTreeComponent::HandleLevelUp);
+	}
 
 	if (!IsValid(AbilityComponent))
 	{
@@ -31,6 +40,11 @@ void USkillTreeComponent::BeginPlay()
 
 void USkillTreeComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (IsValid(ExperienceComponent))
+	{
+		ExperienceComponent->OnLevelUp.RemoveDynamic(this, &USkillTreeComponent::HandleLevelUp);
+	}
+
 	if (IsValid(AbilityComponent))
 	{
 		RevokeTreePassives();
@@ -144,9 +158,14 @@ ESkillNodeState USkillTreeComponent::GetNodeState(const FGameplayTag NodeId) con
 		return ESkillNodeState::Excluded;
 	}
 
-	return ArePrerequisitesMet(NodeId)
+	if (!ArePrerequisitesMet(NodeId))
+	{
+		return ESkillNodeState::Locked;
+	}
+
+	return IsNodeLevelRequirementMet(NodeId)
 		? ESkillNodeState::Available
-		: ESkillNodeState::Locked;
+		: ESkillNodeState::LevelLocked;
 }
 
 bool USkillTreeComponent::ArePrerequisitesMet(const FGameplayTag NodeId) const
@@ -178,6 +197,7 @@ bool USkillTreeComponent::CanUnlockNode(const FGameplayTag NodeId) const
 	!IsNodeExcluded(NodeId) &&
 	ArePrerequisitesMet(NodeId) &&
 	GetNodeRank(NodeId) < GetNodeMaxRank(NodeId) &&
+	IsNodeLevelRequirementMet(NodeId) &&
 	GetAvailableSkillPoints() >= Node->Cost;
 }
 
@@ -238,6 +258,48 @@ bool USkillTreeComponent::RefundNode(const FGameplayTag NodeId)
 void USkillTreeComponent::HandleAbilityRankChanged(const FGameplayTag AbilityId, const int32 OldRank, const int32 NewRank)
 {
 	BroadcastTreeChanged();
+}
+
+void USkillTreeComponent::HandleLevelUp(const int32 NewLevel)
+{
+	BroadcastTreeChanged();
+}
+
+int32 USkillTreeComponent::GetCharacterLevel() const
+{
+	if (IsValid(ExperienceComponent))
+	{
+		return ExperienceComponent->GetLevel();
+	}
+
+	return IsValid(AttributeComponent) ? AttributeComponent->GetCharacterLevel() : 0;
+}
+
+int32 USkillTreeComponent::GetNodeRequiredLevel(const FGameplayTag NodeId) const
+{
+	const FSkillTreeNode* Node = FindValidNode(NodeId);
+
+	if (!Node)
+	{
+		return 0;
+	}
+
+	const int32 NextRank = GetNodeRank(NodeId) + 1;
+
+	return NextRank <= GetNodeMaxRank(NodeId)
+		? Node->GetRequiredLevelForRank(NextRank)
+		: 0;
+}
+
+bool USkillTreeComponent::IsNodeLevelRequirementMet(const FGameplayTag NodeId) const
+{
+	// No level source (e.g. a test pawn): requirements don't apply.
+	if (!IsValid(ExperienceComponent) && !IsValid(AttributeComponent))
+	{
+		return true;
+	}
+
+	return GetCharacterLevel() >= GetNodeRequiredLevel(NodeId);
 }
 
 void USkillTreeComponent::BroadcastTreeChanged()

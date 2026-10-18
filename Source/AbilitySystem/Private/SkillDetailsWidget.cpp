@@ -82,6 +82,8 @@ bool USkillDetailsWidget::BuildDetails(FSkillNodeDetails& OutDetails) const
 	OutDetails.State = TreeComponent->GetNodeState(NodeId);
 	OutDetails.Rank = TreeComponent->GetNodeRank(NodeId);
 	OutDetails.MaxRank = TreeComponent->GetNodeMaxRank(NodeId);
+	OutDetails.RequiredLevel = TreeComponent->GetNodeRequiredLevel(NodeId);
+	OutDetails.bLevelRequirementMet = TreeComponent->IsNodeLevelRequirementMet(NodeId);
 
 	// Unlearned: next only. Learned: both. Maxed: current only.
 	OutDetails.bShowCurrent = OutDetails.Rank > 0;
@@ -159,6 +161,18 @@ void USkillDetailsWidget::ApplyToBoundWidgets(const FSkillNodeDetails& Details)
 		{
 			NextDescriptionText->SetText(Details.NextDescription);
 		}
+	}
+
+	if (IsValid(RequirementText))
+	{
+		const bool bShowRequirement = Details.bShowNext && Details.RequiredLevel > 0 && !Details.bLevelRequirementMet;
+
+		if (bShowRequirement)
+		{
+			RequirementText->SetText(FText::FormatNamed(RequiredLevelFormat, TEXT("Level"), Details.RequiredLevel));
+		}
+
+		SetShown(RequirementText, bShowRequirement);
 	}
 }
 

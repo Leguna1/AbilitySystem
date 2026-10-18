@@ -221,9 +221,18 @@ namespace AbilityDescription
 
 				const float Magnitude = FMath::Abs(Modifier.Magnitude.Get(Rank));
 
-				Tokens.Add(MakeUnique(Name), Modifier.Operation == EModifierOperation::Percent
-					? FormatPercent(Magnitude)
-					: FormatNumber(Magnitude));
+				const FString Unique = MakeUnique(Name);
+
+				if (Modifier.Operation == EModifierOperation::Percent)
+				{
+					Tokens.Add(Unique, FormatPercent(Magnitude));
+				}
+				else
+				{
+					// Add modifiers on 0..1 stats (Seek Chance) can be shown as {NamePercent}.
+					Tokens.Add(Unique, FormatNumber(Magnitude));
+					Tokens.Add(Unique + TEXT("Percent"), FormatPercent(Magnitude));
+				}
 			}
 		};
 	}

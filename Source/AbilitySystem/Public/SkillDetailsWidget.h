@@ -61,6 +61,13 @@ struct FSkillNodeDetails
 
 	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
 	TArray<FAbilityDisplayStat> NextStats;
+
+	/** Level needed for the next rank. 0 = no requirement (or maxed). */
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
+	int32 RequiredLevel = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Skill Details")
+	bool bLevelRequirementMet = true;
 };
 
 /**
@@ -74,6 +81,7 @@ struct FSkillNodeDetails
  *  - NameText (Text), IconImage (Image)
  *  - CurrentColumn (any panel), CurrentHeaderText (Text), CurrentStatsText (Rich Text), CurrentDescriptionText (Rich Text)
  *  - NextColumn (any panel), NextHeaderText (Text), NextStatsText (Rich Text), NextDescriptionText (Rich Text)
+ *  - RequirementText (Text): "Requires level X", shown only while the next rank's level isn't reached
  *  - DetailsContent: shown while a node is displayed; EmptyHint: shown while none is
  * Give the Rich Text Blocks a style row named "Changed" to color the numbers that improve.
  * Or skip them all and build the look in On Details Updated.
@@ -129,6 +137,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details", meta = (MultiLine = "true"))
 	FText StatSeparator = INVTEXT("   ");
 
+	/** Requirement Text when the next rank needs a higher level. {Level} is filled in. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details")
+	FText RequiredLevelFormat = NSLOCTEXT("SkillDetails", "RequiredLevel", "Requires level {Level}");
+
 	/** Wrap the next rank's changed numbers in <Changed></> for the Rich Text style. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Skill Details")
 	bool bHighlightChanges = true;
@@ -164,6 +176,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
 	TObjectPtr<URichTextBlock> NextDescriptionText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
+	TObjectPtr<UTextBlock> RequirementText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Skill Details")
 	TObjectPtr<UWidget> DetailsContent;
