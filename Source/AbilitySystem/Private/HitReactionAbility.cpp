@@ -2,6 +2,9 @@
 
 #include "AbilityComponent.h"
 #include "AbilitySystemTags.h"
+
+#include "GameFramework/Character.h"
+
 UHitReactionAbility::UHitReactionAbility()
 {
 	// A stagger lasts as long as it lasts, whatever buffs or debuffs the character has.
@@ -21,6 +24,19 @@ void UHitReactionAbility::ActivateAbility_Implementation()
 	}
 
 	UAnimMontage* Montage = SelectReactionMontage(HitReaction);
+	
+	// Knockback from a poise break: pushed away from the attacker, with optional lift.
+	if (HitReaction.KnockbackSpeed > 0.0f || HitReaction.KnockbackLift > 0.0f)
+	{
+		if (ACharacter* Victim = GetOwningCharacter())
+		{
+			const FVector LaunchVelocity =
+				HitReaction.HitDirection * HitReaction.KnockbackSpeed +
+				FVector::UpVector * HitReaction.KnockbackLift;
+
+			Victim->LaunchCharacter(LaunchVelocity, true, HitReaction.KnockbackLift > 0.0f);
+		}
+	}
 
 	// No animation: the interrupt still happened, so just end straight away.
 	if (!IsValid(Montage) || !PlayAbilityMontage(Montage, ReactionPlayRate))

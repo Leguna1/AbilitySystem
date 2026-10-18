@@ -55,6 +55,10 @@ protected:
 	/** Fixed gap in degrees between adjacent arrows, used when SpreadMode is AnglePerArrow. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Fan Shot", meta = (ClampMin = "0.0", ClampMax = "90.0", EditCondition = "SpreadMode == EFanSpreadMode::AnglePerArrow", EditConditionHides))
 	float AngleBetweenArrows = 12.0f;
+	
+	/** Fan along the camera's aim instead of the character's facing. Off = the way the character faces. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Fan Shot")
+	bool bAimWithCamera = false;
 
 private:
 	/** Signed yaw offset (degrees) for an arrow index given the total arrow count. */

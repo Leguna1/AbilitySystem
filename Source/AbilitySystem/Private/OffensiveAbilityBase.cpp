@@ -146,6 +146,9 @@ FHitImpact UOffensiveAbilityBase::ResolveHitImpact() const
 {
 	FHitImpact Impact = HitImpact;
 	Impact.PoiseDamage = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_PoiseDamage, HitImpact.PoiseDamage), 0.0f);
+	Impact.KnockbackSpeed = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_KnockbackSpeed, HitImpact.KnockbackSpeed), 0.0f);
+	Impact.KnockbackLift = FMath::Max(GetModifiedFloat(AbilitySystemTags::Stat_KnockbackLift, HitImpact.KnockbackLift), 0.0f);
+	
 	return Impact;
 }
 #if WITH_EDITOR

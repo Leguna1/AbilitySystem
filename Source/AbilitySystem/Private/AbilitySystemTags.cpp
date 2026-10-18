@@ -32,6 +32,9 @@ namespace AbilitySystemTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_SuperArmor, "State.SuperArmor", "Hits still land but never interrupt (flinch at most).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Staggered, "State.Staggered", "Playing an interrupting hit reaction.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_PoiseDamage, "Stat.PoiseDamage", "Poise removed by this ability's hits.");
+	
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_KnockbackSpeed, "Stat.KnockbackSpeed", "Push speed on a poise break.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_KnockbackLift, "Stat.KnockbackLift", "Upward lift on a poise break.");
 
 	/* -------------------- Offense and defense attributes -------------------- */
 
@@ -46,5 +49,7 @@ namespace AbilitySystemTags
 	
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MaxHealth, "Stat.MaxHealth", "Max Health. When the Attribute Component has it, it drives the Resource Component.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Stat_MaxFocus, "Stat.MaxFocus", "Max Focus. When the Attribute Component has it, it drives the Resource Component.");
+	
+	
 
 }

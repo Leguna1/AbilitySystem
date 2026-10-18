@@ -23,23 +23,28 @@ bool UFanShotAbility::ShouldUseCurrentTarget_Implementation() const
 FVector UFanShotAbility::ResolveFanCenterDirection_Implementation() const
 {
 	const ACharacter* Character = GetOwningCharacter();
+
 	if (!IsValid(Character))
 	{
 		return FVector::ZeroVector;
 	}
 
-	// Prefer where the player is aiming (control rotation), fall back to facing.
-	if (const AController* Controller = Character->GetController())
+	if (bAimWithCamera)
 	{
-		const FVector AimForward = Controller->GetControlRotation().Vector();
-		FVector Flat(AimForward.X, AimForward.Y, 0.0f);
-		if (!Flat.IsNearlyZero())
+		if (const AController* Controller = Character->GetController())
 		{
-			return Flat.GetSafeNormal();
+			const FVector AimForward = Controller->GetControlRotation().Vector();
+			const FVector Flat(AimForward.X, AimForward.Y, 0.0f);
+
+			if (!Flat.IsNearlyZero())
+			{
+				return Flat.GetSafeNormal();
+			}
 		}
 	}
 
-	return Character->GetActorForwardVector().GetSafeNormal();
+	// The way the character faces (after any motion-warp turn toward the target).
+	return Character->GetActorForwardVector().GetSafeNormal2D();
 }
 
 float UFanShotAbility::ComputeYawOffsetForIndex(const int32 ProjectileIndex, const int32 ProjectileCount) const
