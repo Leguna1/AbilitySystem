@@ -14,6 +14,14 @@ class ABILITYSYSTEM_API UProjectileBarrageAbility : public URangedAttackAbility
 public:
 	
 	virtual void ActivateAbility_Implementation() override;
+
+	/** Ground point the last release rained on. Fragments use it (the volley field). */
+	UFUNCTION(BlueprintPure, Category = "Ability|Barrage")
+	FVector GetBarrageCenter() const { return LastBarrageCenter; }
+
+	/** Landing radius of this execution, after Stat.Radius. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Barrage")
+	float GetImpactRadius() const { return ResolvedImpactRadius; }
 	
 protected:
 	virtual FVector ResolveProjectileDirectionForIndex_Implementation(int32 ProjectileIndex) const override;
@@ -83,6 +91,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking")
 	FGameplayTagContainer PreferredTargetStatusTags;
 
+	/**
+	 * While any preferred (e.g. Marked) target is in range, seeking arrows go only to preferred targets.
+	 * Off: seekers spread evenly over every enemy in range, and preferred ones only win ties.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking")
+	bool bFocusPreferredTargets = true;
+
 	/** Steering toward the sought enemy after the redirect, so moving targets are still hit. 0 = straight shot. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Barrage|Seeking", meta = (ClampMin = "0.0"))
 	float SeekHomingAcceleration = 4000.0f;
@@ -100,5 +115,8 @@ private:
 
 	UPROPERTY(Transient)
 	float ResolvedSeekChance = 0.0f;
+
+	UPROPERTY(Transient)
+	FVector LastBarrageCenter = FVector::ZeroVector;
 	
 };

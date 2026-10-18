@@ -87,6 +87,9 @@ void UProjectileBarrageAbility::OnProjectileReleased_Implementation(const float 
 
 	const FVector TargetCenter = ResolveBarrageTargetCenter();
 
+	// The centre on the ground (a single impact point gets no offset), for fragments like the volley field.
+	LastBarrageCenter = ResolveBarrageImpactPoint(0, 1, TargetCenter);
+
 	// Gathered once per release; stays empty when this volley doesn't seek.
 	TArray<AActor*> SeekCandidates;
 
@@ -291,7 +294,15 @@ void UProjectileBarrageAbility::FindSeekTargets(const FVector& Center, TArray<AA
 
 		return FVector::DistSquared(A.GetActorLocation(), Center) < FVector::DistSquared(B.GetActorLocation(), Center);
 	});
-	
+
+	// Sorted preferred-first: when the first is preferred, keep only the preferred ones.
+	if (bFocusPreferredTargets && !OutTargets.IsEmpty() && IsPreferred(*OutTargets[0]))
+	{
+		OutTargets.RemoveAll([&IsPreferred](const AActor* Candidate)
+		{
+			return !IsPreferred(*Candidate);
+		});
+	}
 }
 
 AActor* UProjectileBarrageAbility::PickSeekTarget(const TArray<AActor*>& Candidates, TArray<int32>& AssignedCounts)
