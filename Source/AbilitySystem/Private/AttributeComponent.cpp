@@ -192,7 +192,7 @@ void UAttributeComponent::ApplyWalkSpeed() const
 
 	if (IsValid(Movement))
 	{
-		Movement->MaxWalkSpeed = GetAttributeValue(WalkSpeedAttribute);
+		Movement->MaxWalkSpeed = FMath::Max(GetAttributeValue(WalkSpeedAttribute), 0.0f);
 	}
 }
 

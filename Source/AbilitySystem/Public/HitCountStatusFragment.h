@@ -7,10 +7,14 @@
 #include "ProjectileFragment.h"
 #include "HitCountStatusFragment.generated.h"
 
+class AHitCountTracker;
+
 /**
- * When one target is hit Hits Required times by the projectiles of ONE release, it gets these statuses.
- * Pinning Rain: 3 volley arrows on the same enemy pin it (Status.Pinned, Stat.MoveSpeed -100%).
- * Also fits Fan Shot (every arrow into one target) or a multi-shot Rapid Fire.
+ * Every Hits Required hits on one target, it gets these statuses.
+ * Per release (default): only the projectiles of ONE release count, e.g. Pinning Rain (3 volley arrows)
+ * or Shredding Fan (3 fan arrows).
+ * Count Across Releases: hits add up over consecutive releases while each new release comes within
+ * Counting Window of the last, e.g. Pinning Fire (5 Rapid Fire hits).
  */
 UCLASS(meta = (DisplayName = "Status On Repeated Hits"))
 class ABILITYSYSTEM_API UHitCountStatusFragment : public UProjectileFragment
@@ -37,9 +41,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Repeated Hits")
 	FGameplayTagContainer RequiredOwnerTags;
 
-	/** Seconds this release's projectiles are counted for. */
+	/** Seconds this release's projectiles are counted for. With Count Across Releases, every release restarts it. */
 	UPROPERTY(EditDefaultsOnly, Category = "Repeated Hits", meta = (ClampMin = "0.5"))
 	float CountingWindow = 4.0f;
+
+	/** Hits add up across releases (one arrow at a time, like Rapid Fire) instead of per release. */
+	UPROPERTY(EditDefaultsOnly, Category = "Repeated Hits")
+	bool bCountAcrossReleases = false;
+
+private:
+	/** The running count while releases keep coming (Count Across Releases). */
+	mutable TWeakObjectPtr<AHitCountTracker> SharedTracker;
 };
 
 /** Counts one release's hits per target. Spawned by Status On Repeated Hits; removes itself after its window. */
@@ -53,6 +65,9 @@ public:
 
 	void InitializeTracker(int32 InHitsRequired, const TArray<FStatusApplication>& InStatuses, float Window);
 	void RegisterProjectile(AProjectileBase* Arrow);
+
+	/** Keeps counting for another Window seconds, with this release's resolved statuses. */
+	void ExtendTracker(const TArray<FStatusApplication>& InStatuses, float Window);
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

@@ -2,6 +2,9 @@
 
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
+#include "NativeGameplayTags.h"
+
+UE_DEFINE_GAMEPLAY_TAG_STATIC(TAG_Stat_FireRateRamp, "Stat.FireRateRamp");
 
 URapidFireAbility::URapidFireAbility()
 {
@@ -37,6 +40,10 @@ void URapidFireAbility::ActivateAbility_Implementation()
 		GetModifiedInt(AbilitySystemTags::Stat_ShotCount, GetRankedInt(MaximumShotsByRank)),
 		1
 	);
+
+	ResolvedFireRateRamp = FMath::Max(GetModifiedFloat(TAG_Stat_FireRateRamp, 0.0f), 0.0f);
+	LoopBasePlayRate = 1.0f;
+	CurrentFireRateMultiplier = 1.0f;
 	
 	Super::ActivateAbility_Implementation();
 
@@ -112,6 +119,7 @@ void URapidFireAbility::OnProjectileReleased_Implementation(const float Strength
 	}
 
 	++ShotsFired;
+	ApplyFireRateRamp();
 
 	OnRapidFireShotReleased(
 		ShotsFired,
@@ -167,6 +175,32 @@ void URapidFireAbility::OnAbilityEnded_Implementation(const EAbilityEndReason En
 	ShotsFired = 0;
 	bFinishRequested = false;
 	bFiringLoopStarted = false;
+	CurrentFireRateMultiplier = 1.0f;
+}
+
+bool URapidFireAbility::IsFinalShotPending() const
+{
+	return RapidFireStage == ERapidFireStage::Firing &&
+		!bFinishRequested &&
+		ShotsFired + 1 >= MaximumShots;
+}
+
+void URapidFireAbility::ApplyFireRateRamp()
+{
+	if (ResolvedFireRateRamp <= 0.0f || ShotsFired >= MaximumShots)
+	{
+		return;
+	}
+
+	UAnimInstance* AnimInstance = GetAnimInstance();
+
+	if (!IsValid(AnimInstance) || !IsValid(AbilityMontage))
+	{
+		return;
+	}
+
+	CurrentFireRateMultiplier = FMath::Min(1.0f + ResolvedFireRateRamp * static_cast<float>(ShotsFired), MaxFireRateMultiplier);
+	AnimInstance->Montage_SetPlayRate(AbilityMontage, LoopBasePlayRate * CurrentFireRateMultiplier);
 }
 
 bool URapidFireAbility::CanReplaceActiveAbility_Implementation(const UActiveAbility* CurrentAbility) const
@@ -309,6 +343,14 @@ void URapidFireAbility::HandleRapidFireSectionChanged(UAnimMontage* Montage, con
 		if (!bFiringLoopStarted)
 		{
 			bFiringLoopStarted = true;
+
+			// The speed the loop starts at (attack speed already applied) is what the ramp scales.
+			if (const UAnimInstance* AnimInstance = GetAnimInstance())
+			{
+				const float StartRate = AnimInstance->Montage_GetPlayRate(AbilityMontage);
+				LoopBasePlayRate = StartRate > KINDA_SMALL_NUMBER ? StartRate : 1.0f;
+			}
+
 			OnFiringLoopStarted();
 		}
 
@@ -318,6 +360,17 @@ void URapidFireAbility::HandleRapidFireSectionChanged(UAnimMontage* Montage, con
 	if (SectionName == RecoverySectionName)
 	{
 		RapidFireStage = ERapidFireStage::Recovery;
+
+		// Recovery plays at the normal speed, not the ramped one.
+		if (CurrentFireRateMultiplier > 1.0f)
+		{
+			if (UAnimInstance* AnimInstance = GetAnimInstance())
+			{
+				AnimInstance->Montage_SetPlayRate(AbilityMontage, LoopBasePlayRate);
+			}
+
+			CurrentFireRateMultiplier = 1.0f;
+		}
 
 		/*
 		 * A malformed montage might enter Recovery before its final projectile

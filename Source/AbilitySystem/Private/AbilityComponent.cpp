@@ -1351,7 +1351,7 @@ float UAbilityComponent::GetAbilityCooldownDuration(FGameplayTag AbilityId) cons
 	return IsValid(Defaults) ? ResolveCooldownDuration(Defaults) : 0.0f;
 }
 
-UPassiveAbility* UAbilityComponent::FindPassiveInstance(const TSubclassOf<UAbility> AbilityClass) const
+UPassiveAbility* UAbilityComponent::FindPassiveInstance(const TSubclassOf<UAbility> AbilityClass) const 
 {
 	for (UPassiveAbility* Passive : PassiveInstances)
 	{

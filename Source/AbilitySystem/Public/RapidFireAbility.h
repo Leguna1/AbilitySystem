@@ -43,6 +43,9 @@ enum class ERapidFireMovementResponse : uint8
  * - contains the post-attack recovery;
  * - may open the Transition window;
  * - ends the ability naturally.
+ *
+ * Stat.FireRateRamp (base 0): each shot fired speeds the loop up by this much
+ * (0.06 = +6% per shot), up to Max Fire Rate Multiplier. Used by Overdrive.
  */
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class ABILITYSYSTEM_API URapidFireAbility : public URangedAttackAbility, public IAbilityProgressProvider
@@ -79,6 +82,14 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Ability|Rapid Fire")
 	bool IsFinishRequested() const { return bFinishRequested; }
+
+	/** The arrow about to be released is the last of a full volley (not one cut short by moving). */
+	UFUNCTION(BlueprintPure, Category = "Ability|Rapid Fire")
+	bool IsFinalShotPending() const;
+
+	/** Current loop speed from the fire rate ramp: 1 = unramped. */
+	UFUNCTION(BlueprintPure, Category = "Ability|Rapid Fire")
+	float GetFireRateMultiplier() const { return CurrentFireRateMultiplier; }
 
 protected:
 	virtual void OnProjectileReleased_Implementation(float Strength) override;
@@ -142,11 +153,18 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rapid Fire|Interruption", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MovementInterruptionDeadZone = 0.1f;
 
+	/** The fire rate ramp (Stat.FireRateRamp) never speeds the loop past this multiple of its starting speed. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Rapid Fire|Fire Rate", meta = (ClampMin = "1.0"))
+	float MaxFireRateMultiplier = 2.0f;
+
 private:
 	bool ConfigureMontageSections();
 	bool ValidateMontageSections() const;
 
 	void HandleRapidFireSectionChanged(UAnimMontage* Montage, FName SectionName, bool bLooped);
+
+	/** Applies the fire rate ramp for the shots fired so far. */
+	void ApplyFireRateRamp();
 
 	UPROPERTY(Transient)
 	ERapidFireStage RapidFireStage = ERapidFireStage::Inactive;
@@ -163,4 +181,15 @@ private:
 	/** Resolved from MaximumShotsByRank at activation. */
 	UPROPERTY(Transient)
 	int32 MaximumShots = 0;
+
+	/** Stat.FireRateRamp, resolved at activation. */
+	UPROPERTY(Transient)
+	float ResolvedFireRateRamp = 0.0f;
+
+	/** Montage play rate when the loop started (attack speed included); the ramp scales this. */
+	UPROPERTY(Transient)
+	float LoopBasePlayRate = 1.0f;
+
+	UPROPERTY(Transient)
+	float CurrentFireRateMultiplier = 1.0f;
 };

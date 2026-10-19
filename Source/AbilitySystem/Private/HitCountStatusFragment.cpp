@@ -19,9 +19,10 @@ void UHitCountStatusFragment::OnProjectilesReleased(URangedAttackAbility& Abilit
 	ACharacter* Character = Ability.GetOwningCharacter();
 	const UAbilityComponent* Component = Ability.GetAbilityComponent();
 
-	// Fewer arrows than hits needed can never reach the count.
+	// Per release, fewer arrows than hits needed can never reach the count.
 	if (Statuses.IsEmpty() ||
-		Projectiles.Num() < HitsRequired ||
+		Projectiles.IsEmpty() ||
+		(!bCountAcrossReleases && Projectiles.Num() < HitsRequired) ||
 		!IsValid(World) ||
 		!IsValid(Character) ||
 		!IsValid(Component) ||
@@ -38,6 +39,24 @@ void UHitCountStatusFragment::OnProjectilesReleased(URangedAttackAbility& Abilit
 		return;
 	}
 
+	// Still counting from the previous release: keep that count going.
+	if (bCountAcrossReleases)
+	{
+		AHitCountTracker* Running = SharedTracker.Get();
+
+		if (IsValid(Running) && !Running->IsActorBeingDestroyed() && Running->GetInstigator() == Character)
+		{
+			Running->ExtendTracker(Resolved, CountingWindow);
+
+			for (AProjectileBase* Projectile : Projectiles)
+			{
+				Running->RegisterProjectile(Projectile);
+			}
+
+			return;
+		}
+	}
+
 	FActorSpawnParameters SpawnParams;
 	SpawnParams.Owner = Character;
 	SpawnParams.Instigator = Character;
@@ -51,6 +70,11 @@ void UHitCountStatusFragment::OnProjectilesReleased(URangedAttackAbility& Abilit
 	}
 
 	Tracker->InitializeTracker(HitsRequired, Resolved, CountingWindow);
+
+	if (bCountAcrossReleases)
+	{
+		SharedTracker = Tracker;
+	}
 
 	for (AProjectileBase* Projectile : Projectiles)
 	{
@@ -85,6 +109,12 @@ AHitCountTracker::AHitCountTracker()
 void AHitCountTracker::InitializeTracker(const int32 InHitsRequired, const TArray<FStatusApplication>& InStatuses, const float Window)
 {
 	HitsRequired = FMath::Max(InHitsRequired, 1);
+	Statuses = InStatuses;
+	SetLifeSpan(FMath::Max(Window, 0.5f));
+}
+
+void AHitCountTracker::ExtendTracker(const TArray<FStatusApplication>& InStatuses, const float Window)
+{
 	Statuses = InStatuses;
 	SetLifeSpan(FMath::Max(Window, 0.5f));
 }
@@ -133,11 +163,13 @@ void AHitCountTracker::HandleArrowHit(AProjectileBase* Arrow, AActor* HitActor, 
 	int32& Count = HitCounts.FindOrAdd(HitActor);
 	++Count;
 
-	// Exactly on the threshold: once per target for this release.
-	if (Count != HitsRequired)
+	if (Count < HitsRequired)
 	{
 		return;
 	}
+	
+	// Every Hits Required hits: the count starts over, so a long volley can trigger again.
+	Count = 0;
 
 	for (const FStatusApplication& Status : Statuses)
 	{
