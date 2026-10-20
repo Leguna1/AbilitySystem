@@ -66,84 +66,12 @@ void ACombatAIController::ClearTarget()
 	}
 
 	CurrentTarget.Reset();
-	bTargetCommanded = false;
 	ClearFocus(EAIFocusPriority::Gameplay);
 	OnTargetChanged.Broadcast(nullptr);
 }
 
 void ACombatAIController::NotifyAttackedBy(AActor* Attacker)
 {
-}
-
-bool ACombatAIController::CommandAbility(const FGameplayTag AbilityId, AActor* Target)
-{
-	ABaseAICharacter* Fighter = AICharacter.Get();
-	UAbilityComponent* Abilities = IsValid(Fighter) ? Fighter->GetAbilityComponent() : nullptr;
-
-	if (!IsValid(Abilities) || Fighter->IsDead() || !IsAbilityReady(Abilities, AbilityId))
-	{
-		return false;
-	}
-
-	const int32 AttackIndex = Fighter->Attacks.IndexOfByPredicate([AbilityId](const FAIAttack& Attack)
-	{
-		return Attack.AbilityTag.MatchesTagExact(AbilityId);
-	});
-
-	// Not an attack (a howl, a buff): no target or range needed.
-	if (AttackIndex == INDEX_NONE)
-	{
-		return Abilities->TryActivateAbility(AbilityId);
-	}
-
-	if (!IsValidTarget(Target))
-	{
-		return false;
-	}
-
-	if (Target != CurrentTarget.Get())
-	{
-		ClearTarget();
-		SetCurrentTarget(Target);
-	}
-
-	bTargetCommanded = true;
-	CommandedAttackIndex = AttackIndex;
-
-	// Commands feel instant: no recovery pause before them.
-	NextAttackTime = 0.0;
-	return true;
-}
-
-bool ACombatAIController::CommandAttack(AActor* Target)
-{
-	ABaseAICharacter* Fighter = AICharacter.Get();
-
-	if (!IsValidTarget(Target) || !IsValid(Fighter))
-	{
-		return false;
-	}
-
-	// Open with the first ready command-only attack (a pounce), if there is one.
-	if (const UAbilityComponent* Abilities = Fighter->GetAbilityComponent())
-	{
-		for (const FAIAttack& Attack : Fighter->Attacks)
-		{
-			if (Attack.bCommandOnly && IsAbilityReady(Abilities, Attack.AbilityTag))
-			{
-				return CommandAbility(Attack.AbilityTag, Target);
-			}
-		}
-	}
-
-	if (Target != CurrentTarget.Get())
-	{
-		ClearTarget();
-		SetCurrentTarget(Target);
-	}
-
-	bTargetCommanded = true;
-	return true;
 }
 
 bool ACombatAIController::IsAbilityReady(const UAbilityComponent* Abilities, const FGameplayTag AbilityId)
@@ -153,16 +81,9 @@ bool ACombatAIController::IsAbilityReady(const UAbilityComponent* Abilities, con
 		!Abilities->IsAbilityOnCooldown(AbilityId);
 }
 
-bool ACombatAIController::IsAutoCastAttack(const int32 AttackIndex) const
-{
-	const ABaseAICharacter* Fighter = AICharacter.Get();
-	return IsValid(Fighter) && Fighter->Attacks.IsValidIndex(AttackIndex) && !Fighter->Attacks[AttackIndex].bCommandOnly;
-}
-
 void ACombatAIController::ResetAttackPlan()
 {
 	PlannedAttackIndex = INDEX_NONE;
-	CommandedAttackIndex = INDEX_NONE;
 }
 
 bool ACombatAIController::IsValidTarget(const AActor* Actor) const
@@ -248,31 +169,18 @@ void ACombatAIController::ThinkCombat(UAbilityComponent* Abilities, AActor* Targ
 	ABaseAICharacter* Fighter = AICharacter.Get();
 	const float Gap = Fighter->GetEdgeDistanceTo(Target);
 
-	// A commanded attack comes first while it can still be used (in range or chasable, off cooldown).
-	if (CommandedAttackIndex != INDEX_NONE && !IsAttackUsable(Abilities, CommandedAttackIndex, Gap, true))
-	{
-		CommandedAttackIndex = INDEX_NONE;
-	}
+	// Re-plan when the plan can't be used from here anymore, or something better became usable.
+	// Otherwise keep it, so the chase doesn't flip between attacks.
+	int32 HighestPriority = 0;
 
-	if (CommandedAttackIndex != INDEX_NONE)
+	if (!FindHighestUsablePriority(Abilities, Gap, HighestPriority))
 	{
-		PlannedAttackIndex = CommandedAttackIndex;
+		PlannedAttackIndex = INDEX_NONE;
 	}
-	else
+	else if (!IsAttackUsable(Abilities, PlannedAttackIndex, Gap) ||
+		Fighter->Attacks[PlannedAttackIndex].Priority < HighestPriority)
 	{
-		// Re-plan when the plan can't be used from here anymore, or something better became usable.
-		// Otherwise keep it, so the chase doesn't flip between attacks.
-		int32 HighestPriority = 0;
-
-		if (!FindHighestUsablePriority(Abilities, Gap, HighestPriority))
-		{
-			PlannedAttackIndex = INDEX_NONE;
-		}
-		else if (!IsAttackUsable(Abilities, PlannedAttackIndex, Gap) ||
-			Fighter->Attacks[PlannedAttackIndex].Priority < HighestPriority)
-		{
-			PlannedAttackIndex = PickAttack(Abilities, Gap);
-		}
+		PlannedAttackIndex = PickAttack(Abilities, Gap);
 	}
 
 	// Nothing usable from here: hold position and keep facing the target.
@@ -327,14 +235,13 @@ void ACombatAIController::ThinkCombat(UAbilityComponent* Abilities, AActor* Targ
 	if (Abilities->TryActivateAbility(PlannedAttack.AbilityTag))
 	{
 		SetBehaviorState(EAIBehaviorState::Attacking);
-		CommandedAttackIndex = INDEX_NONE;
 	}
 
 	// Pick fresh next time, whether it activated or not.
 	PlannedAttackIndex = INDEX_NONE;
 }
 
-bool ACombatAIController::IsAttackUsable(const UAbilityComponent* Abilities, const int32 AttackIndex, const float Gap, const bool bAllowCommandOnly) const
+bool ACombatAIController::IsAttackUsable(const UAbilityComponent* Abilities, const int32 AttackIndex, const float Gap) const
 {
 	const ABaseAICharacter* Fighter = AICharacter.Get();
 
@@ -345,9 +252,8 @@ bool ACombatAIController::IsAttackUsable(const UAbilityComponent* Abilities, con
 
 	const FAIAttack& Candidate = Fighter->Attacks[AttackIndex];
 
-	// Granted and learned (a companion may not have unlocked it yet), and ready.
-	return (bAllowCommandOnly || IsAutoCastAttack(AttackIndex)) &&
-		IsAbilityReady(Abilities, Candidate.AbilityTag) &&
+	// Granted with a rank, and ready.
+	return IsAbilityReady(Abilities, Candidate.AbilityTag) &&
 		Gap >= Candidate.MinRange &&
 		(Candidate.bChaseIntoRange || Gap <= Candidate.MaxRange);
 }

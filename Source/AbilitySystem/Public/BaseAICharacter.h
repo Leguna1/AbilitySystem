@@ -40,19 +40,13 @@ struct FAIAttack
 	/** Needs a clear view of the target. Without one, the character moves in until it has it. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
 	bool bRequiresLineOfSight = true;
-
-	/**
-	 * Never picked on its own: only when commanded. For a companion this is where auto-cast starts:
-	 * on = auto-cast off (Pounce waits for your command), and the player can toggle it on the companion bar.
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack")
-	bool bCommandOnly = false;
 };
 
 /**
  * Parent of every AI-driven fighter, hostile or friendly: creates the framework's components,
  * holds the attack list the AI picks from, the nameplate, and corpse handling.
- * Children: Base Enemy (home, leash, roam, rewards) and Companion Character (follows a leader).
+ * Children: Base Enemy (home, leash, roam, rewards) and Companion Character (follows a leader; it uses
+ * Tactics instead of the Attacks list).
  */
 UCLASS(Abstract)
 class ABILITYSYSTEM_API ABaseAICharacter : public ABaseCharacter

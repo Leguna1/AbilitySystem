@@ -207,10 +207,10 @@ EDataValidationResult ABaseAICharacter::IsDataValid(FDataValidationContext& Cont
 
 	const bool bAnyChases = Attacks.ContainsByPredicate([](const FAIAttack& Attack)
 	{
-		return Attack.bChaseIntoRange && !Attack.bCommandOnly;
+		return Attack.bChaseIntoRange;
 	});
 
-	if (Attacks.ContainsByPredicate([](const FAIAttack& Attack) { return !Attack.bCommandOnly; }) && !bAnyChases)
+	if (!Attacks.IsEmpty() && !bAnyChases)
 	{
 		Context.AddWarning(NSLOCTEXT("AICharacter", "NeverChases",
 			"No attack has Chase Into Range on, so this character never approaches its target."));

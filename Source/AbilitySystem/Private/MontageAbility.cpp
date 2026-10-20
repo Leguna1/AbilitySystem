@@ -35,7 +35,58 @@ void UMontageAbility::OnAbilityEnded_Implementation(const EAbilityEndReason EndR
 
 UAnimMontage* UMontageAbility::SelectAbilityMontage_Implementation() const
 {
+	for (const FMontageVariant& Variant : MontageVariants)
+	{
+		if (IsValid(Variant.Montage) && IsMontageVariantMet(Variant))
+		{
+			return Variant.Montage;
+		}
+	}
+
 	return AbilityMontage;
+}
+
+bool UMontageAbility::IsMontageVariantMet(const FMontageVariant& Variant) const
+{
+	const ACharacter* OwnerCharacter = GetOwningCharacter();
+	const AActor* VariantTarget = GetAbilityTarget();
+
+	if (Variant.Condition == EMontageVariantCondition::NoTarget)
+	{
+		return !IsValid(VariantTarget);
+	}
+
+	if (Variant.Condition == EMontageVariantCondition::SelfMovingFasterThan)
+	{
+		return IsValid(OwnerCharacter) && OwnerCharacter->GetVelocity().Size2D() > Variant.Threshold;
+	}
+
+	if (!IsValid(OwnerCharacter) || !IsValid(VariantTarget))
+	{
+		return false;
+	}
+
+	const float TargetSpeed = VariantTarget->GetVelocity().Size2D();
+	const float Gap = FVector::Dist2D(OwnerCharacter->GetActorLocation(), VariantTarget->GetActorLocation()) -
+		OwnerCharacter->GetSimpleCollisionRadius() - VariantTarget->GetSimpleCollisionRadius();
+
+	switch (Variant.Condition)
+	{
+	case EMontageVariantCondition::TargetMovingFasterThan:
+		return TargetSpeed > Variant.Threshold;
+
+	case EMontageVariantCondition::TargetSlowerThan:
+		return TargetSpeed <= Variant.Threshold;
+
+	case EMontageVariantCondition::TargetFartherThan:
+		return Gap > Variant.Threshold;
+
+	case EMontageVariantCondition::TargetCloserThan:
+		return Gap < Variant.Threshold;
+
+	default:
+		return false;
+	}
 }
 
 bool UMontageAbility::PlayAbilityMontage(UAnimMontage* Montage, const float PlayRate)
@@ -315,14 +366,27 @@ void UMontageAbility::ApplyRootMotionDistanceWarp() const
 		return;
 	}
 
-	const FVector Direction = GetRootMotionWarpDirection().GetSafeNormal2D();
+	FVector Direction = GetRootMotionWarpDirection().GetSafeNormal2D();
+	float TravelDistance = RootMotionDistance;
+
+	// A leap: aim at the target and stop just short of it, never farther than Root Motion Distance.
+	const AActor* WarpTarget = bWarpToAbilityTarget ? GetAbilityTarget() : nullptr;
+
+	if (IsValid(WarpTarget))
+	{
+		const FVector ToTarget = WarpTarget->GetActorLocation() - Character->GetActorLocation();
+		const float EdgeGap = ToTarget.Size2D() - Character->GetSimpleCollisionRadius() - WarpTarget->GetSimpleCollisionRadius();
+
+		Direction = ToTarget.GetSafeNormal2D();
+		TravelDistance = FMath::Clamp(EdgeGap - TargetStopDistance, 0.0f, RootMotionDistance);
+	}
 
 	// Zero direction (or zero distance) collapses the target onto the character,
 	// which warps the montage to translate in place.
 	const FVector StartLocation = Character->GetActorLocation();
 	const FVector TargetLocation = Direction.IsNearlyZero()
 		? StartLocation
-		: StartLocation + Direction * RootMotionDistance;
+		: StartLocation + Direction * TravelDistance;
 
 	// Keep the character's current facing for the warp target rotation; distance
 	// warping only needs the translation goal.

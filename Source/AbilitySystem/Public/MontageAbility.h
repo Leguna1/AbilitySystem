@@ -8,6 +8,46 @@ class UAnimInstance;
 class UAnimMontage;
 class UCombatantComponent;
 
+/** When a montage variant is picked instead of the ability's default montage. */
+UENUM(BlueprintType)
+enum class EMontageVariantCondition : uint8
+{
+	/** The ability's target moves faster than Threshold (cm/s): a running bite, a chasing slash. */
+	TargetMovingFasterThan UMETA(DisplayName = "Target Moving Faster Than"),
+
+	/** The ability's target moves slower than Threshold (cm/s), or stands still. */
+	TargetSlowerThan UMETA(DisplayName = "Target Slower Than"),
+
+	/** The gap to the target (edge to edge) is more than Threshold (cm). */
+	TargetFartherThan UMETA(DisplayName = "Target Farther Than"),
+
+	/** The gap to the target (edge to edge) is less than Threshold (cm). */
+	TargetCloserThan UMETA(DisplayName = "Target Closer Than"),
+
+	/** The owner itself moves faster than Threshold (cm/s): attacking out of a run. */
+	SelfMovingFasterThan UMETA(DisplayName = "Self Moving Faster Than"),
+
+	/** There is no target. */
+	NoTarget UMETA(DisplayName = "No Target")
+};
+
+/** "Play Montage instead when Condition holds." */
+USTRUCT(BlueprintType)
+struct FMontageVariant
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
+	TObjectPtr<UAnimMontage> Montage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage")
+	EMontageVariantCondition Condition = EMontageVariantCondition::TargetMovingFasterThan;
+
+	/** Speed (cm/s) or distance (cm), depending on Condition. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Montage", meta = (ClampMin = "0.0"))
+	float Threshold = 150.0f;
+};
+
 /**
  * Reusable base for an ability whose execution is represented by a montage.
  *
@@ -95,6 +135,17 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage")
 	TObjectPtr<UAnimMontage> AbilityMontage;
 
+	/**
+	 * Other montages for the same ability, picked by the situation when it starts: the first whose
+	 * condition holds plays instead of Ability Montage. E.g. Bite: a running bite when the target moves.
+	 * Abilities that pick their own montage (combos, rapid fire) ignore this.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage", meta = (TitleProperty = "Condition"))
+	TArray<FMontageVariant> MontageVariants;
+
+	/** Whether Variant's condition holds right now. */
+	bool IsMontageVariantMet(const FMontageVariant& Variant) const;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Montage", meta = (ClampMin = "0.01"))
 	float MontagePlayRate = 1.0f;
 
@@ -124,6 +175,18 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (ClampMin = "0.0", EditCondition = "bOverrideRootMotionDistance"))
 	float RootMotionDistance = 300.0f;
+
+	/**
+	 * Travel to the ability's target instead of a fixed distance: a leap or lunge that lands on it.
+	 * Stops Target Stop Distance short of the target's edge, travels at most Root Motion Distance.
+	 * Without a target it falls back to Root Motion Distance straight ahead.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (EditCondition = "bOverrideRootMotionDistance"))
+	bool bWarpToAbilityTarget = false;
+
+	/** Gap left between the two bodies when warping to the target (edge to edge). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (ClampMin = "0.0", EditCondition = "bOverrideRootMotionDistance && bWarpToAbilityTarget"))
+	float TargetStopDistance = 30.0f;
 
 	/** Motion Warping window name on the montage that this override drives. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Root Motion", meta = (EditCondition = "bOverrideRootMotionDistance"))

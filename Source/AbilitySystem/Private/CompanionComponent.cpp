@@ -3,6 +3,7 @@
 #include "Ability.h"
 #include "AbilityComponent.h"
 #include "ActionBarComponent.h"
+#include "CompanionAIController.h"
 #include "AttributeComponent.h"
 #include "BaseCharacter.h"
 #include "CombatantComponent.h"
@@ -13,7 +14,6 @@
 #include "NavigationSystem.h"
 #include "ExperienceComponent.h"
 #include "ResourceComponent.h"
-#include "TargetingComponent.h"
 
 UCompanionComponent::UCompanionComponent()
 {
@@ -23,8 +23,6 @@ UCompanionComponent::UCompanionComponent()
 void UCompanionComponent::BeginPlay()
 {
 	Super::BeginPlay();
-
-	Stance = DefaultStance;
 
 	if (UExperienceComponent* Experience = GetOwner()->FindComponentByClass<UExperienceComponent>())
 	{
@@ -130,7 +128,6 @@ ACompanionCharacter* UCompanionComponent::SpawnCompanion(const TSubclassOf<AComp
 		IsValid(NewCompanion->GetCompanionActionBar()) ? NewCompanion->GetCompanionActionBar()->GetNumSlots() : -1);
 
 	ApplyAbilityGrants();
-	ApplyChoicesToCompanion();
 
 	OnCompanionChanged.Broadcast(NewCompanion);
 	return NewCompanion;
@@ -353,11 +350,6 @@ void UCompanionComponent::ApplyAbilityGrants()
 		return;
 	}
 
-	if (ActiveGrants.IsEmpty())
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Companion] No Ability Grants: the summon ability's Ability Grants list is empty."));
-	}
-
 	for (const FCompanionAbilityGrant& Grant : ActiveGrants)
 	{
 		const UAbility* GrantDefaults = Grant.CompanionAbility ? Grant.CompanionAbility.GetDefaultObject() : nullptr;
@@ -417,98 +409,12 @@ int32 UCompanionComponent::GetLeaderLevel() const
 	return IsValid(Attributes) ? Attributes->GetCharacterLevel() : 1;
 }
 
-/* ============================== Commands ============================== */
-
-AActor* UCompanionComponent::GetLeaderTarget() const
-{
-	const UTargetingComponent* Targeting = GetOwner()->FindComponentByClass<UTargetingComponent>();
-	return IsValid(Targeting) ? Targeting->GetCurrentTarget() : nullptr;
-}
-
-bool UCompanionComponent::ActivateCompanionSlot(const int32 SlotIndex)
-{
-	const ACompanionCharacter* Current = GetCompanion();
-	const UActionBarComponent* Bar = IsValid(Current) ? Current->GetCompanionActionBar() : nullptr;
-	const UAbility* Defaults = IsValid(Bar) ? Bar->GetSlotAbility(SlotIndex).GetDefaultObject() : nullptr;
-
-	return IsValid(Defaults) && CommandAbility(Defaults->GetAbilityId());
-}
-
-bool UCompanionComponent::CommandAbility(const FGameplayTag AbilityId)
-{
-	ACompanionAIController* Brain = GetCompanionController();
-	return IsValid(Brain) && Brain->CommandAbility(AbilityId, GetLeaderTarget());
-}
-
-bool UCompanionComponent::CommandAttack(AActor* Target)
-{
-	ACompanionAIController* Brain = GetCompanionController();
-	return IsValid(Brain) && Brain->CommandAttack(Target);
-}
+/* ============================== Recall ============================== */
 
 void UCompanionComponent::Recall()
 {
 	if (ACompanionAIController* Brain = GetCompanionController())
 	{
 		Brain->Recall();
-	}
-}
-
-/* ============================== Stance and auto-cast ============================== */
-
-void UCompanionComponent::SetStance(const ECompanionStance NewStance)
-{
-	if (Stance == NewStance)
-	{
-		return;
-	}
-
-	Stance = NewStance;
-	ApplyChoicesToCompanion();
-	OnStanceChanged.Broadcast(Stance);
-}
-
-bool UCompanionComponent::IsAutoCast(const FGameplayTag AbilityId) const
-{
-	if (const ACompanionAIController* Brain = GetCompanionController())
-	{
-		return Brain->IsAutoCast(AbilityId);
-	}
-
-	const bool* Choice = AutoCastChoices.Find(AbilityId);
-	return Choice && *Choice;
-}
-
-void UCompanionComponent::SetAutoCast(const FGameplayTag AbilityId, const bool bEnabled)
-{
-	if (!AbilityId.IsValid())
-	{
-		return;
-	}
-
-	AutoCastChoices.Add(AbilityId, bEnabled);
-	ApplyChoicesToCompanion();
-	OnAutoCastChanged.Broadcast(AbilityId, bEnabled);
-}
-
-void UCompanionComponent::ToggleAutoCast(const FGameplayTag AbilityId)
-{
-	SetAutoCast(AbilityId, !IsAutoCast(AbilityId));
-}
-
-void UCompanionComponent::ApplyChoicesToCompanion() const
-{
-	ACompanionAIController* Brain = GetCompanionController();
-
-	if (!IsValid(Brain))
-	{
-		return;
-	}
-
-	Brain->SetStance(Stance);
-
-	for (const TPair<FGameplayTag, bool>& Choice : AutoCastChoices)
-	{
-		Brain->SetAutoCast(Choice.Key, Choice.Value);
 	}
 }
