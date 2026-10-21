@@ -174,8 +174,14 @@ float ACompanionAIController::GetPurposeMultiplier(const ECompanionPurpose Purpo
 {
 	const ACompanionCharacter* Companion = GetCompanion();
 	const UCompanionNeedsComponent* Needs = IsValid(Companion) ? Companion->GetNeedsComponent() : nullptr;
+	const ABaseCharacter* Leader = GetLeader();
+	const UCompanionComponent* Bond = IsValid(Leader) ? Leader->FindComponentByClass<UCompanionComponent>() : nullptr;
 
-	return IsValid(Needs) ? Needs->GetNeedMultiplier(Purpose) : 1.0f;
+	// The moment (what you need now) times the habit (what you usually need).
+	const float NeedMultiplier = IsValid(Needs) ? Needs->GetNeedMultiplier(Purpose) : 1.0f;
+	const float BondMultiplier = IsValid(Bond) ? Bond->GetBondBias(Purpose) : 1.0f;
+
+	return NeedMultiplier * BondMultiplier;
 }
 
 double ACompanionAIController::GetWorldTime() const
@@ -278,6 +284,11 @@ void ACompanionAIController::Think()
 		if (const UCompanionNeedsComponent* Needs = Companion->GetNeedsComponent())
 		{
 			Text += TEXT("\n") + Needs->DescribeNeeds();
+		}
+
+		if (const UCompanionComponent* Bond = IsValid(GetLeader()) ? GetLeader()->FindComponentByClass<UCompanionComponent>() : nullptr)
+		{
+			Text += TEXT("\n") + Bond->DescribeBond();
 		}
 
 		DrawDebugString(GetWorld(), FVector(0.0f, 0.0f, 130.0f), Text, Companion, FColor::Cyan, ThinkInterval, true);

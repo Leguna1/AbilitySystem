@@ -6,6 +6,7 @@
 #include "CombatantComponent.h"
 #include "CompanionAIController.h"
 #include "CompanionCharacter.h"
+#include "CompanionComponent.h"
 #include "Engine/OverlapResult.h"
 #include "ResourceComponent.h"
 #include "TargetingComponent.h"
@@ -143,6 +144,15 @@ void UCompanionNeedsComponent::UpdateNeeds()
 		const float Target = FMath::Clamp(Raw[Index], 0.0f, 1.0f);
 		const float Rate = Target > Needs[Index] ? RiseRate : FallRate;
 		Needs[Index] = FMath::FInterpConstantTo(Needs[Index], Target, DeltaTime, Rate);
+	}
+
+	// Fights teach the companion what this leader tends to need.
+	if (IsValid(Leader) && IsValid(Brain) && Brain->IsInFight())
+	{
+		if (UCompanionComponent* Bond = Leader->FindComponentByClass<UCompanionComponent>())
+		{
+			Bond->ObserveNeeds(Needs, DeltaTime);
+		}
 	}
 }
 

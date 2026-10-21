@@ -4,6 +4,7 @@
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
 #include "CompanionAIController.h"
+#include "CompanionBond.h"
 #include "CompanionComponent.generated.h"
 
 class ACharacter;
@@ -11,6 +12,7 @@ class ACompanionCharacter;
 class UAbility;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCompanionChangedSignature, ACompanionCharacter*, Companion);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCompanionHabitShiftedSignature, ECompanionPurpose, NewStrongestHabit);
 
 /** "While the leader has Required Ability learned, the companion has Companion Ability." */
 USTRUCT(BlueprintType)
@@ -38,6 +40,8 @@ struct FCompanionAbilityGrant
  *   - Optional Ability Grants: extra companion abilities tied to the leader's learned skills. Leave empty
  *     when the companion only uses its own kit.
  *   - Recall: the companion drops its fight and comes back.
+ *   - The bond: what the companion has learned about you over all your fights (hidden, saved). It survives
+ *     deaths and re-summons because it lives here, on you.
  * The companion decides for itself what to do (its Tactics). The HUD binds On Companion Changed to show
  * (or hide) the companion's health and bar.
  */
@@ -98,15 +102,87 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Companion")
 	void Recall();
 
+	/* -------------------- Bond (learned habits) -------------------- */
+
+	/**
+	 * Called by the companion during fights with what you need right now (per purpose, 0..1).
+	 * Slowly folds it into the long-run habits.
+	 */
+	void ObserveNeeds(const TArray<float>& CurrentNeeds, float DeltaSeconds);
+
+	/** How much the bond favors Purpose: 1 = neutral, between Min Bias and Max Bias. */
+	UFUNCTION(BlueprintPure, Category = "Companion|Bond")
+	float GetBondBias(ECompanionPurpose Purpose) const;
+
+	/** The long-run average need for Purpose, 0..1. */
+	UFUNCTION(BlueprintPure, Category = "Companion|Bond")
+	float GetHabit(ECompanionPurpose Purpose) const;
+
+	/** The whole bond, for a save system. */
+	UFUNCTION(BlueprintPure, Category = "Companion|Bond")
+	const FCompanionBond& GetBond() const { return Bond; }
+
+	/** Restores a bond from a save system. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Bond")
+	void SetBond(const FCompanionBond& InBond);
+
+	/** Forget everything learned (a new companion, a debug key). */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Bond")
+	void ResetBond();
+
+	/** Writes the bond to Bond Save Slot now. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Bond")
+	void SaveBond();
+
+	/** Reads the bond from Bond Save Slot, if there is one. True if it loaded. */
+	UFUNCTION(BlueprintCallable, Category = "Companion|Bond")
+	bool LoadBond();
+
+	/** One line of habits and biases, for on-screen debugging. */
+	FString DescribeBond() const;
+
 	/* -------------------- Events -------------------- */
 
 	/** A companion was spawned, died or was dismissed (null). */
 	UPROPERTY(BlueprintAssignable, Category = "Companion")
 	FCompanionChangedSignature OnCompanionChanged;
 
+	/** The companion's strongest habit changed (it has come to see you differently). Good for a bark or a look. */
+	UPROPERTY(BlueprintAssignable, Category = "Companion|Bond")
+	FCompanionHabitShiftedSignature OnHabitShifted;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	/**
+	 * Seconds of fighting for a habit to mostly settle on a new pattern. Large = it takes many fights
+	 * to change its mind. The first fights count more (first impressions), down to this pace.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (ClampMin = "10", Units = "s"))
+	float HabitLearnTime = 900.0f;
+
+	/** How strongly habits sway it: a habit 0.3 above the average habit gives 1 + 0.3 x 2 x Bias Strength. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (ClampMin = "0.0"))
+	float BiasStrength = 1.0f;
+
+	/** Never favors a purpose less than this, so it never stops doing anything entirely. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float MinBias = 0.6f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (ClampMin = "1.0"))
+	float MaxBias = 1.6f;
+
+	/** Keep the bond in its own save slot (loaded at start, saved during fights and on exit). Off = a save system handles it. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond")
+	bool bUseBondSaveSlot = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (EditCondition = "bUseBondSaveSlot"))
+	FString BondSaveSlot = TEXT("CompanionBond");
+
+	/** Saves after this many seconds of observed fighting since the last save. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Companion|Bond", meta = (ClampMin = "5", Units = "s", EditCondition = "bUseBondSaveSlot"))
+	float BondSaveInterval = 30.0f;
 
 private:
 	UFUNCTION()
@@ -140,5 +216,21 @@ private:
 	TArray<FCompanionAbilityGrant> ActiveGrants;
 
 	int32 CompanionLevelOffset = 0;
+
+	/** What the companion has learned about this leader. */
+	UPROPERTY(Transient)
+	FCompanionBond Bond;
+
+	/** Async during play (no hitch); blocking on exit, so it's written before the game closes. */
+	void WriteBondToSlot(bool bAsync);
+
+	/** Fills missing habits with the neutral starting value. */
+	void EnsureBondSize();
+
+	/** Purpose with the highest habit, or none while habits are too even to call. */
+	int32 FindStrongestHabit() const;
+
+	int32 StrongestHabit = INDEX_NONE;
+	float FightSecondsSinceSave = 0.0f;
 	FGameplayTag RespawnAbilityId;
 };

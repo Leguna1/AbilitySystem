@@ -13,7 +13,19 @@
 #include "GameFramework/Character.h"
 #include "NavigationSystem.h"
 #include "ExperienceComponent.h"
+#include "Kismet/GameplayStatics.h"
 #include "ResourceComponent.h"
+
+namespace
+{
+	constexpr int32 NumHabits = static_cast<int32>(ECompanionPurpose::Finish) + 1;
+
+	/** Where every habit starts: no leaning either way. */
+	constexpr float NeutralHabit = 0.3f;
+
+	/** The strongest habit must lead the next by this much before it counts as a shift. */
+	constexpr float HabitShiftMargin = 0.05f;
+}
 
 UCompanionComponent::UCompanionComponent()
 {
@@ -23,6 +35,15 @@ UCompanionComponent::UCompanionComponent()
 void UCompanionComponent::BeginPlay()
 {
 	Super::BeginPlay();
+
+	EnsureBondSize();
+
+	if (bUseBondSaveSlot)
+	{
+		LoadBond();
+	}
+
+	StrongestHabit = FindStrongestHabit();
 
 	if (UExperienceComponent* Experience = GetOwner()->FindComponentByClass<UExperienceComponent>())
 	{
@@ -49,6 +70,11 @@ void UCompanionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 	// The pet leaves with its leader.
 	DismissCompanion();
+
+	if (bUseBondSaveSlot && Bond.FightSecondsObserved > 0.0f)
+	{
+		WriteBondToSlot(false);
+	}
 
 	Super::EndPlay(EndPlayReason);
 }
@@ -417,4 +443,190 @@ void UCompanionComponent::Recall()
 	{
 		Brain->Recall();
 	}
+}
+
+/* ============================== Bond ============================== */
+
+void UCompanionComponent::EnsureBondSize()
+{
+	while (Bond.Habits.Num() < NumHabits)
+	{
+		Bond.Habits.Add(NeutralHabit);
+	}
+}
+
+void UCompanionComponent::ObserveNeeds(const TArray<float>& CurrentNeeds, const float DeltaSeconds)
+{
+	if (DeltaSeconds <= 0.0f)
+	{
+		return;
+	}
+
+	EnsureBondSize();
+
+	// First impressions count more: early on the habits follow quickly, slowing to Habit Learn Time.
+	const float LearnTime = FMath::Clamp(Bond.FightSecondsObserved, 30.0f, HabitLearnTime);
+	const float Alpha = FMath::Clamp(DeltaSeconds / LearnTime, 0.0f, 1.0f);
+
+	for (int32 Index = 0; Index < NumHabits && Index < CurrentNeeds.Num(); ++Index)
+	{
+		Bond.Habits[Index] = FMath::Lerp(Bond.Habits[Index], FMath::Clamp(CurrentNeeds[Index], 0.0f, 1.0f), Alpha);
+	}
+
+	Bond.FightSecondsObserved += DeltaSeconds;
+
+	// It has come to see you differently: let Blueprint react (a bark, a look back at you).
+	const int32 NewStrongest = FindStrongestHabit();
+
+	if (NewStrongest != INDEX_NONE && NewStrongest != StrongestHabit)
+	{
+		StrongestHabit = NewStrongest;
+		OnHabitShifted.Broadcast(static_cast<ECompanionPurpose>(NewStrongest));
+	}
+
+	if (bUseBondSaveSlot)
+	{
+		FightSecondsSinceSave += DeltaSeconds;
+
+		if (FightSecondsSinceSave >= BondSaveInterval)
+		{
+			SaveBond();
+		}
+	}
+}
+
+int32 UCompanionComponent::FindStrongestHabit() const
+{
+	int32 Best = INDEX_NONE;
+	float BestValue = -1.0f;
+	float SecondValue = -1.0f;
+
+	for (int32 Index = 0; Index < Bond.Habits.Num(); ++Index)
+	{
+		const float Value = Bond.Habits[Index];
+
+		if (Value > BestValue)
+		{
+			SecondValue = BestValue;
+			BestValue = Value;
+			Best = Index;
+		}
+		else if (Value > SecondValue)
+		{
+			SecondValue = Value;
+		}
+	}
+
+	return BestValue - SecondValue >= HabitShiftMargin ? Best : StrongestHabit;
+}
+
+float UCompanionComponent::GetHabit(const ECompanionPurpose Purpose) const
+{
+	const int32 Index = static_cast<int32>(Purpose);
+	return Bond.Habits.IsValidIndex(Index) ? Bond.Habits[Index] : NeutralHabit;
+}
+
+float UCompanionComponent::GetBondBias(const ECompanionPurpose Purpose) const
+{
+	if (Bond.Habits.IsEmpty())
+	{
+		return 1.0f;
+	}
+
+	float Total = 0.0f;
+
+	for (const float Habit : Bond.Habits)
+	{
+		Total += Habit;
+	}
+
+	// Relative to its other habits: what you need MORE than usual is what it leans toward.
+	const float Average = Total / static_cast<float>(Bond.Habits.Num());
+	const float Bias = 1.0f + 2.0f * BiasStrength * (GetHabit(Purpose) - Average);
+
+	return FMath::Clamp(Bias, MinBias, MaxBias);
+}
+
+void UCompanionComponent::SetBond(const FCompanionBond& InBond)
+{
+	Bond = InBond;
+	EnsureBondSize();
+	StrongestHabit = FindStrongestHabit();
+}
+
+void UCompanionComponent::ResetBond()
+{
+	Bond = FCompanionBond();
+	EnsureBondSize();
+	StrongestHabit = INDEX_NONE;
+
+	if (bUseBondSaveSlot)
+	{
+		SaveBond();
+	}
+}
+
+void UCompanionComponent::SaveBond()
+{
+	WriteBondToSlot(true);
+}
+
+void UCompanionComponent::WriteBondToSlot(const bool bAsync)
+{
+	FightSecondsSinceSave = 0.0f;
+
+	if (BondSaveSlot.IsEmpty())
+	{
+		return;
+	}
+
+	UCompanionBondSaveGame* SaveObject = Cast<UCompanionBondSaveGame>(
+		UGameplayStatics::CreateSaveGameObject(UCompanionBondSaveGame::StaticClass()));
+
+	if (!IsValid(SaveObject))
+	{
+		return;
+	}
+
+	SaveObject->Bond = Bond;
+
+	if (bAsync)
+	{
+		UGameplayStatics::AsyncSaveGameToSlot(SaveObject, BondSaveSlot, 0);
+	}
+	else
+	{
+		UGameplayStatics::SaveGameToSlot(SaveObject, BondSaveSlot, 0);
+	}
+}
+
+bool UCompanionComponent::LoadBond()
+{
+	if (BondSaveSlot.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(BondSaveSlot, 0))
+	{
+		return false;
+	}
+
+	const UCompanionBondSaveGame* SaveObject = Cast<UCompanionBondSaveGame>(UGameplayStatics::LoadGameFromSlot(BondSaveSlot, 0));
+
+	if (!IsValid(SaveObject))
+	{
+		return false;
+	}
+
+	SetBond(SaveObject->Bond);
+	return true;
+}
+
+FString UCompanionComponent::DescribeBond() const
+{
+	FString Text = TEXT("Bond:");
+
+	for (int32 Index = 0; Index < Bond.Habits.Num(); ++Index)
+	{
+		const ECompanionPurpose Purpose = static_cast<ECompanionPurpose>(Index);
+		Text += FString::Printf(TEXT(" %s x%.2f"), *UEnum::GetDisplayValueAsText(Purpose).ToString(), GetBondBias(Purpose));
+	}
+
+	return Text + FString::Printf(TEXT(" (%.0fs)"), Bond.FightSecondsObserved);
 }
