@@ -5,6 +5,8 @@
 #include "PayloadReceiver.h"
 #include "ArrowShotParams.generated.h"
 
+class UFeedbackSet;
+
 /** Per-shot values the firing ability hands every arrow it releases. The arrow keeps them for its whole flight. */
 USTRUCT(BlueprintType)
 struct FArrowShotParams
@@ -41,4 +43,15 @@ struct FArrowShotParams
 	/** What each hit of this arrow carries besides damage. */
 	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
 	FHitSpec Hit;
+
+	/**
+	 * This shot's look, over the projectile data's own set: cues it defines win, the rest come
+	 * from the projectile's set. Null = the projectile's set only.
+	 */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	TObjectPtr<UFeedbackSet> FeedbackSet;
+
+	/** 0..1 how hard this shot is, sent to hit effects as the "Strength" Niagara parameter (charge level). */
+	UPROPERTY(BlueprintReadWrite, Category = "Arrow|Shot")
+	float FeedbackStrength = 1.0f;
 };

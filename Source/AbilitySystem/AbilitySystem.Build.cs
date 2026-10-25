@@ -10,7 +10,7 @@ public class AbilitySystem : ModuleRules
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayTags", "MotionWarping", "AIModule", "NavigationSystem", "GameplayTasks" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara", "UMG", "DeveloperSettings"});
+		PrivateDependencyModuleNames.AddRange(new string[] { "Niagara", "UMG", "DeveloperSettings", "PhysicsCore"});
 
 		// Uncomment if you are using Slate UI
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "HitReactionTypes.h"
+#include "ImpactGroupTypes.h"
 #include "MontageAbility.h"
 #include "ModifierTypes.h"
 #include "PayloadReceiver.h"
@@ -31,6 +32,14 @@ public:
 	
 	/** What every hit of this execution carries: source tags, impact, and anything features add. */
 	FHitSpec BuildHitSpec() const;
+
+	/**
+	 * This use's impact group: opened on activation, sealed when the ability ends. Everything it
+	 * hits with (swings, projectiles, hazards) reports into it, so many hits at once play as one.
+	 * Projectiles in flight keep it alive after the ability ends. Invalid while inactive.
+	 */
+	UFUNCTION(BlueprintPure, Category = "Ability|Offensive|Impact")
+	FImpactGroupHandle GetImpactGroup() const { return ImpactGroup; }
 
 	/** Resolves Specs at this execution's rank. Entries whose owner tags aren't met, or without a duration, are skipped. */
 	void ResolveStatusSpecs(const TArray<FStatusEffectSpec>& Specs, TArray<FStatusApplication>& OutStatuses) const;
@@ -79,7 +88,17 @@ protected:
 	/** HitImpact with this execution's modifiers applied. */
 	FHitImpact ResolveHitImpact() const;
 	
+	/** How this ability's hits play together when several land at once (a volley, a cleave, a burst). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|Impact")
+	FImpactGroupSettings ImpactFeedback;
+
 	/** Physical scales with Attack Power and is reduced by Armor; Magic uses Magic Power and Magic Resist. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Offensive|Damage")
 	EDamageType DamageType = EDamageType::Physical;
+
+private:
+	void OpenImpactGroup();
+	void SealImpactGroup();
+
+	FImpactGroupHandle ImpactGroup;
 };

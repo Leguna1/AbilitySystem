@@ -4,7 +4,6 @@
 #include "CoreMinimal.h"
 #include "OffensiveAbilityBase.h"
 #include "GameplayTagContainer.h"
-#include "ImpactGroupTypes.h"
 #include "MeleeAttackAbility.generated.h"
 
 class ASwordBase;
@@ -69,14 +68,6 @@ protected:
 
 	UFUNCTION()
 	void HandleSwordHit(AActor* HitActor, const FHitResult& Hit);
-	
-	/** One swing = one impact group. Leave sounds empty for silence. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Melee|Impact Audio")
-	FImpactGroupSettings SwingImpactGroup;
-	
-	/** Played per target the swing cuts (subject to SwingImpactGroup). Misses use the environment impact. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Melee|Impact Audio")
-	FImpactFeedback SwingHitFeedback;
 
 private:
 
@@ -87,22 +78,23 @@ private:
 	/** Ends detection on the bound sword and unbinds from its hits. */
 	void ReleaseBoundSword();
 	
-	FImpactGroupHandle SwingGroup;
-	
 	UPROPERTY(Transient)
 	float ResolvedDamage = 0.0f;
 	
 	/** Turns one hit into a payload and impact feedback, whatever landed it. */
 	void ProcessMeleeHit(AActor* HitActor, const FHitResult& Hit, AActor* Causer);
 
+	/**
+	 * Hit feedback for body attacks (fists, bites): Cue.Weapon.Hit / Miss from the Feedback
+	 * component on the attacker, or the project default set if it has none.
+	 */
+	void PlayBodyHitFeedback(AActor* HitActor, const FHitResult& Hit, const FVector& StrikeLocation, bool bHitTarget, AActor* Causer) const;
+
 	void BindBodyTrace();
 	void ReleaseBodyTrace();
 
 	UFUNCTION()
 	void HandleBodyTraceStarted(UAnimSequenceBase* SourceAnimation);
-
-	UFUNCTION()
-	void HandleBodyTraceEnded(UAnimSequenceBase* SourceAnimation);
 
 	UFUNCTION()
 	void HandleBodyHit(AActor* HitActor, const FHitResult& Hit, FName ShapeName, UAnimSequenceBase* SourceAnimation);

@@ -4,20 +4,16 @@
 
 #include "ImpactGroupTypes.generated.h"
 
-class USoundBase;
-class UNiagaraSystem;
-
-
 UENUM(BlueprintType)
 enum class EImpactGroupAudio : uint8
 {
-	/** Group feedback plays once for the first hit and once for the first miss. */
+	/** The shared sound plays once for the first hit and once for the first miss. */
 	OncePerGroup UMETA(DisplayName = "Once Per Group"),
 
-	/** Group feedback plays at most once per Window seconds, per result. */
+	/** The shared sound plays at most once per Window seconds, per result. */
 	OncePerWindow UMETA(DisplayName = "Once Per Window"),
 
-	/** Group feedback plays on every impact. */
+	/** The shared sound plays on every impact. */
 	PerImpact UMETA(DisplayName = "Per Impact")
 };
 
@@ -30,16 +26,17 @@ enum class EImpactResult : uint8
 	/** World geometry, or a target that refused the payload. */
 	Miss UMETA(DisplayName = "Miss")
 };
+
 UENUM(BlueprintType)
-enum class EProjectileImpactFeedback : uint8
+enum class EImpactHitFeedback : uint8
 {
-	/** Each impact plays its own sound and effect. */
+	/** Each hit plays its own sound and effect. */
 	SoundAndEffect UMETA(DisplayName = "Sound And Effect"),
 
-	/** Each impact shows its own effect; sound is left to the group. */
+	/** Each hit shows its own effect; sound is left to the group. */
 	EffectOnly UMETA(DisplayName = "Effect Only"),
 
-	/** Impacts play nothing themselves; only the group's feedback plays. */
+	/** Hits play nothing themselves; only the group's shared sound plays. */
 	None UMETA(DisplayName = "None")
 };
 
@@ -54,50 +51,29 @@ struct FImpactGroupHandle
 
 	bool IsValid() const { return Id != INDEX_NONE; }
 };
-/** A sound + effect pair for one impact. */
-USTRUCT(BlueprintType)
-struct FImpactFeedback
-{
-	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact")
-	TObjectPtr<USoundBase> Sound;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact")
-	TObjectPtr<UNiagaraSystem> Effect;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact", meta = (ClampMin = "0.1", ClampMax = "3.0"))
-	float PitchMin = 1.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact", meta = (ClampMin = "0.1", ClampMax = "3.0"))
-	float PitchMax = 1.0f;
-};
-
-/** How one action's impacts (a volley, a swing) look and sound together. */
+/**
+ * How one ability use's hits play together: a volley, a cleave, a burst.
+ * What they look and sound like comes from the hitter's Feedback Set; this only
+ * decides how much of it plays when many land at once.
+ *
+ * The shared sound is Cue.Group.Hit / Cue.Group.Miss from the hitter's set. When no set
+ * defines one, the hit's own sound plays in its place, as often as Policy allows.
+ */
 USTRUCT(BlueprintType)
 struct FImpactGroupSettings
 {
 	GENERATED_BODY()
 
-	/** How much of each impact's own feedback still plays inside the group. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Group")
-	EProjectileImpactFeedback ProjectileFeedback = EProjectileImpactFeedback::EffectOnly;
+	/** How much of each hit's own feedback still plays inside the group. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Feedback")
+	EImpactHitFeedback EachHit = EImpactHitFeedback::EffectOnly;
 
-	/**
-	 * Played for the group's hits, as often as Policy allows. With no sound set,
-	 * the impact's own hit sound plays instead (unless impacts already play their own).
-	 */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Group")
-	FImpactFeedback GroupHit;
+	/** How often the shared sound plays. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Feedback")
+	EImpactGroupAudio Policy = EImpactGroupAudio::OncePerWindow;
 
-	/** Same as GroupHit, for misses. With no sound set, the environment sound plays instead. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Group")
-	FImpactFeedback GroupMiss;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Group")
-	EImpactGroupAudio Policy = EImpactGroupAudio::OncePerGroup;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Group", meta = (ClampMin = "0.0", EditCondition = "Policy == EImpactGroupAudio::OncePerWindow"))
-	float Window = 0.25f;
+	/** Hits landing within this many seconds share one sound. Covers a volley landing and a rapid burst alike. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Impact Feedback", meta = (ClampMin = "0.0", Units = "s", EditCondition = "Policy == EImpactGroupAudio::OncePerWindow"))
+	float Window = 0.15f;
 };
-

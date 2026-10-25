@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ImpactGroupTypes.h"
 #include "WeaponBase.generated.h"
 
 class ACharacter;
+class UFeedbackComponent;
 class UMeshComponent;
 class USkeletalMeshComponent;
 class UWeaponDataAsset;
@@ -64,7 +66,27 @@ public:
 	/** The mesh launch sockets are looked up on. Default: the first mesh component on the weapon. */
 	virtual UMeshComponent* GetWeaponMesh() const;
 
+	/* -------------------- Feedback -------------------- */
+
+	/** This weapon's look and sound. Set its Feedback Set in the Feedback component. */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Feedback")
+	UFeedbackComponent* GetFeedback() const { return FeedbackComponent; }
+
+	/**
+	 * Plays Cue.Weapon.Hit (target took the hit) or Cue.Weapon.Miss at StrikeLocation, through
+	 * the ability's impact group if one is given. Resolve the location before delivering the payload.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Weapon|Feedback", meta = (AutoCreateRefTerm = "Hit,Group"))
+	void PlayHitFeedback(AActor* HitActor, const FHitResult& Hit, FVector StrikeLocation, bool bHitTarget, const FImpactGroupHandle& Group);
+
+	/** Where a strike from this weapon on HitActor landed. */
+	UFUNCTION(BlueprintPure, Category = "Weapon|Feedback", meta = (AutoCreateRefTerm = "Hit"))
+	FVector ResolveStrikeLocation(const AActor* HitActor, const FHitResult& Hit) const;
+
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Components")
+	TObjectPtr<UFeedbackComponent> FeedbackComponent;
+
 	/** Sockets on the weapon mesh that projectiles launch from (e.g. StaffTip). Empty = not a launcher. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Projectiles")
 	TArray<FName> LaunchSocketNames;

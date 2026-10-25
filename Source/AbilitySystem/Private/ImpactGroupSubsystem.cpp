@@ -1,11 +1,34 @@
 #include "ImpactGroupSubsystem.h"
 
-#include "Engine/World.h"
-#include "Kismet/GameplayStatics.h"
+#include "NiagaraSystem.h"
 #include "Sound/SoundBase.h"
-#include "AbilitySystemSettings.h"
-#include "Kismet/GameplayStatics.h"
-#include "NiagaraFunctionLibrary.h"
+
+#include "Engine/World.h"
+#include "FeedbackSet.h"
+#include "FeedbackSubsystem.h"
+#include "FeedbackTags.h"
+#include "FeedbackTypes.h"
+
+namespace
+{
+	FFeedbackCueContext MakeContext(const FImpactReport& Report)
+	{
+		FFeedbackCueContext Context;
+		Context.Location = Report.Location;
+		Context.Rotation = Report.Rotation;
+		Context.Hit = Report.Hit;
+		Context.HitComponent = Report.HitComponent;
+		Context.Instigator = Report.Instigator;
+		Context.Target = Report.Target;
+
+		if (Report.Strength >= 0.0f)
+		{
+			Context.NiagaraFloats.Add(TEXT("Strength"), Report.Strength);
+		}
+
+		return Context;
+	}
+}
 
 UImpactGroupSubsystem* UImpactGroupSubsystem::Get(const UObject* WorldContextObject)
 {
@@ -73,61 +96,80 @@ void UImpactGroupSubsystem::SealGroup(const FImpactGroupHandle& Handle)
 	RemoveIfFinished(GroupIndex);
 }
 
-void UImpactGroupSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+FFeedbackEffect UImpactGroupSubsystem::ResolveOwnEffect(const FImpactReport& Report, const FFeedbackCueContext& Context) const
 {
-	Super::Initialize(Collection);
+	const bool bHit = Report.Result == EImpactResult::Hit;
 
-	// Loaded once at world start so the first miss never hitches.
-	const UAbilitySystemSettings* Settings = GetDefault<UAbilitySystemSettings>();
+	FFeedbackEffect Effect;
+	const UFeedbackSubsystem* Feedback = UFeedbackSubsystem::Get(this);
 
-	EnvironmentImpact.Sound = Settings->EnvironmentImpactSound.LoadSynchronous();
-	EnvironmentImpact.Effect = Settings->EnvironmentImpactEffect.LoadSynchronous();
-	EnvironmentImpact.PitchMin = Settings->EnvironmentPitchMin;
-	EnvironmentImpact.PitchMax = Settings->EnvironmentPitchMax;
+	if (IsValid(Feedback))
+	{
+		Feedback->ResolveEffect(Report.FeedbackSet, bHit ? Report.HitCue : Report.MissCue, Context, Effect, Report.FallbackSet);
+	}
+
+	return Effect;
 }
 
-FImpactFeedback UImpactGroupSubsystem::ResolveEnvironmentImpact(const FHitResult& Hit, const UPrimitiveComponent* HitComponent) const
+FFeedbackEffect UImpactGroupSubsystem::ResolveGroupEffect(const FImpactGroupRecord& Record, const FImpactReport& Report, const FFeedbackCueContext& Context) const
 {
-	// Stage 2 will look up the surface type here; callers stay unchanged.
-	return EnvironmentImpact;
+	const bool bHit = Report.Result == EImpactResult::Hit;
+	const UFeedbackSubsystem* Feedback = UFeedbackSubsystem::Get(this);
+
+	FFeedbackEffect Effect;
+
+	if (IsValid(Feedback))
+	{
+		Feedback->ResolveEffect(Report.FeedbackSet, bHit ? FeedbackTags::Cue_Group_Hit : FeedbackTags::Cue_Group_Miss, Context, Effect, Report.FallbackSet);
+	}
+
+	return Effect;
 }
 
 void UImpactGroupSubsystem::PlayImpact(const FImpactReport& Report)
 {
-	const bool bHit = Report.Result == EImpactResult::Hit;
+	UFeedbackSubsystem* Feedback = UFeedbackSubsystem::Get(this);
 
-	const FImpactFeedback OwnFeedback = bHit
-		? Report.OwnHitFeedback
-		: ResolveEnvironmentImpact(Report.Hit, Report.HitComponent);
+	if (!IsValid(Feedback))
+	{
+		return;
+	}
+
+	const bool bHit = Report.Result == EImpactResult::Hit;
+	const FFeedbackCueContext Context = MakeContext(Report);
+
+	const FFeedbackEffect OwnEffect = ResolveOwnEffect(Report, Context);
+	const FGameplayTag OwnCue = bHit ? Report.HitCue : Report.MissCue;
 
 	const int32 GroupIndex = FindGroupIndex(Report.Group);
 
 	// Ungrouped, or the group already expired: full per-impact feedback.
 	if (GroupIndex == INDEX_NONE)
 	{
-		PlayFeedback(OwnFeedback, Report, true, true);
+		Feedback->PlayEffect(OwnEffect, Context, OwnCue);
 		return;
 	}
 
 	FImpactGroupRecord& Record = Groups[GroupIndex];
 
-	const bool bOwnSound = Record.Settings.ProjectileFeedback == EProjectileImpactFeedback::SoundAndEffect;
-	const bool bOwnEffect = Record.Settings.ProjectileFeedback != EProjectileImpactFeedback::None;
+	const bool bOwnSound = Record.Settings.EachHit == EImpactHitFeedback::SoundAndEffect;
+	const bool bOwnEffect = Record.Settings.EachHit != EImpactHitFeedback::None;
 
-	PlayFeedback(OwnFeedback, Report, bOwnSound, bOwnEffect);
+	Feedback->PlayEffect(OwnEffect, Context, OwnCue, bOwnSound, bOwnEffect);
 
 	if (!ConsumeGroupSlot(Record, Report.Result))
 	{
 		return;
 	}
 
-	const FImpactFeedback& GroupFeedback = bHit ? Record.Settings.GroupHit : Record.Settings.GroupMiss;
-	PlayFeedback(GroupFeedback, Report, true, true);
+	// The group already decided how often it plays; no per-frame limit on top.
+	const FFeedbackEffect GroupEffect = ResolveGroupEffect(Record, Report, Context);
+	Feedback->PlayEffect(GroupEffect, Context, FGameplayTag());
 
 	// No group sound for this result: the group voices the impact's own sound instead.
-	if (!IsValid(GroupFeedback.Sound) && !bOwnSound)
+	if (!GroupEffect.HasSound() && !bOwnSound)
 	{
-		PlayFeedback(OwnFeedback, Report, true, false);
+		Feedback->PlayEffect(OwnEffect, Context, FGameplayTag(), true, false);
 	}
 }
 
@@ -162,31 +204,6 @@ bool UImpactGroupSubsystem::ConsumeGroupSlot(FImpactGroupRecord& Record, const E
 	}
 
 	return bPlay;
-}
-
-void UImpactGroupSubsystem::PlayFeedback(const FImpactFeedback& Feedback, const FImpactReport& Report, const bool bPlaySound, const bool bPlayEffect) const
-{
-	UWorld* World = GetWorld();
-
-	if (!IsValid(World))
-	{
-		return;
-	}
-
-	if (bPlaySound && IsValid(Feedback.Sound))
-	{
-		const float Pitch = FMath::FRandRange(
-			FMath::Min(Feedback.PitchMin, Feedback.PitchMax),
-			FMath::Max(Feedback.PitchMin, Feedback.PitchMax)
-		);
-
-		UGameplayStatics::PlaySoundAtLocation(World, Feedback.Sound, Report.Location, 1.0f, Pitch);
-	}
-
-	if (bPlayEffect && IsValid(Feedback.Effect))
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, Feedback.Effect, Report.Location, Report.Rotation);
-	}
 }
 
 int32 UImpactGroupSubsystem::FindGroupIndex(const FImpactGroupHandle& Handle) const

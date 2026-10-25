@@ -8,9 +8,8 @@
 
 class AProjectileBase;
 class UProjectileDataAsset;
-class UAudioComponent;
 class UBoxComponent;
-class UNiagaraComponent;
+class UFeedbackComponent;
 class UPrimitiveComponent;
 class UProjectileMovementComponent;
 class USceneComponent;
@@ -127,6 +126,10 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
 	TObjectPtr<USceneComponent> TipLocation;
 
+	/** Runs the flight loop. Its set comes from the projectile data each shot. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
+	TObjectPtr<UFeedbackComponent> FeedbackComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Projectile|Components")
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
@@ -139,12 +142,6 @@ protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Projectile|Runtime")
 	FArrowShotParams ShotParams;
 
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Projectile|Feedback")
-	TObjectPtr<UAudioComponent> OngoingSoundRef;
-
-	UPROPERTY(Transient, BlueprintReadOnly, Category = "Projectile|Feedback")
-	TObjectPtr<UNiagaraComponent> OngoingEffectRef;
-
 private:
 	UFUNCTION()
 	void HandleHitBoxBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -154,12 +151,11 @@ private:
 	void StartOngoingFeedback();
 	void StopOngoingFeedback();
 	void HandleFlightExpired();
-	void SpawnPoolReturnEffect();
 	void ScheduleFlightExpiry(float Delay);
 	void ScheduleRecycle(float Delay);
 
 	void LeaveImpactGroup();
-	void PlayImpactFeedback(bool bHitTarget, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const;
+	void PlayImpactFeedback(bool bHitTarget, bool bPierced, AActor* HitActor, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const;
 
 	void HandleScheduledRedirect();
 

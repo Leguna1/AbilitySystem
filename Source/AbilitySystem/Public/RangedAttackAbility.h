@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "OffensiveAbilityBase.h"
-#include "ImpactGroupTypes.h"
 #include "AbilitySystemTags.h"
 #include "ArrowShotParams.h"
 #include "RangedAttackAbility.generated.h"
 
 class AProjectileBase;
 class ABowBase;
+class UFeedbackSet;
 class UProjectileDataAsset;
 
 /** Where a ranged ability's projectiles come from. */
@@ -173,6 +173,14 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float DefaultProjectileStrength = 1.0f;
 
+	/**
+	 * This ability's arrow look, over the projectile data's own set: only what differs
+	 * (a fiery Flight and Hit for Charged Shot). Empty = the projectile's look.
+	 * Features can swap it per shot (Final Shot).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Projectile")
+	TObjectPtr<UFeedbackSet> ProjectileFeedback;
+
 	/* -------------------- Events -------------------- */
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events",
@@ -186,15 +194,6 @@ protected:
 	/** Anim event that fires the projectiles. Required. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Events")
 	FGameplayTag ReleaseProjectileEventTag;
-
-	/* -------------------- Impact audio -------------------- */
-
-	/** Merge this ability's impact sounds: e.g. one hit and one miss sound per fan volley instead of one per arrow. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio")
-	bool bGroupProjectileImpacts = false;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Ability|Ranged|Impact Audio", meta = (EditCondition = "bGroupProjectileImpacts"))
-	FImpactGroupSettings ProjectileImpactGroup;
 
 	/* -------------------- Rank -------------------- */
 

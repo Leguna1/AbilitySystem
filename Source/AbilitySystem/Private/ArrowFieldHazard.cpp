@@ -3,9 +3,11 @@
 #include "CombatantComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
+#include "FeedbackComponent.h"
+#include "FeedbackSubsystem.h"
+#include "FeedbackTags.h"
 #include "GenericTeamAgentInterface.h"
-#include "NiagaraComponent.h"
-#include "NiagaraFunctionLibrary.h"
+#include "ImpactGroupSubsystem.h"
 #include "ProjectileBase.h"
 #include "TimerManager.h"
 
@@ -13,12 +15,18 @@ AArrowFieldHazard::AArrowFieldHazard()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	SetRootComponent(CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
+
+	FeedbackComponent = CreateDefaultSubobject<UFeedbackComponent>(TEXT("Feedback"));
 }
 
 void AArrowFieldHazard::InitializeField(const FArrowFieldParams& InParams)
 {
 	Params = InParams;
 	Params.Radius = FMath::Max(Params.Radius, 1.0f);
+
+	// Held open until the field ends, so its Thunderclap still belongs to the volley that made it.
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
+	bInImpactGroup = IsValid(ImpactGroups) && ImpactGroups->AddMember(Params.ImpactGroup);
 
 	GetWorldTimerManager().SetTimer(
 		CollectionTimerHandle,
@@ -43,6 +51,7 @@ void AArrowFieldHazard::RegisterProjectile(AProjectileBase* Arrow)
 void AArrowFieldHazard::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	StopCollecting();
+	LeaveImpactGroup();
 	GetWorldTimerManager().ClearAllTimersForObject(this);
 
 	Super::EndPlay(EndPlayReason);
@@ -78,18 +87,8 @@ void AArrowFieldHazard::StartField(const FVector& FirstLanding)
 	FieldCenter = Params.bCenterOnFirstLanding ? FirstLanding : Params.Center;
 	SetActorLocation(FieldCenter);
 
-	if (FieldEffect)
-	{
-		FieldEffectComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			FieldEffect, GetRootComponent(), NAME_None, FVector::ZeroVector, FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget, false
-		);
-
-		if (IsValid(FieldEffectComponent))
-		{
-			FieldEffectComponent->SetVariableFloat(RadiusParameter, Params.Radius);
-		}
-	}
+	FeedbackComponent->StartLoop(FeedbackTags::Cue_Hazard_Field, GetRootComponent());
+	FeedbackComponent->SetLoopFloat(FeedbackTags::Cue_Hazard_Field, RadiusParameter, Params.Radius);
 
 	OnFieldStarted(FieldCenter, Params.Radius);
 
@@ -241,13 +240,11 @@ void AArrowFieldHazard::Thunderclap()
 	GatherAffectedActors(Affected);
 
 	AActor* InstigatorActor = GetInstigator();
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
 
 	for (AActor* Actor : Affected)
 	{
-		if (!Actor->Implements<UPayloadReceiver>())
-		{
-			continue;
-		}
+		const FVector StrikeLocation = UFeedbackSubsystem::ResolveStrikeLocation(Actor, FHitResult(), FieldCenter);
 
 		// Poise only: the arrows already did the damage and applied their statuses.
 		FAbilityPayload Payload;
@@ -256,20 +253,36 @@ void AArrowFieldHazard::Thunderclap()
 		Payload.Statuses.Reset();
 		Payload.Instigator = InstigatorActor;
 		Payload.Causer = this;
-		Payload.Hit.ImpactPoint = Actor->GetActorLocation();
-		Payload.Hit.Location = Payload.Hit.ImpactPoint;
+		Payload.Hit.ImpactPoint = StrikeLocation;
+		Payload.Hit.Location = StrikeLocation;
 		Payload.Hit.ImpactNormal = (Actor->GetActorLocation() - FieldCenter).GetSafeNormal2D();
 
-		IPayloadReceiver::Execute_ReceivePayload(Actor, Payload);
-	}
+		const bool bAccepted = UCombatantComponent::DeliverPayload(Actor, Payload);
 
-	if (ThunderclapEffect)
-	{
-		if (UNiagaraComponent* Burst = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ThunderclapEffect, FieldCenter))
+		if (IsValid(ImpactGroups))
 		{
-			Burst->SetVariableFloat(RadiusParameter, Params.Radius);
+			FImpactReport Report;
+			Report.Group = Params.ImpactGroup;
+			Report.Result = bAccepted ? EImpactResult::Hit : EImpactResult::Miss;
+			Report.Location = StrikeLocation;
+			Report.Rotation = FVector(Payload.Hit.ImpactNormal).Rotation();
+			Report.FeedbackSet = FeedbackComponent->GetActiveSet();
+			Report.FallbackSet = FeedbackComponent->GetFallbackSet();
+			Report.HitCue = FeedbackTags::Cue_Hazard_Hit;
+			Report.MissCue = FeedbackTags::Cue_Hazard_Hit;
+			Report.Instigator = InstigatorActor;
+			Report.Target = Actor;
+			Report.Hit = Payload.Hit;
+
+			ImpactGroups->PlayImpact(Report);
 		}
 	}
+
+	FFeedbackCueContext Context;
+	Context.Location = FieldCenter;
+	Context.Instigator = InstigatorActor;
+	Context.NiagaraFloats.Add(RadiusParameter, Params.Radius);
+	FeedbackComponent->PlayCueWithContext(FeedbackTags::Cue_Hazard_Burst, Context);
 
 	OnThunderclap(FieldCenter, Params.Radius);
 }
@@ -308,19 +321,37 @@ void AArrowFieldHazard::EndField()
 	bFieldActive = false;
 
 	StopCollecting();
+	LeaveImpactGroup();
 	GetWorldTimerManager().ClearAllTimersForObject(this);
 
 	OnFieldEnded();
 
-	// Let the ground effect fade instead of popping out.
-	if (IsValid(FieldEffectComponent) && FadeOutTime > 0.0f)
+	// Let the ground effect fade instead of popping out (its Stop Effect plays now).
+	const bool bHadField = FeedbackComponent->IsLoopActive(FeedbackTags::Cue_Hazard_Field);
+	FeedbackComponent->StopLoop(FeedbackTags::Cue_Hazard_Field);
+
+	if (bHadField && FadeOutTime > 0.0f)
 	{
-		FieldEffectComponent->Deactivate();
 		SetLifeSpan(FadeOutTime);
 		return;
 	}
 
 	Destroy();
+}
+
+void AArrowFieldHazard::LeaveImpactGroup()
+{
+	if (!bInImpactGroup)
+	{
+		return;
+	}
+
+	bInImpactGroup = false;
+
+	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+	{
+		ImpactGroups->ResolveMember(Params.ImpactGroup);
+	}
 }
 
 #if WITH_EDITOR

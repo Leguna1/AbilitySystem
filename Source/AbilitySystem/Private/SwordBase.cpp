@@ -4,6 +4,8 @@
 #include "Components/BoxComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "FeedbackComponent.h"
+#include "FeedbackTags.h"
 
 ASwordBase::ASwordBase()
 {
@@ -37,6 +39,13 @@ void ASwordBase::BeginPlay()
 
 void ASwordBase::BeginHitDetection()
 {
+	// A new swing (not a refresh of one already running): whoosh and blade trail.
+	if (!bHitDetectionActive)
+	{
+		FeedbackComponent->PlayCueAt(FeedbackTags::Cue_Weapon_Attack, SwordMesh->Bounds.Origin, GetActorRotation());
+		FeedbackComponent->StartLoop(FeedbackTags::Cue_Weapon_Trail, SwordMesh);
+	}
+
 	HitActorsThisSwing.Reset();
 	bHitDetectionActive = true;
 
@@ -61,6 +70,11 @@ void ASwordBase::BeginHitDetection()
 
 void ASwordBase::EndHitDetection()
 {
+	if (bHitDetectionActive)
+	{
+		FeedbackComponent->StopLoop(FeedbackTags::Cue_Weapon_Trail);
+	}
+
 	bHitDetectionActive = false;
 
 	HitBox->SetGenerateOverlapEvents(false);

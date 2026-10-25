@@ -2,6 +2,8 @@
 
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
+#include "FeedbackComponent.h"
+#include "FeedbackTags.h"
 #include "ProjectileBase.h"
 #include "ProjectileDataAsset.h"
 #include "ProjectilePoolSubsystem.h"
@@ -69,10 +71,17 @@ void ABowBase::BeginDrawVisuals()
 
 	bDrawVisualsActive = true;
 	SetActorTickEnabled(true);
+
+	FeedbackComponent->StartLoop(FeedbackTags::Cue_Weapon_Charge, BowMesh);
 }
 
 void ABowBase::EndDrawVisuals()
 {
+	if (bDrawVisualsActive)
+	{
+		FeedbackComponent->ClearLoop(FeedbackTags::Cue_Weapon_Charge);
+	}
+
 	bDrawVisualsActive = false;
 }
 
@@ -200,6 +209,12 @@ bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const FA
 		ReleasedArrows.Add(Arrow);
 		OnArrowFired.Broadcast(Arrow, Arrow->GetFiredStrength());
 		bReleasedAnyArrow = true;
+	}
+
+	if (bReleasedAnyArrow)
+	{
+		// One twang per release, however many arrows left the string.
+		FeedbackComponent->PlayCueAt(FeedbackTags::Cue_Weapon_Attack, BowMesh->GetComponentLocation(), Directions[0].Rotation());
 	}
 
 	return bReleasedAnyArrow;

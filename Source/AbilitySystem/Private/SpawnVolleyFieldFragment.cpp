@@ -34,6 +34,7 @@ void USpawnVolleyFieldFragment::OnProjectilesReleased(URangedAttackAbility& Abil
 	Ability.ResolveStatusSpecs(Definition->GetStatusSpecs(), FieldParams.Statuses);
 	FieldParams.Duration = FMath::Max(Ability.GetModifiedFloat(AbilitySystemTags::Stat_HazardDuration, Definition->GetBaseDuration()), 0.1f);
 	FieldParams.CollectionTime = LandingWindow;
+	FieldParams.ImpactGroup = Ability.GetImpactGroup();
 
 	// A volley knows where it rains and how wide (Stat.Radius already applied).
 	if (const UProjectileBarrageAbility* Volley = Cast<UProjectileBarrageAbility>(&Ability))

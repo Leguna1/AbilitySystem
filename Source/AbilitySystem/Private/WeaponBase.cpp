@@ -1,13 +1,23 @@
 #include "WeaponBase.h"
 
+#include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
+
 #include "Components/MeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "FeedbackComponent.h"
+#include "FeedbackSubsystem.h"
+#include "FeedbackTags.h"
 #include "GameFramework/Character.h"
+#include "ImpactGroupSubsystem.h"
 #include "WeaponDataAsset.h"
 
 AWeaponBase::AWeaponBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	FeedbackComponent = CreateDefaultSubobject<UFeedbackComponent>(TEXT("Feedback"));
 }
 
 void AWeaponBase::InitializeWeapon(ACharacter* InWielder, UWeaponDataAsset* InWeaponData)
@@ -35,6 +45,10 @@ void AWeaponBase::HandleDrawn()
 	SetActorEnableCollision(true);
 
 	bDrawn = true;
+
+	FeedbackComponent->PlayCue(FeedbackTags::Cue_Weapon_Draw);
+	FeedbackComponent->StartLoop(FeedbackTags::Cue_Weapon_Aura, GetWeaponMesh());
+
 	OnDrawn();
 }
 
@@ -47,6 +61,10 @@ void AWeaponBase::HandleHolstered()
 	if (bWasDrawn)
 	{
 		OnHolstered();
+
+		// Anything still running on the weapon (aura, trail, charge) ends with it.
+		FeedbackComponent->StopAllLoops(false);
+		FeedbackComponent->PlayCue(FeedbackTags::Cue_Weapon_Holster);
 	}
 
 	ApplyHolsteredPlacement();
@@ -122,4 +140,51 @@ bool AWeaponBase::GetLaunchTransform(const int32 ProjectileIndex, FTransform& Ou
 
 	OutTransform = WeaponMesh->GetSocketTransform(SocketName);
 	return true;
+}
+
+void AWeaponBase::PlayHitFeedback(AActor* HitActor, const FHitResult& Hit, const FVector StrikeLocation, const bool bHitTarget, const FImpactGroupHandle& Group)
+{
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
+
+	if (!IsValid(ImpactGroups))
+	{
+		return;
+	}
+
+	FImpactReport Report;
+	Report.Group = Group;
+	Report.Result = bHitTarget ? EImpactResult::Hit : EImpactResult::Miss;
+	Report.Location = StrikeLocation;
+
+	// Facing from the wielder into the target: blood and sparks fly the way the blow went.
+	const FVector From = IsValid(Wielder) ? Wielder->GetActorLocation() : GetActorLocation();
+	Report.Rotation = (StrikeLocation - From).GetSafeNormal().Rotation();
+
+	Report.FeedbackSet = FeedbackComponent->GetActiveSet();
+	Report.FallbackSet = FeedbackComponent->GetFallbackSet();
+	Report.HitCue = FeedbackTags::Cue_Weapon_Hit;
+	Report.MissCue = FeedbackTags::Cue_Weapon_Miss;
+	Report.Instigator = Wielder;
+	Report.Target = HitActor;
+	Report.Hit = Hit;
+
+	// The target may already be dying; only read it while it is still valid.
+	if (IsValid(Hit.GetComponent()))
+	{
+		Report.HitComponent = Hit.GetComponent();
+	}
+	else if (IsValid(HitActor))
+	{
+		Report.HitComponent = Cast<UPrimitiveComponent>(HitActor->GetRootComponent());
+	}
+
+	ImpactGroups->PlayImpact(Report);
+}
+
+FVector AWeaponBase::ResolveStrikeLocation(const AActor* HitActor, const FHitResult& Hit) const
+{
+	const UMeshComponent* WeaponMesh = GetWeaponMesh();
+	const FVector WeaponPoint = IsValid(WeaponMesh) ? WeaponMesh->Bounds.Origin : GetActorLocation();
+
+	return UFeedbackSubsystem::ResolveStrikeLocation(HitActor, Hit, WeaponPoint);
 }

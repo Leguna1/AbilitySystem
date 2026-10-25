@@ -2,13 +2,13 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "ImpactGroupTypes.h"
 #include "ModifierTypes.h"
 #include "PayloadReceiver.h"
 #include "ArrowFieldHazard.generated.h"
 
 class AProjectileBase;
-class UNiagaraComponent;
-class UNiagaraSystem;
+class UFeedbackComponent;
 
 /** What a volley hands its field. Filled by the Spawn Volley Field fragment. */
 USTRUCT(BlueprintType)
@@ -45,6 +45,10 @@ struct FArrowFieldParams
 
 	UPROPERTY(BlueprintReadWrite, Category = "Field")
 	FHitSpec ThunderclapHit;
+
+	/** The firing ability's impact group: the field keeps it open and reports Thunderclap hits into it. */
+	UPROPERTY(BlueprintReadWrite, Category = "Field")
+	FImpactGroupHandle ImpactGroup;
 };
 
 /**
@@ -54,8 +58,9 @@ struct FArrowFieldParams
  *
  * Optional Thunderclap: once every arrow has landed, one poise burst staggers everyone in the field.
  *
- * Make a Blueprint of this for the look: Field Effect (Niagara, gets a "Radius" float), or build
- * your own in On Field Started / On Field Ended / On Thunderclap.
+ * Its look is the Feedback component's set: Cue.Hazard.Field (loop, gets "Radius"; Start/Stop
+ * Effect = forms/fades), Cue.Hazard.Burst (the Thunderclap, gets "Radius"), Cue.Hazard.Hit
+ * (each target the Thunderclap hits). Blueprint events are there for anything extra.
  */
 UCLASS(Blueprintable)
 class ABILITYSYSTEM_API AArrowFieldHazard : public AActor
@@ -130,18 +135,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field|Effect")
 	bool bAffectsFriendlies = false;
 
-	/** Looping ground effect, spawned when the field forms. Receives the radius in Radius Parameter. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field|Visuals")
-	TObjectPtr<UNiagaraSystem> FieldEffect;
+	/** Plays the field's cues. Set its Feedback Set in the Blueprint. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Field|Visuals")
+	TObjectPtr<UFeedbackComponent> FeedbackComponent;
 
+	/** Niagara float user parameter the field and burst effects receive the radius in. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field|Visuals")
 	FName RadiusParameter = TEXT("Radius");
 
-	/** One-shot effect for the Thunderclap, at the field's centre. Receives the radius too. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field|Visuals")
-	TObjectPtr<UNiagaraSystem> ThunderclapEffect;
-
-	/** Seconds the Field Effect gets to fade out (deactivated) before the actor is removed. */
+	/** Seconds the field's loop gets to fade out before the actor is removed. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Field|Visuals", meta = (ClampMin = "0.0"))
 	float FadeOutTime = 1.0f;
 
@@ -175,6 +177,7 @@ private:
 	void StopCollecting();
 	void UnbindArrow(AProjectileBase* Arrow);
 	void EndField();
+	void LeaveImpactGroup();
 
 	/** Living combatants inside the field that it may affect. */
 	void GatherAffectedActors(TArray<AActor*>& OutActors) const;
@@ -186,9 +189,6 @@ private:
 	/** Arrows still expected to land, with the flight serial they were registered for. */
 	TMap<TWeakObjectPtr<AProjectileBase>, uint32> TrackedArrows;
 
-	UPROPERTY(Transient)
-	TObjectPtr<UNiagaraComponent> FieldEffectComponent;
-
 	FTimerHandle CollectionTimerHandle;
 	FTimerHandle PulseTimerHandle;
 	FTimerHandle LifetimeTimerHandle;
@@ -196,4 +196,5 @@ private:
 	bool bFieldActive = false;
 	bool bRainFinished = false;
 	bool bEnded = false;
+	bool bInImpactGroup = false;
 };

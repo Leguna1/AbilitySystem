@@ -3,8 +3,12 @@
 #include "CombatantComponent.h"
 #include "PayloadReceiver.h"
 #include "SwordBase.h"
-#include "AbilitySystem/Public/ImpactGroupSubsystem.h"
+#include "FeedbackComponent.h"
+#include "FeedbackSubsystem.h"
+#include "FeedbackTags.h"
 #include "GameFramework/Character.h"
+#include "ImpactGroupSubsystem.h"
+#include "WeaponBase.h"
 #include "AbilitySystemTags.h"
 #include "MeleeTraceComponent.h"
 
@@ -79,12 +83,6 @@ void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Eve
 		BoundSword = Sword;
 		BoundSword->OnSwordHit.AddDynamic(this, &UMeleeAttackAbility::HandleSwordHit);
 		BoundSword->BeginHitDetection();
-		
-		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
-		{
-			SwingGroup = ImpactGroups->OpenGroup(SwingImpactGroup);
-		}
-		
 		return;
 	}
 
@@ -96,16 +94,6 @@ void UMeleeAttackAbility::OnAnimationEvent_Implementation(const FGameplayTag Eve
 
 void UMeleeAttackAbility::ReleaseBoundSword()
 {
-	if (SwingGroup.IsValid())
-	{
-		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
-		{
-			ImpactGroups->SealGroup(SwingGroup);
-		}
-		
-		SwingGroup = FImpactGroupHandle();
-	}
-	
 	if (!IsValid(BoundSword))
 	{
 		return;
@@ -137,10 +125,11 @@ void UMeleeAttackAbility::ProcessMeleeHit(AActor* HitActor, const FHitResult& Hi
 	}
 
 	// Resolved before delivery: a lethal payload may start destroying the target.
-	const FVector ImpactLocation = !Hit.ImpactPoint.IsNearlyZero()
-		? FVector(Hit.ImpactPoint)
-		: HitActor->GetActorLocation();
-	
+	AWeaponBase* Weapon = Cast<AWeaponBase>(Causer);
+
+	const FVector StrikeLocation = IsValid(Weapon)
+		? Weapon->ResolveStrikeLocation(HitActor, Hit)
+		: UFeedbackSubsystem::ResolveStrikeLocation(HitActor, Hit, IsValid(Causer) ? Causer->GetActorLocation() : HitActor->GetActorLocation());
 
 	FAbilityPayload Payload;
 	Payload.Damage = ResolvedDamage;
@@ -151,19 +140,53 @@ void UMeleeAttackAbility::ProcessMeleeHit(AActor* HitActor, const FHitResult& Hi
 
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 
-	if (UImpactGroupSubsystem* ImpactFeedback = UImpactGroupSubsystem::Get(this))
+	if (IsValid(Weapon))
 	{
-		FImpactReport Report;
-		Report.Group = SwingGroup;
-		Report.Result = bPayloadAccepted ? EImpactResult::Hit : EImpactResult::Miss;
-		Report.Location = ImpactLocation;
-		Report.Rotation = IsValid(Causer) ? Causer->GetActorRotation() : FRotator::ZeroRotator;
-		Report.OwnHitFeedback = SwingHitFeedback;
-		Report.Hit = Hit;
-		Report.HitComponent = Hit.GetComponent();
-
-		ImpactFeedback->PlayImpact(Report);
+		Weapon->PlayHitFeedback(HitActor, Hit, StrikeLocation, bPayloadAccepted, GetImpactGroup());
 	}
+	else
+	{
+		PlayBodyHitFeedback(HitActor, Hit, StrikeLocation, bPayloadAccepted, Causer);
+	}
+}
+
+void UMeleeAttackAbility::PlayBodyHitFeedback(AActor* HitActor, const FHitResult& Hit, const FVector& StrikeLocation, const bool bHitTarget, AActor* Causer) const
+{
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
+
+	if (!IsValid(ImpactGroups))
+	{
+		return;
+	}
+
+	const UFeedbackComponent* AttackerFeedback = IsValid(Causer) ? Causer->FindComponentByClass<UFeedbackComponent>() : nullptr;
+
+	FImpactReport Report;
+	Report.Group = GetImpactGroup();
+	Report.Result = bHitTarget ? EImpactResult::Hit : EImpactResult::Miss;
+	Report.Location = StrikeLocation;
+	Report.Rotation = IsValid(Causer)
+		? (StrikeLocation - Causer->GetActorLocation()).GetSafeNormal().Rotation()
+		: FRotator::ZeroRotator;
+
+	Report.FeedbackSet = IsValid(AttackerFeedback) ? AttackerFeedback->GetActiveSet() : nullptr;
+	Report.FallbackSet = IsValid(AttackerFeedback) ? AttackerFeedback->GetFallbackSet() : nullptr;
+	Report.HitCue = FeedbackTags::Cue_Weapon_Hit;
+	Report.MissCue = FeedbackTags::Cue_Weapon_Miss;
+	Report.Instigator = GetOwningCharacter();
+	Report.Target = HitActor;
+	Report.Hit = Hit;
+
+	if (IsValid(Hit.GetComponent()))
+	{
+		Report.HitComponent = Hit.GetComponent();
+	}
+	else if (IsValid(HitActor))
+	{
+		Report.HitComponent = Cast<UPrimitiveComponent>(HitActor->GetRootComponent());
+	}
+
+	ImpactGroups->PlayImpact(Report);
 }
 
 void UMeleeAttackAbility::BindBodyTrace()
@@ -178,7 +201,6 @@ void UMeleeAttackAbility::BindBodyTrace()
 	}
 
 	BodyTrace->OnTraceStarted.AddDynamic(this, &UMeleeAttackAbility::HandleBodyTraceStarted);
-	BodyTrace->OnTraceEnded.AddDynamic(this, &UMeleeAttackAbility::HandleBodyTraceEnded);
 	BodyTrace->OnMeleeHit.AddDynamic(this, &UMeleeAttackAbility::HandleBodyHit);
 }
 
@@ -193,7 +215,6 @@ void UMeleeAttackAbility::ReleaseBodyTrace()
 	BodyTrace->EndAllTraces();
 
 	BodyTrace->OnTraceStarted.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyTraceStarted);
-	BodyTrace->OnTraceEnded.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyTraceEnded);
 	BodyTrace->OnMeleeHit.RemoveDynamic(this, &UMeleeAttackAbility::HandleBodyHit);
 	BodyTrace = nullptr;
 }
@@ -209,24 +230,5 @@ void UMeleeAttackAbility::HandleBodyTraceStarted(UAnimSequenceBase* SourceAnimat
 	if (!IsCommitted() && !RequestCommit())
 	{
 		RequestCancelAbility();
-		return;
-	}
-
-	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
-	{
-		SwingGroup = ImpactGroups->OpenGroup(SwingImpactGroup);
-	}
-}
-
-void UMeleeAttackAbility::HandleBodyTraceEnded(UAnimSequenceBase* SourceAnimation)
-{
-	if (SwingGroup.IsValid())
-	{
-		if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
-		{
-			ImpactGroups->SealGroup(SwingGroup);
-		}
-
-		SwingGroup = FImpactGroupHandle();
 	}
 }

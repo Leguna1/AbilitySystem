@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "ImpactGroupTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ImpactGroupSubsystem.generated.h"
@@ -24,7 +25,11 @@ struct FImpactGroupRecord
 	double LastMissPlayedAt = -1.0;
 };
 
+class AActor;
+class UFeedbackSet;
 class UPrimitiveComponent;
+struct FFeedbackCueContext;
+struct FFeedbackEffect;
 
 /** Everything one impact needs to play its feedback. */
 struct FImpactReport
@@ -35,21 +40,35 @@ struct FImpactReport
 	FVector Location = FVector::ZeroVector;
 	FRotator Rotation = FRotator::ZeroRotator;
 
-	/** The hitter's own hit feedback (arrow data, melee ability). Misses use the environment. */
-	FImpactFeedback OwnHitFeedback;
+	/** The hitter's look (weapon or projectile set). Null = the project's default set only. */
+	const UFeedbackSet* FeedbackSet = nullptr;
 
-	/** For surface resolution (stage 2). */
+	/** What FeedbackSet sits on when it is an override (the arrow's own set under an ability's look). */
+	const UFeedbackSet* FallbackSet = nullptr;
+
+	/** Played for Hit and Miss results (Cue.Projectile.Hit / Cue.Projectile.Miss). */
+	FGameplayTag HitCue;
+	FGameplayTag MissCue;
+
+	AActor* Instigator = nullptr;
+	AActor* Target = nullptr;
+
+	/** 0..1 how hard the hit was; sent to the effects as the "Strength" Niagara parameter. Below 0 = not sent. */
+	float Strength = -1.0f;
+
+	/** Surface type and normal. */
 	FHitResult Hit;
 	const UPrimitiveComponent* HitComponent = nullptr;
 };
 
 /**
- * Merges impact audio for hits that belong to one action (a volley, a swing).
+ * Merges the impact feedback of hits that belong to one ability use (a volley, a cleave).
  * Lives on the world so groups outlive both the ability and the weapon.
  *
- * Lifecycle: OpenGroup -> AddMember per projectile -> SealGroup once no more
- * members will join -> ResolveMember as each projectile impacts or recycles.
+ * Every offensive ability opens one when it activates and seals it when it ends;
+ * projectiles it fired join as members and keep the group alive until they land.
  * A sealed group with no outstanding members is removed; stale groups expire.
+ * What plays comes from the hitter's Feedback Set through the Feedback Subsystem.
  */
 UCLASS()
 class ABILITYSYSTEM_API UImpactGroupSubsystem : public UWorldSubsystem
@@ -58,14 +77,9 @@ class ABILITYSYSTEM_API UImpactGroupSubsystem : public UWorldSubsystem
 
 public:
 	
-	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-
 	/** Plays an impact's own feedback and, if grouped, the group's feedback per its settings. */
 	void PlayImpact(const FImpactReport& Report);
 
-	/** Feedback for a miss on this surface. Stage 1: always the environment default. */
-	FImpactFeedback ResolveEnvironmentImpact(const FHitResult& Hit, const UPrimitiveComponent* HitComponent) const;
-	
 	static UImpactGroupSubsystem* Get(const UObject* WorldContextObject);
 
 	FImpactGroupHandle OpenGroup(const FImpactGroupSettings& Settings);
@@ -101,9 +115,9 @@ private:
 	/** Advances Policy for Result; true if the group layer should play for this impact. */
 	bool ConsumeGroupSlot(FImpactGroupRecord& Record, EImpactResult Result) const;
 
-	void PlayFeedback(const FImpactFeedback& Feedback, const FImpactReport& Report, bool bPlaySound, bool bPlayEffect) const;
+	/** The impact's own feedback: its set's hit or miss cue for this surface. */
+	FFeedbackEffect ResolveOwnEffect(const FImpactReport& Report, const FFeedbackCueContext& Context) const;
 
-	/** Loaded from UAbilitySystemSettings when the world starts. */
-	UPROPERTY(Transient)
-	FImpactFeedback EnvironmentImpact;
+	/** The group's shared Cue.Group.Hit / Cue.Group.Miss from the impact's set. Empty when none is defined. */
+	FFeedbackEffect ResolveGroupEffect(const FImpactGroupRecord& Record, const FImpactReport& Report, const FFeedbackCueContext& Context) const;
 };

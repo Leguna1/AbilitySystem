@@ -1,16 +1,17 @@
 #include "ProjectileBase.h"
 
+#include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
+
 #include "CombatantComponent.h"
-#include "Components/AudioComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/ProjectileMovementComponent.h"
+#include "FeedbackComponent.h"
+#include "FeedbackTags.h"
 #include "ImpactGroupSubsystem.h"
-#include "Kismet/GameplayStatics.h"
-#include "NiagaraComponent.h"
-#include "NiagaraFunctionLibrary.h"
 #include "PayloadReceiver.h"
 #include "ProjectileDataAsset.h"
 #include "TargetableInterface.h"
@@ -54,6 +55,8 @@ AProjectileBase::AProjectileBase()
 
 	TipLocation = CreateDefaultSubobject<USceneComponent>(TEXT("TipLocation"));
 	TipLocation->SetupAttachment(Mesh);
+
+	FeedbackComponent = CreateDefaultSubobject<UFeedbackComponent>(TEXT("Feedback"));
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->UpdatedComponent = HitBox;
@@ -168,6 +171,9 @@ bool AProjectileBase::Fire_Implementation(const FVector& Direction, const FArrow
 	// Join before going live, so even a point-blank impact counts toward the group.
 	JoinImpactGroup(ShotParams.ImpactGroup);
 
+	// The firing ability's look sits over the projectile's own set for this flight.
+	FeedbackComponent->SetOverrideSet(ShotParams.FeedbackSet);
+
 	bIsInFlight = true;
 	bHasImpacted = false;
 
@@ -236,6 +242,8 @@ bool AProjectileBase::ActivateFromPool(UProjectileDataAsset* NewProjectileData)
 	}
 
 	ProjectileData = NewProjectileData;
+	FeedbackComponent->SetOverrideSet(nullptr);
+	FeedbackComponent->SetFeedbackSet(ProjectileData->FeedbackSet);
 
 	Velocity = FVector::ZeroVector;
 
@@ -274,7 +282,7 @@ bool AProjectileBase::ActivateFromPool(UProjectileDataAsset* NewProjectileData)
 
 	if (IsValid(Mesh))
 	{
-		// No mesh is fine: effect-only projectiles are just their Ongoing Effect.
+		// No mesh is fine: effect-only projectiles are just their Cue.Projectile.Flight effect.
 		Mesh->SetStaticMesh(ProjectileData->Mesh);
 		Mesh->SetRelativeRotation(DefaultMeshRotation);
 	}
@@ -324,6 +332,8 @@ void AProjectileBase::ResetForPool()
 	}
 
 	ProjectileData = nullptr;
+	FeedbackComponent->SetOverrideSet(nullptr);
+	FeedbackComponent->SetFeedbackSet(nullptr);
 
 	Velocity = FVector::ZeroVector;
 
@@ -482,13 +492,13 @@ void AProjectileBase::HandleImpact(
 	// Deliver first: acceptance decides hit vs miss feedback, and whether the projectile can pierce.
 	const bool bPayloadAccepted = UCombatantComponent::DeliverPayload(HitActor, Payload);
 
-	PlayImpactFeedback(bPayloadAccepted, ImpactLocation, HitComponent, SweepResult);
-
 	// Pierce: a living target that took the hit is passed through while pierces remain.
 	const bool bPierce =
 		bPayloadAccepted &&
 		PiercesRemaining > 0 &&
 		IsValid(HitActor->FindComponentByClass<UCombatantComponent>());
+
+	PlayImpactFeedback(bPayloadAccepted, bPierce, HitActor, ImpactLocation, HitComponent, SweepResult);
 
 	if (bPierce)
 	{
@@ -556,50 +566,16 @@ void AProjectileBase::HandleImpact(
 
 void AProjectileBase::StartOngoingFeedback()
 {
-	if (!IsValid(ProjectileData))
-	{
-		return;
-	}
-
 	USceneComponent* AttachComponent = IsValid(TipLocation) ? TipLocation.Get() : GetRootComponent();
 
-	if (!IsValid(AttachComponent))
-	{
-		return;
-	}
-
-	if (IsValid(ProjectileData->OngoingSound))
-	{
-		OngoingSoundRef = UGameplayStatics::SpawnSoundAttached(ProjectileData->OngoingSound, AttachComponent);
-	}
-
-	if (IsValid(ProjectileData->OngoingEffect))
-	{
-		OngoingEffectRef = UNiagaraFunctionLibrary::SpawnSystemAttached(
-			ProjectileData->OngoingEffect,
-			AttachComponent,
-			NAME_None,
-			FVector::ZeroVector,
-			FRotator::ZeroRotator,
-			EAttachLocation::SnapToTarget,
-			false);
-	}
+	FeedbackComponent->PlayCueAt(FeedbackTags::Cue_Projectile_Launch, AttachComponent->GetComponentLocation(), GetActorRotation());
+	FeedbackComponent->StartLoop(FeedbackTags::Cue_Projectile_Flight, AttachComponent);
 }
 
 void AProjectileBase::StopOngoingFeedback()
 {
-	if (IsValid(OngoingSoundRef))
-	{
-		OngoingSoundRef->Stop();
-		OngoingSoundRef = nullptr;
-	}
-
-	if (IsValid(OngoingEffectRef))
-	{
-		OngoingEffectRef->Deactivate();
-		OngoingEffectRef->DestroyComponent();
-		OngoingEffectRef = nullptr;
-	}
+	// Projectiles run one flight at a time, so this ends whatever is still going.
+	FeedbackComponent->StopAllLoops(false);
 }
 
 void AProjectileBase::HandleFlightExpired()
@@ -610,18 +586,8 @@ void AProjectileBase::HandleFlightExpired()
 	}
 
 	StopOngoingFeedback();
-	SpawnPoolReturnEffect();
+	FeedbackComponent->PlayCue(FeedbackTags::Cue_Projectile_Expire);
 	ReturnToPool();
-}
-
-void AProjectileBase::SpawnPoolReturnEffect()
-{
-	if (!IsValid(ProjectileData) || !IsValid(ProjectileData->PoolReturnEffect))
-	{
-		return;
-	}
-
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ProjectileData->PoolReturnEffect, GetActorLocation(), GetActorRotation());
 }
 
 void AProjectileBase::ScheduleFlightExpiry(const float Delay)
@@ -679,11 +645,11 @@ void AProjectileBase::LeaveImpactGroup()
 	ImpactGroup = FImpactGroupHandle();
 }
 
-void AProjectileBase::PlayImpactFeedback(const bool bHitTarget, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const
+void AProjectileBase::PlayImpactFeedback(const bool bHitTarget, const bool bPierced, AActor* HitActor, const FVector& ImpactLocation, const UPrimitiveComponent* HitComponent, const FHitResult& Hit) const
 {
-	UImpactGroupSubsystem* ImpactFeedback = UImpactGroupSubsystem::Get(this);
+	UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this);
 
-	if (!IsValid(ImpactFeedback) || !IsValid(ProjectileData))
+	if (!IsValid(ImpactGroups))
 	{
 		return;
 	}
@@ -694,15 +660,18 @@ void AProjectileBase::PlayImpactFeedback(const bool bHitTarget, const FVector& I
 	Report.Location = ImpactLocation;
 	Report.Rotation = GetActorRotation();
 
-	Report.OwnHitFeedback.Sound = ProjectileData->EndSound;
-	Report.OwnHitFeedback.Effect = ProjectileData->EndEffect;
-	Report.OwnHitFeedback.PitchMin = ProjectileData->EndSoundPitchMin;
-	Report.OwnHitFeedback.PitchMax = ProjectileData->EndSoundPitchMax;
+	Report.FeedbackSet = FeedbackComponent->GetActiveSet();
+	Report.FallbackSet = FeedbackComponent->GetFallbackSet();
+	Report.HitCue = bPierced ? FeedbackTags::Cue_Projectile_Hit_Pierce : FeedbackTags::Cue_Projectile_Hit;
+	Report.MissCue = FeedbackTags::Cue_Projectile_Miss;
+	Report.Strength = ShotParams.FeedbackStrength;
+	Report.Instigator = GetInstigator();
+	Report.Target = HitActor;
 
 	Report.Hit = Hit;
 	Report.HitComponent = HitComponent;
 
-	ImpactFeedback->PlayImpact(Report);
+	ImpactGroups->PlayImpact(Report);
 }
 
 void AProjectileBase::ScheduleRedirect(const FVector& TargetPoint, const float Delay, const bool bDisableGravity)

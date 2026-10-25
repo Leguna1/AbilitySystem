@@ -1,7 +1,11 @@
 #include "ProjectileDataAsset.h"
 
-#include "Engine/StaticMesh.h"
 #include "NiagaraSystem.h"
+#include "Sound/SoundBase.h"
+
+#include "Engine/StaticMesh.h"
+#include "FeedbackSet.h"
+#include "FeedbackTags.h"
 #include "ProjectileBase.h"
 
 #if WITH_EDITOR
@@ -24,9 +28,16 @@ EDataValidationResult UProjectileDataAsset::IsDataValid(FDataValidationContext& 
 		Result = EDataValidationResult::Invalid;
 	}
 
-	if (!IsValid(Mesh) && !IsValid(OngoingEffect))
+	const FFeedbackCue* FlightCue = IsValid(FeedbackSet) ? FeedbackSet->FindCue(FeedbackTags::Cue_Projectile_Flight) : nullptr;
+
+	if (!IsValid(Mesh) && (FlightCue == nullptr || !FlightCue->Effect.HasEffect()))
 	{
-		Context.AddWarning(NSLOCTEXT("ProjectileData", "Invisible", "No Mesh and no Ongoing Effect: the projectile will be invisible in flight."));
+		Context.AddWarning(NSLOCTEXT("ProjectileData", "Invisible", "No Mesh and no Cue.Projectile.Flight effect in the Feedback Set: the projectile will be invisible in flight."));
+	}
+
+	if (!IsValid(FeedbackSet))
+	{
+		Context.AddWarning(NSLOCTEXT("ProjectileData", "NoFeedback", "No Feedback Set: hits play only what the project's default set defines."));
 	}
 
 	if (MaximumSpeed <= 0.0f)

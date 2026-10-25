@@ -4,7 +4,6 @@
 #include "BowBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
-#include "ImpactGroupSubsystem.h"
 #include "ProjectileBase.h"
 #include "ProjectileDataAsset.h"
 #include "ProjectileFragment.h"
@@ -341,6 +340,8 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	ShotParams.bTargetedShot = bHasTarget;
 	ShotParams.Damage = FMath::Max(ResolveProjectileDamage(), 0.0f);
 	ShotParams.Hit = BuildHitSpec();
+	ShotParams.FeedbackSet = ProjectileFeedback;
+	ShotParams.FeedbackStrength = ShotParams.Strength;
 
 	// Pierce from stats alone (e.g. a passive); a Pierce feature supplies base values instead.
 	ShotParams.PierceCount = FMath::Max(GetModifiedInt(AbilitySystemTags::Stat_PierceCount, 0), 0);
@@ -354,16 +355,8 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 		Fragment.ModifyShotParams(*this, ShotParams);
 	});
 
-	// Open before release so every projectile can join; seal right after so the
-	// group closes once the last one resolves.
-	UImpactGroupSubsystem* ImpactGroups = bGroupProjectileImpacts
-		? UImpactGroupSubsystem::Get(this)
-		: nullptr;
-
-	if (IsValid(ImpactGroups))
-	{
-		ShotParams.ImpactGroup = ImpactGroups->OpenGroup(ProjectileImpactGroup);
-	}
+	// Every projectile joins this use's group, so a volley lands as one sound.
+	ShotParams.ImpactGroup = GetImpactGroup();
 
 	ReleasedProjectiles.Reset();
 	bool bReleased = false;
@@ -385,11 +378,6 @@ bool URangedAttackAbility::ReleaseProjectile_Implementation()
 	else
 	{
 		bReleased = LaunchFromPoints(StartTransforms, Directions, ShotParams);
-	}
-
-	if (IsValid(ImpactGroups))
-	{
-		ImpactGroups->SealGroup(ShotParams.ImpactGroup);
 	}
 
 	if (!bReleased)

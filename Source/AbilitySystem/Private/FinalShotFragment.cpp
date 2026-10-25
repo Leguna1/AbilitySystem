@@ -2,6 +2,7 @@
 
 #include "AbilityComponent.h"
 #include "ArrowShotParams.h"
+#include "FeedbackSet.h"
 #include "RapidFireAbility.h"
 
 void UFinalShotFragment::ModifyShotParams(const URangedAttackAbility& Ability, FArrowShotParams& ShotParams) const
@@ -20,6 +21,12 @@ void UFinalShotFragment::ModifyShotParams(const URangedAttackAbility& Ability, F
 	ShotParams.Damage *= DamageMultiplier;
 	ShotParams.Hit.Impact.PoiseDamage *= PoiseMultiplier;
 	ShotParams.PierceCount += ExtraPierceCount;
+
+	if (IsValid(FinalShotFeedback))
+	{
+		ShotParams.FeedbackSet = FinalShotFeedback;
+		ShotParams.FeedbackStrength = 1.0f;
+	}
 
 	if (!Statuses.IsEmpty())
 	{

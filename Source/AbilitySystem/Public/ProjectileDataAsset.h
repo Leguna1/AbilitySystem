@@ -5,8 +5,7 @@
 #include "ProjectileDataAsset.generated.h"
 
 class AProjectileBase;
-class UNiagaraSystem;
-class USoundBase;
+class UFeedbackSet;
 class UStaticMesh;
 
 /**
@@ -14,9 +13,8 @@ class UStaticMesh;
  * An arrow, a magic bolt or a boss orb is the same Projectile actor with a different asset.
  * How much it hurts is up to the ability that fires it, so one asset serves many abilities.
  *
- * Start:   the projectile is launched.
- * Ongoing: it is flying.
- * End:     it hits something.
+ * How it looks and sounds at each moment (launch, flight, hit, pierce, miss, expire)
+ * comes from its Feedback Set.
  */
 UCLASS(BlueprintType)
 class ABILITYSYSTEM_API UProjectileDataAsset : public UPrimaryDataAsset
@@ -78,36 +76,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Movement", meta = (ClampMin = "0.0"))
 	float MaximumGravityScale = 2.0f;
 
-	/* -------------------- Ongoing feedback -------------------- */
+	/* -------------------- Feedback -------------------- */
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|Ongoing")
-	TObjectPtr<UNiagaraSystem> OngoingEffect;
-
-	/** Expected to be a looping sound. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|Ongoing")
-	TObjectPtr<USoundBase> OngoingSound;
-
-	/* -------------------- End feedback -------------------- */
-
-	/** Played when the projectile strikes a target that accepts its payload. Misses use the environment impact from Project Settings. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|End")
-	TObjectPtr<UNiagaraSystem> EndEffect;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|End")
-	TObjectPtr<USoundBase> EndSound;
-
-	/** Random pitch range for EndSound, so clustered impacts sound distinct. Both 1.0 = off. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|End", meta = (ClampMin = "0.1", ClampMax = "3.0"))
-	float EndSoundPitchMin = 1.0f;
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|End", meta = (ClampMin = "0.1", ClampMax = "3.0"))
-	float EndSoundPitchMax = 1.0f;
-
-	/* -------------------- Pool-return feedback -------------------- */
-
-	/** Played only when the projectile expires in flight without hitting anything. */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback|Pool Return")
-	TObjectPtr<UNiagaraSystem> PoolReturnEffect;
+	/**
+	 * Cue.Projectile.Launch / Flight (loop) / Hit / Hit.Pierce / Miss / Expire.
+	 * Misses on the world usually come from the project's default set.
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile|Feedback")
+	TObjectPtr<UFeedbackSet> FeedbackSet;
 
 	/* -------------------- Lifetime -------------------- */
 

@@ -5,16 +5,24 @@
 #include "WeaponManagerComponent.h"
 #include "AbilitySystemTags.h"
 #include "AttackFragment.h"
+#include "ImpactGroupSubsystem.h"
 
 void UOffensiveAbilityBase::ActivateAbility_Implementation()
 {
 	ConfigureTargetFacingWarp();
+
+	// Before the montage starts, so the very first hit already belongs to this use.
+	OpenImpactGroup();
 
 	Super::ActivateAbility_Implementation();
 
 	if (GetAbilityStatus() == EAbilityStatus::Active)
 	{
 		OnAttackStarted();
+	}
+	else
+	{
+		SealImpactGroup();
 	}
 }
 
@@ -30,6 +38,34 @@ void UOffensiveAbilityBase::OnAbilityEnded_Implementation(const EAbilityEndReaso
 	}
 
 	OnAttackFinished(EndReason);
+
+	// Last: the finish callbacks may still land hits. Arrows in flight keep the group alive.
+	SealImpactGroup();
+}
+
+void UOffensiveAbilityBase::OpenImpactGroup()
+{
+	SealImpactGroup();
+
+	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+	{
+		ImpactGroup = ImpactGroups->OpenGroup(ImpactFeedback);
+	}
+}
+
+void UOffensiveAbilityBase::SealImpactGroup()
+{
+	if (!ImpactGroup.IsValid())
+	{
+		return;
+	}
+
+	if (UImpactGroupSubsystem* ImpactGroups = UImpactGroupSubsystem::Get(this))
+	{
+		ImpactGroups->SealGroup(ImpactGroup);
+	}
+
+	ImpactGroup = FImpactGroupHandle();
 }
 
 TArray<FAbilityDisplayStat> UOffensiveAbilityBase::GetDisplayStats_Implementation(const int32 Rank) const

@@ -6,10 +6,12 @@
 #include "ProjectileFragment.h"
 #include "FinalShotFragment.generated.h"
 
+class UFeedbackSet;
+
 /**
  * Rapid Fire's last arrow of a full volley becomes a heavy shot: more damage, more poise,
  * extra pierce and optional statuses. A volley cut short by moving has no final shot.
- * For visuals, use Rapid Fire's On Rapid Fire Shot Released (Shot Number == Max Shots).
+ * Its look: Final Shot Feedback (only what differs, e.g. a heavier Flight and Hit).
  */
 UCLASS(meta = (DisplayName = "Final Shot"))
 class ABILITYSYSTEM_API UFinalShotFragment : public UProjectileFragment
@@ -39,4 +41,8 @@ protected:
 	/** Added to what the final arrow applies, at this ability's rank. */
 	UPROPERTY(EditDefaultsOnly, Category = "Final Shot")
 	TArray<FStatusEffectSpec> Statuses;
+
+	/** The final arrow's look over the arrow's own set. Empty = looks like any other shot. */
+	UPROPERTY(EditDefaultsOnly, Category = "Final Shot")
+	TObjectPtr<UFeedbackSet> FinalShotFeedback;
 };

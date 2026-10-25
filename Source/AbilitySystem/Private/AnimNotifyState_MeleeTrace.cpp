@@ -26,7 +26,7 @@ void UAnimNotifyState_MeleeTrace::NotifyEnd(USkeletalMeshComponent* MeshComp, UA
 FString UAnimNotifyState_MeleeTrace::GetNotifyName_Implementation() const
 {
 	return Shapes.IsEmpty()
-		? TEXT("Melee Trace")
+		? TEXT("Melee Trace")             
 		: TEXT("Melee Trace: ") + FString::JoinBy(Shapes, TEXT(", "), [](const FName& Name) { return Name.ToString(); });
 }
 
