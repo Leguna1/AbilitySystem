@@ -4,6 +4,7 @@
 #include "BowBase.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
+#include "FeedbackComponent.h"
 #include "ProjectileBase.h"
 #include "ProjectileDataAsset.h"
 #include "ProjectileFragment.h"
@@ -237,6 +238,12 @@ bool URangedAttackAbility::PrepareProjectile_Implementation()
 		{
 			Bow->DiscardPreparedArrows();
 			return false;
+		}
+
+		// This ability's look from the moment the arrow is in hand, so the nock glow matches its flight.
+		if (AProjectileBase* Arrow = Bow->GetPreparedArrow(Index))
+		{
+			Arrow->GetFeedback()->SetOverrideSet(ProjectileFeedback);
 		}
 	}
 

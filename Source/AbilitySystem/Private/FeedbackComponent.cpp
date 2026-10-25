@@ -5,6 +5,8 @@
 #include "Sound/SoundBase.h"
 
 #include "Components/AudioComponent.h"
+#include "Components/MeshComponent.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/SceneComponent.h"
 #include "FeedbackSet.h"
 #include "FeedbackSubsystem.h"
@@ -234,6 +236,16 @@ bool UFeedbackComponent::SpawnLoopVisuals(FFeedbackLoop& Loop, const bool bPlayS
 		PlayAtLoop(Loop, Cue->StartEffect);
 	}
 
+	if (IsValid(Cue->OverlayMaterial))
+	{
+		if (UMeshComponent* Mesh = Cast<UMeshComponent>(AttachComponent))
+		{
+			Loop.PreviousOverlay = Mesh->GetOverlayMaterial();
+			Loop.AppliedOverlay = Cue->OverlayMaterial;
+			Mesh->SetOverlayMaterial(Cue->OverlayMaterial);
+		}
+	}
+
 	if (Effect.HasEffect())
 	{
 		// Pooled: stopping deactivates it and the pool takes it back once its particles finish.
@@ -270,7 +282,7 @@ bool UFeedbackComponent::SpawnLoopVisuals(FFeedbackLoop& Loop, const bool bPlayS
 			Effect.RollPitch());
 	}
 
-	return IsValid(Loop.Effect) || IsValid(Loop.Sound) || !Cue->StartEffect.IsEmpty();
+	return IsValid(Loop.Effect) || IsValid(Loop.Sound) || IsValid(Loop.AppliedOverlay) || !Cue->StartEffect.IsEmpty();
 }
 
 void UFeedbackComponent::PlayAtLoop(const FFeedbackLoop& Loop, const FFeedbackEffect& Effect) const
@@ -296,6 +308,20 @@ void UFeedbackComponent::DespawnLoopVisuals(FFeedbackLoop& Loop, const bool bImm
 	{
 		PlayAtLoop(Loop, Loop.StopEffect);
 	}
+
+	// Only undo our own overlay: another loop may have put its own on since.
+	if (IsValid(Loop.AppliedOverlay))
+	{
+		UMeshComponent* Mesh = Cast<UMeshComponent>(Loop.AttachTo.Get());
+
+		if (IsValid(Mesh) && Mesh->GetOverlayMaterial() == Loop.AppliedOverlay)
+		{
+			Mesh->SetOverlayMaterial(Loop.PreviousOverlay);
+		}
+	}
+
+	Loop.AppliedOverlay = nullptr;
+	Loop.PreviousOverlay = nullptr;
 
 	if (IsValid(Loop.Effect))
 	{

@@ -8,6 +8,7 @@
 #include "FeedbackTypes.generated.h"
 
 class UCameraShakeBase;
+class UMaterialInterface;
 class UNiagaraSystem;
 class UPrimitiveComponent;
 class USoundBase;
@@ -98,6 +99,14 @@ struct ABILITYSYSTEM_API FFeedbackCue
 	/** Loops: seconds the sound takes to fade out when stopped. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue|Loop", meta = (ClampMin = "0.0", Units = "s"))
 	float FadeOutTime = 0.25f;
+
+	/**
+	 * Loops: drawn over the mesh the loop attaches to while it runs (an electric shell on a
+	 * lightning arrow, ice on a frozen character, glow on an enchanted blade). Removed when it ends.
+	 * Use a translucent or fresnel material made for overlays.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue|Loop")
+	TObjectPtr<UMaterialInterface> OverlayMaterial;
 
 	/** Loops: played once where the loop attaches, when it starts (a status lands, an aura ignites). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Cue|Loop")

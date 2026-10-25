@@ -16,6 +16,8 @@ namespace FeedbackTags
 
 	/* -------------------- Projectile -------------------- */
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cue_Projectile_Aura, "Cue.Projectile.Aura", "Loop: the projectile's own look for its whole life - in hand, nocked, flying and stuck - until it returns to the pool (lightning arrow, fire arrow). Overlay Material works here.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cue_Projectile_Nocked, "Cue.Projectile.Nocked", "Loop: on the arrow while it sits nocked on the string, until release (glow, sparks). Start Effect = the moment it's nocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cue_Projectile_Launch, "Cue.Projectile.Launch", "Once: the projectile is fired, at its tip.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cue_Projectile_Flight, "Cue.Projectile.Flight", "Loop: while it flies (trail, whistle).");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cue_Projectile_Hit, "Cue.Projectile.Hit", "Once: it struck a target that took the hit. Surface variants apply.");
@@ -53,6 +55,8 @@ namespace FeedbackTags
 			Tag.MatchesTag(Cue_Weapon_Charge) ||
 			Tag.MatchesTag(Cue_Weapon_Trail) ||
 			Tag.MatchesTag(Cue_Projectile_Flight) ||
+			Tag.MatchesTag(Cue_Projectile_Nocked) ||
+			Tag.MatchesTag(Cue_Projectile_Aura) ||
 			Tag.MatchesTag(Cue_Hazard_Field) ||
 			Tag.MatchesTag(Cue_Status);
 	}

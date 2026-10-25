@@ -8,6 +8,7 @@
 #include "FeedbackComponent.generated.h"
 
 class UAudioComponent;
+class UMaterialInterface;
 class UFeedbackSet;
 class UNiagaraComponent;
 class USceneComponent;
@@ -41,6 +42,13 @@ struct FFeedbackLoop
 
 	/** Niagara float parameters, re-applied whenever the loop respawns. */
 	TMap<FName, float> NiagaraFloats;
+
+	/** The overlay this loop put on its mesh, and what was there before (restored when it ends). */
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> AppliedOverlay;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> PreviousOverlay;
 };
 
 /**

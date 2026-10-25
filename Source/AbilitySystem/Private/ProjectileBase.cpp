@@ -242,8 +242,12 @@ bool AProjectileBase::ActivateFromPool(UProjectileDataAsset* NewProjectileData)
 	}
 
 	ProjectileData = NewProjectileData;
+	FeedbackComponent->StopAllLoops(true);
 	FeedbackComponent->SetOverrideSet(nullptr);
 	FeedbackComponent->SetFeedbackSet(ProjectileData->FeedbackSet);
+
+	// Its look for its whole life: in hand, nocked, flying, stuck. Ability looks swap it in place.
+	FeedbackComponent->StartLoop(FeedbackTags::Cue_Projectile_Aura, Mesh);
 
 	Velocity = FVector::ZeroVector;
 
@@ -304,6 +308,7 @@ void AProjectileBase::ResetForPool()
 	GetWorldTimerManager().ClearTimer(RedirectTimerHandle);
 
 	StopOngoingFeedback();
+	FeedbackComponent->StopAllLoops(false);
 
 	if (GetAttachParentActor() != nullptr ||
 		(IsValid(GetRootComponent()) && GetRootComponent()->GetAttachParent() != nullptr))
@@ -574,8 +579,9 @@ void AProjectileBase::StartOngoingFeedback()
 
 void AProjectileBase::StopOngoingFeedback()
 {
-	// Projectiles run one flight at a time, so this ends whatever is still going.
-	FeedbackComponent->StopAllLoops(false);
+	// The moment-to-moment loops. The aura is the projectile's own look and stays until it is pooled.
+	FeedbackComponent->ClearLoop(FeedbackTags::Cue_Projectile_Nocked);
+	FeedbackComponent->ClearLoop(FeedbackTags::Cue_Projectile_Flight);
 }
 
 void AProjectileBase::HandleFlightExpired()

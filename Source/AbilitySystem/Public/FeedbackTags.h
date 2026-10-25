@@ -26,6 +26,8 @@ namespace FeedbackTags
 
 	/* -------------------- Projectile -------------------- */
 
+	ABILITYSYSTEM_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cue_Projectile_Aura);
+	ABILITYSYSTEM_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cue_Projectile_Nocked);
 	ABILITYSYSTEM_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cue_Projectile_Launch);
 	ABILITYSYSTEM_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cue_Projectile_Flight);
 	ABILITYSYSTEM_API UE_DECLARE_GAMEPLAY_TAG_EXTERN(Cue_Projectile_Hit);

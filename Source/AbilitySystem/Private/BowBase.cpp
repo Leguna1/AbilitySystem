@@ -155,10 +155,17 @@ bool ABowBase::AttachPreparedArrowToBow(const int32 ArrowIndex, const FName Sock
 		return false;
 	}
 
-	return PreparedArrows[ArrowIndex]->AttachToComponent(
-		BowMesh,
-		FAttachmentTransformRules::SnapToTargetNotIncludingScale,
-		SocketName);
+	AProjectileBase* Arrow = PreparedArrows[ArrowIndex];
+
+	if (!Arrow->AttachToComponent(BowMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName))
+	{
+		return false;
+	}
+
+	// Glows on the string until release; Fire ends it and starts the flight loop.
+	USceneComponent* LoopTarget = Arrow->GetRootComponent();
+	Arrow->GetFeedback()->StartLoop(FeedbackTags::Cue_Projectile_Nocked, LoopTarget);
+	return true;
 }
 
 bool ABowBase::ReleasePreparedArrows(const TArray<FVector>& Directions, const FArrowShotParams& ShotParams)

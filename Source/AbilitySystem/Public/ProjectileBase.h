@@ -38,6 +38,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	UProjectileDataAsset* GetProjectileData() const { return ProjectileData; }
 
+	/** Plays this projectile's cues and loops (its set comes from the projectile data). */
+	UFUNCTION(BlueprintPure, Category = "Projectile")
+	UFeedbackComponent* GetFeedback() const { return FeedbackComponent; }
+
 	UFUNCTION(BlueprintPure, Category = "Projectile")
 	float GetFiredStrength() const { return ShotParams.Strength; }
 
