@@ -16,6 +16,7 @@ struct FAbilityPayload;
 class UAttributeComponent;
 class UCombatantComponent;
 class UResourceComponent;
+class UTexture2D;
 
 /**
  * Parent of the player and every enemy: a team, where it sees from, where it is
@@ -63,6 +64,15 @@ public:
 	/** Gap between this character's capsule and Other's (center distance minus both radii). 0 or less = touching. */
 	UFUNCTION(BlueprintPure, Category = "Character")
 	float GetEdgeDistanceTo(const AActor* Other) const;
+	
+	/** Name shown in UI (player bar, pet panel, nameplates). */
+	UFUNCTION(BlueprintPure, Category = "Character|Info")
+	FText GetCharacterDisplayName() const { return CharacterDisplayName; }
+
+	/** Portrait shown in UI (the pet panel's ring, a party frame). */
+	UFUNCTION(BlueprintPure, Category = "Character|Info")
+	UTexture2D* GetCharacterPortrait() const { return CharacterPortrait; }
+
 
 protected:
 	virtual void BeginPlay() override;
@@ -159,6 +169,13 @@ protected:
 	/** Mesh socket targeting and arrows aim at. Missing = the capsule's center. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|Senses")
 	FName AimSocketName = TEXT("spine_03");
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|Info")
+	FText CharacterDisplayName;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|Info")
+	TObjectPtr<UTexture2D> CharacterPortrait;
+
 
 private:
 	UFUNCTION()

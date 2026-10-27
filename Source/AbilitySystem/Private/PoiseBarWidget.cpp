@@ -1,12 +1,19 @@
 #include "PoiseBarWidget.h"
 
 #include "CombatantComponent.h"
+#include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "GameFramework/Pawn.h"
 
 void UPoiseBarWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	// No damage trail: the bar already shows the drop and eases the recovery itself.
+	FUIBarMaterialSettings Settings = BarSettings;
+	Settings.TrailDuration = 0.0f;
+	BarMaterial.Initialize(BarFill, Settings);
+	ApplyPercent();
 
 	if (!IsValid(CombatantComponent) && bFindCombatantAutomatically)
 	{
@@ -43,10 +50,7 @@ void UPoiseBarWidget::SetCombatantComponent(UCombatantComponent* NewCombatantCom
 	BrokenHoldRemaining = 0.0f;
 	FullTime = HideDelay;
 
-	if (IsValid(PoiseBar))
-	{
-		PoiseBar->SetPercent(DisplayedPercent);
-	}
+	ApplyPercent();
 
 	SetBarVisible(!bHideWhenFull || DisplayedPercent < 1.0f);
 }
@@ -55,7 +59,7 @@ void UPoiseBarWidget::NativeTick(const FGeometry& MyGeometry, const float InDelt
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 
-	if (!IsValid(CombatantComponent) || !IsValid(PoiseBar))
+	if (!IsValid(CombatantComponent) || (!IsValid(PoiseBar) && !BarMaterial.IsValid()))
 	{
 		return;
 	}
@@ -78,7 +82,7 @@ void UPoiseBarWidget::NativeTick(const FGeometry& MyGeometry, const float InDelt
 		DisplayedPercent = 1.0f;
 	}
 
-	PoiseBar->SetPercent(DisplayedPercent);
+	ApplyPercent();
 
 	if (!bHideWhenFull)
 	{
@@ -107,10 +111,7 @@ void UPoiseBarWidget::HandlePoiseDamaged(const float Poise, const float MaxPoise
 	DisplayedPercent = MaxPoise > 0.0f ? FMath::Clamp(Poise / MaxPoise, 0.0f, 1.0f) : 0.0f;
 	FullTime = 0.0f;
 
-	if (IsValid(PoiseBar))
-	{
-		PoiseBar->SetPercent(DisplayedPercent);
-	}
+	ApplyPercent();
 
 	SetBarVisible(true);
 
@@ -145,4 +146,15 @@ void UPoiseBarWidget::SetBarVisible(const bool bVisible)
 {
 	// Hidden, not collapsed: the nameplate keeps its layout when the bar comes and goes.
 	SetVisibility(bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::Hidden);
+}
+
+void UPoiseBarWidget::ApplyPercent()
+{
+	if (IsValid(PoiseBar))
+	{
+		PoiseBar->SetPercent(DisplayedPercent);
+	}
+
+	// The bar eases its own recovery, so the material just follows.
+	BarMaterial.SetPercent(DisplayedPercent, true);
 }

@@ -2,9 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "UIBarMaterial.h"
 #include "PoiseBarWidget.generated.h"
 
 class UCombatantComponent;
+class UImage;
 class UProgressBar;
 
 /**
@@ -14,6 +16,9 @@ class UProgressBar;
  * Poise recovers without events, so the bar reads it every frame while it's below full,
  * and sleeps (optionally hidden) once full.
  * A break shows as an empty bar for Broken Hold Time, then it fills back up.
+ *
+ * Visual: an Image named BarFill with a stagger material (MI_UI_Bar_Stagger / _PetStagger),
+ * and/or a Progress Bar named PoiseBar.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UPoiseBarWidget : public UUserWidget
@@ -32,9 +37,17 @@ protected:
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
-	/** Must be named PoiseBar. */
-	UPROPERTY(meta = (BindWidget), BlueprintReadOnly, Category = "Poise Bar|Widgets")
+	/** Optional plain bar. Name it PoiseBar. */
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Poise Bar|Widgets")
 	TObjectPtr<UProgressBar> PoiseBar;
+
+	/** Optional kit bar: an Image with the stagger material. Name it BarFill. */
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Poise Bar|Widgets")
+	TObjectPtr<UImage> BarFill;
+
+	/** The stagger material. Its Segments are already set on the kit's instances. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Poise Bar")
+	FUIBarMaterialSettings BarSettings;
 
 	/** HUD: find the owning player's combatant. Off for nameplates (the enemy hands itself over). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Poise Bar")
@@ -74,6 +87,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCombatantComponent> CombatantComponent;
+
+	/** Pushes DisplayedPercent to whichever bars exist. */
+	void ApplyPercent();
+
+	UPROPERTY(Transient)
+	FUIBarMaterial BarMaterial;
 
 	float DisplayedPercent = 1.0f;
 	float BrokenHoldRemaining = 0.0f;

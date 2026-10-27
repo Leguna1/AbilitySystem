@@ -7,6 +7,9 @@
 #include "ActiveAbility.h"
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Components/Image.h"
+#include "Components/TextBlock.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/Widget.h"
 #include "Engine/Texture2D.h"
 #include "InputCoreTypes.h"
@@ -65,6 +68,8 @@ void UAbilitySlotWidget::InitializeSlot(UAbilityComponent* InAbilityComponent, c
 		ToolTipWidgetDelegate.BindDynamic(this, &UAbilitySlotWidget::GetTooltipWidget);
 	}
 
+	RefreshKitVisuals();
+
 	NativeOnSlotChanged();
 	OnSlotEmptyChanged(IsEmpty());
 	OnSlotInitialized();
@@ -82,12 +87,23 @@ void UAbilitySlotWidget::SetActionBarSlot(UActionBarComponent* InActionBar, cons
 	SlotIndex = InSlotIndex;
 
 	KeybindLabel = IsValid(ActionBar) ? ActionBar->GetSlotDefinition(SlotIndex).KeybindLabel : FText::GetEmpty();
+
+	if (IsValid(KeybindText))
+	{
+		KeybindText->SetText(KeybindLabel);
+	}
 }
 
 void UAbilitySlotWidget::NativeDestruct()
 {
 	Unbind();
 	StopCooldownPoll();
+
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(ReadyFlashTimerHandle);
+	}
+
 	Super::NativeDestruct();
 }
 
@@ -133,10 +149,10 @@ void UAbilitySlotWidget::NativeOnDragDetected(const FGeometry& InGeometry, const
 
 	if (!IsValid(Visual) && IsValid(Icon))
 	{
-		UImage* IconImage = NewObject<UImage>(this);
-		IconImage->SetBrushFromTexture(Icon);
-		IconImage->SetDesiredSizeOverride(DragIconSize);
-		Visual = IconImage;
+		UImage* MyIconImage = NewObject<UImage>(this);
+		MyIconImage->SetBrushFromTexture(Icon);
+		MyIconImage->SetDesiredSizeOverride(DragIconSize);
+		Visual = MyIconImage;
 	}
 
 	Operation->DefaultDragVisual = Visual;
@@ -318,6 +334,7 @@ void UAbilitySlotWidget::SetActive(const bool bNewActive)
 	if (bIsActive != bNewActive)
 	{
 		bIsActive = bNewActive;
+		SetSlotScalar(PressedParameter, bIsActive ? 1.0f : 0.0f);
 		OnActiveStateChanged(bIsActive);
 	}
 }
@@ -355,12 +372,16 @@ void UAbilitySlotWidget::TickCooldown()
 	}
 
 	const float Remaining = AbilityComponent->GetAbilityCooldownRemaining(SlotAbilityId);
-	OnCooldownUpdated(Remaining, AbilityComponent->GetAbilityCooldownProgress(SlotAbilityId));
+	const float Progress = Remaining > 0.0f ? AbilityComponent->GetAbilityCooldownProgress(SlotAbilityId) : 0.0f;
+
+	SetSlotScalar(CooldownParameter, Progress);
+	OnCooldownUpdated(Remaining, Progress);
 
 	if (Remaining <= 0.0f)
 	{
 		StopCooldownPoll();
 		SetCooldownState(false);
+		FlashReady();
 	}
 }
 
@@ -383,6 +404,86 @@ void UAbilitySlotWidget::SetAffordable(const bool bNewCanAfford)
 	if (bCanAfford != bNewCanAfford)
 	{
 		bCanAfford = bNewCanAfford;
+		SetSlotScalar(DisabledParameter, bCanAfford ? 0.0f : 1.0f);
 		OnAffordabilityChanged(bCanAfford);
 	}
+}
+
+/* -------------------- Kit visuals -------------------- */
+
+void UAbilitySlotWidget::EnsureSlotMaterial()
+{
+	if (IsValid(SlotMaterialInstance) || !IsValid(IconImage))
+	{
+		return;
+	}
+
+	if (IsValid(SlotMaterial))
+	{
+		IconImage->SetBrushFromMaterial(SlotMaterial);
+	}
+
+	SlotMaterialInstance = IconImage->GetDynamicMaterial();
+}
+
+void UAbilitySlotWidget::SetSlotScalar(const FName Parameter, const float Value)
+{
+	EnsureSlotMaterial();
+
+	if (IsValid(SlotMaterialInstance) && !Parameter.IsNone())
+	{
+		SlotMaterialInstance->SetScalarParameterValue(Parameter, Value);
+	}
+}
+
+void UAbilitySlotWidget::RefreshKitVisuals()
+{
+	if (IsValid(KeybindText))
+	{
+		KeybindText->SetText(KeybindLabel);
+	}
+
+	if (!IsValid(IconImage))
+	{
+		return;
+	}
+
+	EnsureSlotMaterial();
+
+	// Empty: the slot's stone and frame stay, the content goes.
+	IconImage->SetVisibility(IsEmpty() ? ESlateVisibility::Hidden : ESlateVisibility::HitTestInvisible);
+
+	if (IsValid(SlotMaterialInstance) && !IconParameter.IsNone() && IsValid(Icon))
+	{
+		SlotMaterialInstance->SetTextureParameterValue(IconParameter, Icon);
+	}
+
+	const float CooldownProgress = bOnCooldown && IsValid(AbilityComponent)
+		? AbilityComponent->GetAbilityCooldownProgress(SlotAbilityId)
+		: 0.0f;
+
+	SetSlotScalar(CooldownParameter, CooldownProgress);
+	SetSlotScalar(DisabledParameter, bCanAfford ? 0.0f : 1.0f);
+	SetSlotScalar(PressedParameter, bIsActive ? 1.0f : 0.0f);
+	SetSlotScalar(HighlightParameter, 0.0f);
+}
+
+void UAbilitySlotWidget::FlashReady()
+{
+	if (ReadyFlashDuration <= 0.0f || IsEmpty())
+	{
+		return;
+	}
+
+	SetSlotScalar(HighlightParameter, 1.0f);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(ReadyFlashTimerHandle, this, &UAbilitySlotWidget::EndReadyFlash, ReadyFlashDuration, false);
+	}
+}
+
+void UAbilitySlotWidget::EndReadyFlash()
+{
+	SetSlotScalar(HighlightParameter, 0.0f);
 }

@@ -13,7 +13,15 @@ void UAbilityBarWidget::InitializeBar(UAbilityComponent* InAbilityComponent)
 	Unbind();
 
 	AbilityComponent = InAbilityComponent;
-	ActionBar = IsValid(AbilityComponent) ? AbilityComponent->GetOwner()->FindComponentByClass<UActionBarComponent>() : nullptr;
+	ActionBar = bUseActionBar && IsValid(AbilityComponent)
+		? AbilityComponent->GetOwner()->FindComponentByClass<UActionBarComponent>()
+		: nullptr;
+
+	// An action bar without slots (left over from an older setup) shows nothing: use the abilities instead.
+	if (IsValid(ActionBar) && ActionBar->GetNumSlots() == 0)
+	{
+		ActionBar = nullptr;
+	}
 
 	if (IsValid(ActionBar))
 	{
@@ -27,6 +35,34 @@ void UAbilityBarWidget::InitializeBar(UAbilityComponent* InAbilityComponent)
 	RebuildSlots();
 }
 
+void UAbilityBarWidget::GetShownActionBarSlots(TArray<int32>& OutSlots) const
+{
+	OutSlots.Reset();
+
+	if (!IsValid(ActionBar))
+	{
+		return;
+	}
+
+	if (SlotIndices.IsEmpty())
+	{
+		for (int32 Index = 0; Index < ActionBar->GetNumSlots(); ++Index)
+		{
+			OutSlots.Add(Index);
+		}
+
+		return;
+	}
+
+	for (const int32 Index : SlotIndices)
+	{
+		if (Index >= 0 && Index < ActionBar->GetNumSlots())
+		{
+			OutSlots.Add(Index);
+		}
+	}
+}
+
 void UAbilityBarWidget::RebuildSlots()
 {
 	ClearSlots();
@@ -38,30 +74,58 @@ void UAbilityBarWidget::RebuildSlots()
 
 	if (IsValid(ActionBar))
 	{
-		for (int32 SlotIndex = 0; SlotIndex < ActionBar->GetNumSlots(); ++SlotIndex)
+		TArray<int32> BarSlots;
+		GetShownActionBarSlots(BarSlots);
+
+		for (const int32 BarIndex : BarSlots)
 		{
 			UAbilitySlotWidget* AbilitySlot = CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass);
 
 			if (IsValid(AbilitySlot))
 			{
-				AbilitySlot->SetActionBarSlot(ActionBar, SlotIndex);
+				AbilitySlot->SetActionBarSlot(ActionBar, BarIndex);
 				AddSlotWidget(AbilitySlot);
-				AbilitySlot->InitializeSlot(AbilityComponent, ActionBar->GetSlotAbility(SlotIndex));
+				ShownSlotIndices.Add(BarIndex);
+				AbilitySlot->InitializeSlot(AbilityComponent, ActionBar->GetSlotAbility(BarIndex));
 			}
 		}
 
 		return;
 	}
 
-	// No action bar: one read-only slot per granted ability, as before.
+	// No action bar: one read-only slot per granted ability with an icon (skips hit reactions and other hidden ones).
+	int32 Shown = 0;
+
 	for (const TSubclassOf<UAbility>& AbilityClass : AbilityComponent->GetGrantedAbilityClasses())
 	{
-		UAbilitySlotWidget* AbilitySlot = AbilityClass ? CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass) : nullptr;
+		if (MaxGrantedSlots > 0 && Shown >= MaxGrantedSlots)
+		{
+			break;
+		}
+
+		const UAbility* Defaults = AbilityClass ? AbilityComponent->GetAbilityDefaults(AbilityClass) : nullptr;
+
+		if (!IsValid(Defaults) || !IsValid(Defaults->GetIcon()))
+		{
+			continue;
+		}
+
+		UAbilitySlotWidget* AbilitySlot = CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass);
 
 		if (IsValid(AbilitySlot))
 		{
 			AddSlotWidget(AbilitySlot);
 			AbilitySlot->InitializeSlot(AbilityComponent, AbilityClass);
+			++Shown;
+		}
+	}
+
+	for (; Shown < MinGrantedSlots; ++Shown)
+	{
+		if (UAbilitySlotWidget* EmptySlot = CreateWidget<UAbilitySlotWidget>(this, SlotWidgetClass))
+		{
+			AddSlotWidget(EmptySlot);
+			EmptySlot->InitializeSlot(AbilityComponent, nullptr);
 		}
 	}
 }
@@ -87,7 +151,10 @@ void UAbilityBarWidget::AddSlotWidget(UAbilitySlotWidget* AbilitySlot)
 
 void UAbilityBarWidget::HandleActionBarChanged(const int32 SlotIndex)
 {
-	if (SlotIndex == INDEX_NONE || SlotWidgets.Num() != ActionBar->GetNumSlots())
+	// SlotIndex is an action bar slot; this bar may show only some of them.
+	const int32 WidgetIndex = SlotIndex == INDEX_NONE ? INDEX_NONE : ShownSlotIndices.IndexOfByKey(SlotIndex);
+
+	if (SlotIndex == INDEX_NONE)
 	{
 		for (int32 Index = 0; Index < SlotWidgets.Num(); ++Index)
 		{
@@ -97,14 +164,17 @@ void UAbilityBarWidget::HandleActionBarChanged(const int32 SlotIndex)
 		return;
 	}
 
-	RefreshSlot(SlotIndex);
+	RefreshSlot(WidgetIndex);
 }
 
-void UAbilityBarWidget::RefreshSlot(const int32 SlotIndex)
+void UAbilityBarWidget::RefreshSlot(const int32 WidgetIndex)
 {
-	if (SlotWidgets.IsValidIndex(SlotIndex) && IsValid(SlotWidgets[SlotIndex]) && IsValid(ActionBar))
+	if (SlotWidgets.IsValidIndex(WidgetIndex) &&
+		ShownSlotIndices.IsValidIndex(WidgetIndex) &&
+		IsValid(SlotWidgets[WidgetIndex]) &&
+		IsValid(ActionBar))
 	{
-		SlotWidgets[SlotIndex]->InitializeSlot(AbilityComponent, ActionBar->GetSlotAbility(SlotIndex));
+		SlotWidgets[WidgetIndex]->InitializeSlot(AbilityComponent, ActionBar->GetSlotAbility(ShownSlotIndices[WidgetIndex]));
 	}
 }
 
@@ -144,6 +214,7 @@ void UAbilityBarWidget::ClearSlots()
 	}
 
 	SlotWidgets.Reset();
+	ShownSlotIndices.Reset();
 
 	if (IsValid(SlotContainer))
 	{

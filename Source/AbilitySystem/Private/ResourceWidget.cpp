@@ -1,5 +1,6 @@
 #include "ResourceWidget.h"
 
+#include "Components/Image.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/Pawn.h"
@@ -8,6 +9,9 @@
 void UResourceWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	BarMaterial.Initialize(BarFill, BarSettings);
+	bSnapNextRefresh = true;
 
 	// A component set from outside (e.g. an enemy's health bar) wins over the automatic search.
 	if (bFindResourceComponentAutomatically && !ResourceComponent)
@@ -38,6 +42,7 @@ void UResourceWidget::SetResourceComponent(
 	UnbindFromResourceComponent();
 
 	ResourceComponent = NewResourceComponent;
+	bSnapNextRefresh = true;
 
 	BindToResourceComponent();
 	RefreshResourceBar();
@@ -91,7 +96,7 @@ void UResourceWidget::FindOwningResourceComponent()
 			LogTemp,
 			Warning,
 			TEXT(
-				"%s could not find UMyResourceComponent on %s."
+				"%s could not find a Resource Component on %s."
 			),
 			*GetName(),
 			*OwningPawn->GetName()
@@ -145,16 +150,23 @@ void UResourceWidget::HandleResourceChanged(
 	RefreshResourceBar();
 }
 
+void UResourceWidget::NativeTick(const FGeometry& MyGeometry, const float InDeltaTime)
+{
+	Super::NativeTick(MyGeometry, InDeltaTime);
+
+	BarMaterial.Tick(InDeltaTime);
+}
+
 void UResourceWidget::RefreshResourceBar()
 {
-	if (!ResourceProgressBar)
-	{
-		return;
-	}
-
 	if (!ResourceComponent)
 	{
-		ResourceProgressBar->SetPercent(0.0f);
+		if (ResourceProgressBar)
+		{
+			ResourceProgressBar->SetPercent(0.0f);
+		}
+
+		BarMaterial.SetPercent(0.0f, true);
 
 		if (ResourceValueText)
 		{
@@ -181,7 +193,13 @@ void UResourceWidget::RefreshResourceBar()
 			? FMath::Clamp(CurrentValue / MaxValue, 0.0f, 1.0f)
 			: 0.0f;
 
-	ResourceProgressBar->SetPercent(Percent);
+	if (ResourceProgressBar)
+	{
+		ResourceProgressBar->SetPercent(Percent);
+	}
+
+	BarMaterial.SetPercent(Percent, bSnapNextRefresh);
+	bSnapNextRefresh = false;
 
 	if (ResourceValueText)
 	{

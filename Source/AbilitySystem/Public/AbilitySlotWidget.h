@@ -11,6 +11,10 @@ class UAbility;
 class UAbilityComponent;
 class UActionBarComponent;
 class UActiveAbility;
+class UImage;
+class UMaterialInstanceDynamic;
+class UMaterialInterface;
+class UTextBlock;
 class UTexture2D;
 class UWidget;
 
@@ -23,6 +27,10 @@ class UWidget;
  *   - drop an ability on it (from the skill tree or another slot) to place it here.
  *
  * The C++ base owns the data; the Widget Blueprint owns the look through the events below.
+ *
+ * Kit slots: an Image named IconImage using MI_UI_Slot is driven for you
+ * (Icon, Cooldown, Disabled, Pressed, Highlight flash when ready), and a Text Block
+ * named KeybindText gets the key. The events still fire for anything extra.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UAbilitySlotWidget : public UUserWidget
@@ -92,6 +100,39 @@ protected:
 	/** Dragging the ability off the bar and letting go empties the slot. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
 	bool bRemoveWhenDraggedOff = true;
+
+	/* -------------------- Kit visuals (optional) -------------------- */
+
+	/** Image with the slot material (MI_UI_Slot). Hidden while the slot is empty. Name it IconImage. */
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Ability|UI|Widgets")
+	TObjectPtr<UImage> IconImage;
+
+	/** The keybind ("1", "LMB"). Name it KeybindText. */
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Ability|UI|Widgets")
+	TObjectPtr<UTextBlock> KeybindText;
+
+	/** The slot material. Empty = whatever IconImage already uses. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material")
+	TObjectPtr<UMaterialInterface> SlotMaterial;
+
+	/** Seconds Highlight stays on when the cooldown finishes. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", meta = (ClampMin = "0.0", Units = "s"))
+	float ReadyFlashDuration = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", AdvancedDisplay)
+	FName IconParameter = TEXT("Icon");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", AdvancedDisplay)
+	FName CooldownParameter = TEXT("Cooldown");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", AdvancedDisplay)
+	FName DisabledParameter = TEXT("Disabled");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", AdvancedDisplay)
+	FName PressedParameter = TEXT("Pressed");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Material", AdvancedDisplay)
+	FName HighlightParameter = TEXT("Highlight");
 
 	/** Size of the default drag image (the icon) when Build Drag Visual returns nothing. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Ability|UI|Editing")
@@ -167,6 +208,21 @@ private:
 	void RefreshAffordability();
 	void SetCooldownState(bool bNewOnCooldown);
 	void SetAffordable(bool bNewCanAfford);
+
+	/** Creates the slot material on IconImage once. */
+	void EnsureSlotMaterial();
+	void SetSlotScalar(FName Parameter, float Value);
+
+	/** Icon, keybind, empty state and every material parameter from the current data. */
+	void RefreshKitVisuals();
+
+	void FlashReady();
+	void EndReadyFlash();
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SlotMaterialInstance;
+
+	FTimerHandle ReadyFlashTimerHandle;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityComponent> AbilityComponent;

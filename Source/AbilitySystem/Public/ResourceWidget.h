@@ -3,16 +3,19 @@
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
 #include "ResourceComponent.h"
+#include "UIBarMaterial.h"
 #include "ResourceWidget.generated.h"
 
+class UImage;
 class UProgressBar;
 class UTextBlock;
 
 /**
- * Displays one resource from UMyResourceComponent.
+ * Displays one resource (Health, Focus) of a Resource Component.
  *
- * Create a Widget Blueprint child and assign DisplayedResource
- * to Health or Focus in Class Defaults.
+ * Either a kit bar: an Image named BarFill using a bar material (Percent, Trail, LowPulse),
+ * or a plain Progress Bar named ResourceProgressBar. Both may exist.
+ * Pick the resource and the bar material per instance in the Details panel.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UResourceWidget : public UUserWidget
@@ -47,9 +50,17 @@ public:
 		return DisplayedResource;
 	}
 
+	UFUNCTION(BlueprintPure, Category = "Resource Bar")
+	UResourceComponent* GetResourceComponent() const { return ResourceComponent; }
+
 protected:
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
+	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
+
+	/** The bar material and its trail / low-pulse behaviour. Health: Low Pulse Threshold 0.25. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Resource Bar")
+	FUIBarMaterialSettings BarSettings;
 
 	/* -------------------- Designer Configuration -------------------- */
 
@@ -83,8 +94,12 @@ protected:
 	 * The Progress Bar in the Widget Blueprint must be named:
 	 * ResourceProgressBar
 	 */
-	UPROPERTY(meta = (BindWidget), BlueprintReadOnly, Category = "Resource Bar|Widgets")
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Resource Bar|Widgets")
 	TObjectPtr<UProgressBar> ResourceProgressBar;
+
+	/** Optional kit bar: an Image with the bar material. Name it BarFill. */
+	UPROPERTY(meta = (BindWidgetOptional), BlueprintReadOnly, Category = "Resource Bar|Widgets")
+	TObjectPtr<UImage> BarFill;
 
 	/**
 	 * Optional Text Block.
@@ -108,6 +123,12 @@ protected:
 private:
 	UPROPERTY(Transient)
 	TObjectPtr<UResourceComponent> ResourceComponent;
+
+	UPROPERTY(Transient)
+	FUIBarMaterial BarMaterial;
+
+	/** The next refresh snaps (no damage trail): first fill, or a different component. */
+	bool bSnapNextRefresh = true;
 
 	UFUNCTION()
 	void HandleResourceChanged(
