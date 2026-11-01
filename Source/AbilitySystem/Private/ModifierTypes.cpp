@@ -1,5 +1,6 @@
 #include "ModifierTypes.h"
 #include "Ability.h"
+#include "ItemDataAsset.h"
 
 void FStatModifierContainer::Apply(const UObject* Source, FName EntryKey, const TArray<FStatModifier>& InModifiers, int32 Rank, const
                                    FGameplayTagContainer& InGrantedTags,
@@ -205,6 +206,13 @@ void FStatModifierContainer::GetDisplayInfo(TArray<FActiveEffectInfo>& OutInfo, 
 			Info.DisplayName = SourceAbility->GetDisplayName();
 			Info.Description = SourceAbility->GetDescription();
 			Info.Icon = SourceAbility->GetIcon();
+		}
+		else if (const UItemDataAsset* SourceItem = Cast<UItemDataAsset>(SourceObject))
+		{
+			// A potion's buff shows as the potion.
+			Info.DisplayName = SourceItem->GetDisplayName();
+			Info.Description = SourceItem->GetDescription();
+			Info.Icon = SourceItem->GetIcon();
 		}
 		else
 		{
