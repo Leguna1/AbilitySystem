@@ -4,6 +4,8 @@
 #include "BaseAICharacter.h"
 #include "BaseEnemy.generated.h"
 
+class ULootDropComponent;
+
 /**
  * Parent of every enemy: team 1, a home it roams around and returns to, a leash, and a kill reward.
  * Components, attacks, nameplate and corpse handling come from Base AI Character.
@@ -47,6 +49,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Enemy|Rewards", meta = (ClampMin = "0"))
 	int32 ExperienceReward = 10;
+
+	/** What this enemy drops on death. Fill its Loot list in the Blueprint (select the component). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<ULootDropComponent> LootDropComponent;
 
 	/** Chased farther than this from home, the enemy gives up and returns. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Enemy", meta = (ClampMin = "0.0"))

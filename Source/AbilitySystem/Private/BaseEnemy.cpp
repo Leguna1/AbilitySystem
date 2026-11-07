@@ -1,6 +1,7 @@
 #include "BaseEnemy.h"
 
 #include "EnemyAIController.h"
+#include "LootDropComponent.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -8,6 +9,8 @@
 
 ABaseEnemy::ABaseEnemy()
 {
+	LootDropComponent = CreateDefaultSubobject<ULootDropComponent>(TEXT("LootDropComponent"));
+
 	TeamId = 1;
 	AIControllerClass = AEnemyAIController::StaticClass();
 }

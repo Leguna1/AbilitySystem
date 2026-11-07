@@ -5,6 +5,7 @@
 #include "GameplayTagContainer.h"
 #include "ItemDataAsset.generated.h"
 
+class UStaticMesh;
 class UTexture2D;
 
 /** What kind of item this is. Decides what the inventory lets you do with it (equip, ...). */
@@ -55,6 +56,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Item")
 	int32 GetMaxStackSize() const { return FMath::Max(MaxStackSize, 1); }
 
+	/** Percent chance to drop when a loot list has this item, before that entry's own changes. */
+	UFUNCTION(BlueprintPure, Category = "Item|Loot")
+	float GetDropChance() const { return DropChance; }
+
+	/** Mesh shown on the pickup lying on the ground. Null = the pickup Blueprint keeps its own. */
+	UFUNCTION(BlueprintPure, Category = "Item|Loot")
+	UStaticMesh* GetPickupMesh() const { return PickupMesh; }
+
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
@@ -84,4 +93,16 @@ protected:
 	/** How many fit in one inventory slot. 1 = never stacks. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item", meta = (ClampMin = "1"))
 	int32 MaxStackSize = 1;
+
+	/**
+	 * How likely this item is to drop, in percent, from anything whose loot list has it.
+	 * This is the item's own rarity: a common pelt 40, a rare ring 2. Each loot entry can scale it
+	 * (wolves drop pelts twice as often) or replace it outright (a boss always drops its key).
+	 */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Loot", meta = (ClampMin = "0.0", ClampMax = "100.0", Units = "Percent"))
+	float DropChance = 10.0f;
+
+	/** Shown spinning on the pickup when the item lies on the ground. Empty = the pickup Blueprint's own mesh. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Loot")
+	TObjectPtr<UStaticMesh> PickupMesh;
 };

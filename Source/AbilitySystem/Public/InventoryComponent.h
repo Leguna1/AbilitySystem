@@ -240,13 +240,15 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Consumables")
 	FItemCooldownStartedSignature OnItemCooldownStarted;
 
+	// Public to match UActorComponent, so the override doesn't narrow the base class's visibility.
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 #if WITH_EDITOR
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	/** How many bag slots. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Inventory", meta = (ClampMin = "0"))

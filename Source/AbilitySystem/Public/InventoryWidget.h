@@ -22,6 +22,8 @@ class UPanelWidget;
  *         Equipment Slot Tag on each (Equipment.Slot.Head, .Feet...). They're found and set up for you.
  *      b) A panel named "EquipmentContainer" (Vertical Box...): one slot is created per equipment slot
  *         not placed by hand, using Equipment Slot Widget Class (empty = Slot Widget Class).
+ *      To show equipment somewhere else instead (around the Character Menu's preview), leave both out of
+ *      this widget and place the tagged slots there; the Character Menu sets them up.
  *   4. Show it: Create Widget > Add to Viewport. With Auto Initialize on, it finds the owning player's
  *      Inventory Component itself; otherwise call Initialize Inventory.
  *      For dragging, the cursor must be visible: Set Show Mouse Cursor on the player controller
@@ -73,9 +75,6 @@ protected:
 private:
 	UFUNCTION()
 	void HandleInventorySlotChanged(int32 SlotIndex);
-
-	UFUNCTION()
-	void HandleEquipmentChanged(int32 EquipmentSlotIndex, UEquipmentDataAsset* PreviousItem, UEquipmentDataAsset* NewItem);
 
 	void ClearCreatedSlots();
 	void Unbind();

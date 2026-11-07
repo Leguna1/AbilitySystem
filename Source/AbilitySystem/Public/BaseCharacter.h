@@ -9,6 +9,7 @@
 
 class UAbilityComponent;
 class UActiveAbility;
+class UAnimationAsset;
 class UAnimMontage;
 class UAudioComponent;
 class USoundBase;
@@ -72,6 +73,10 @@ public:
 	/** Portrait shown in UI (the pet panel's ring, a party frame). */
 	UFUNCTION(BlueprintPure, Category = "Character|Info")
 	UTexture2D* GetCharacterPortrait() const { return CharacterPortrait; }
+
+	/** Played on this character's copy in the character menu's 3D preview. Null = the studio's fallback for its skeleton. */
+	UFUNCTION(BlueprintPure, Category = "Character|Info")
+	UAnimationAsset* GetPreviewAnimation() const { return PreviewAnimation; }
 
 
 protected:
@@ -175,6 +180,14 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|Info")
 	TObjectPtr<UTexture2D> CharacterPortrait;
+
+	/**
+	 * Looping animation (usually a relaxed idle) for this character in the character menu's 3D preview,
+	 * instead of its gameplay Anim Blueprint. Must be for this character's skeleton.
+	 * Empty = the preview studio's fallback for the skeleton, or the reference pose if it has none.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Character|Info")
+	TObjectPtr<UAnimationAsset> PreviewAnimation;
 
 
 private:

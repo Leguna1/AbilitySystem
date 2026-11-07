@@ -84,6 +84,7 @@ void UInventorySlotWidget::SetInventory(UInventoryComponent* InInventory)
 	if (IsValid(Inventory))
 	{
 		Inventory->OnItemCooldownStarted.RemoveDynamic(this, &UInventorySlotWidget::HandleItemCooldownStarted);
+		Inventory->OnEquipmentChanged.RemoveDynamic(this, &UInventorySlotWidget::HandleEquipmentChanged);
 	}
 
 	Inventory = InInventory;
@@ -91,6 +92,18 @@ void UInventorySlotWidget::SetInventory(UInventoryComponent* InInventory)
 	if (IsValid(Inventory))
 	{
 		Inventory->OnItemCooldownStarted.AddUniqueDynamic(this, &UInventorySlotWidget::HandleItemCooldownStarted);
+
+		// Equipment slots refresh themselves, so they work anywhere (around the character preview),
+		// not only inside an Inventory Widget.
+		Inventory->OnEquipmentChanged.AddUniqueDynamic(this, &UInventorySlotWidget::HandleEquipmentChanged);
+	}
+}
+
+void UInventorySlotWidget::HandleEquipmentChanged(const int32 EquipmentSlotIndex, UEquipmentDataAsset* PreviousItem, UEquipmentDataAsset* NewItem)
+{
+	if (SlotKind == EInventorySlotKind::Equipment && EquipmentSlotIndex == SlotIndex)
+	{
+		RefreshSlot();
 	}
 }
 

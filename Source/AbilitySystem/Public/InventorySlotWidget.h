@@ -6,6 +6,7 @@
 #include "InventoryDragDropOperation.h"
 #include "InventorySlotWidget.generated.h"
 
+class UEquipmentDataAsset;
 class UImage;
 class UInventoryComponent;
 class UItemDataAsset;
@@ -32,8 +33,9 @@ class UWidget;
  *     Build Drag Visual for a custom drag image (default: the icon at Drag Icon Size).
  * The same Blueprint can serve both kinds; make a second one if equipment slots should look different.
  *
- * Equipment slots placed by hand in the Inventory Widget (a paper doll): set Equipment Slot Tag on
- * the instance in the designer, e.g. Equipment.Slot.Feet. The Inventory Widget finds and initializes them.
+ * Equipment slots placed by hand (a paper doll): set Equipment Slot Tag on the instance in the designer,
+ * e.g. Equipment.Slot.Feet. Inside an Inventory Widget, it finds and initializes them. Anywhere else in the
+ * Character Menu (e.g. around the Character Preview), the menu points them at the player's inventory.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UInventorySlotWidget : public UUserWidget
@@ -174,6 +176,9 @@ private:
 
 	/** Points at a (possibly different) inventory: moves the cooldown listener over. */
 	void SetInventory(UInventoryComponent* InInventory);
+
+	UFUNCTION()
+	void HandleEquipmentChanged(int32 EquipmentSlotIndex, UEquipmentDataAsset* PreviousItem, UEquipmentDataAsset* NewItem);
 
 	UFUNCTION()
 	void HandleItemCooldownStarted(FGameplayTag CooldownTag, float Duration);

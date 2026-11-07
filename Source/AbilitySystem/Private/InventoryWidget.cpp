@@ -36,7 +36,6 @@ void UInventoryWidget::InitializeInventory(UInventoryComponent* InInventory)
 	if (IsValid(Inventory))
 	{
 		Inventory->OnInventorySlotChanged.AddDynamic(this, &UInventoryWidget::HandleInventorySlotChanged);
-		Inventory->OnEquipmentChanged.AddDynamic(this, &UInventoryWidget::HandleEquipmentChanged);
 	}
 
 	RebuildSlots();
@@ -150,14 +149,6 @@ void UInventoryWidget::HandleInventorySlotChanged(const int32 SlotIndex)
 	}
 }
 
-void UInventoryWidget::HandleEquipmentChanged(const int32 EquipmentSlotIndex, UEquipmentDataAsset* PreviousItem, UEquipmentDataAsset* NewItem)
-{
-	if (EquipmentSlotWidgets.IsValidIndex(EquipmentSlotIndex) && EquipmentSlotWidgets[EquipmentSlotIndex])
-	{
-		EquipmentSlotWidgets[EquipmentSlotIndex]->RefreshSlot();
-	}
-}
-
 void UInventoryWidget::ClearCreatedSlots()
 {
 	// Only remove what this widget created; hand-placed equipment slots belong to the designer layout.
@@ -190,6 +181,5 @@ void UInventoryWidget::Unbind()
 	if (IsValid(Inventory))
 	{
 		Inventory->OnInventorySlotChanged.RemoveDynamic(this, &UInventoryWidget::HandleInventorySlotChanged);
-		Inventory->OnEquipmentChanged.RemoveDynamic(this, &UInventoryWidget::HandleEquipmentChanged);
 	}
 }

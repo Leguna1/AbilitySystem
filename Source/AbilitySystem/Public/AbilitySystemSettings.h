@@ -4,6 +4,7 @@
 #include "Engine/DeveloperSettings.h"
 #include "AbilitySystemSettings.generated.h"
 
+class ALootPickup;
 class UNiagaraSystem;
 class USoundBase;
 
@@ -48,4 +49,11 @@ public:
 	/** Damage kept per target an arrow passes through (0.5 = half), before Stat.PierceDamage modifiers. A Pierce feature can override it. */
 	UPROPERTY(Config, EditAnywhere, Category = "Combat", meta = (ClampMin = "0.0", ClampMax = "2.0"))
 	float DefaultPierceDamageFactor = 0.5f;
+
+	/**
+	 * The pickup spawned for dropped loot when a Loot Drop Component doesn't set its own.
+	 * Set your Blueprint here once (glow, sound, beam) and every enemy uses it. Empty = the plain C++ pickup.
+	 */
+	UPROPERTY(Config, EditAnywhere, Category = "Loot")
+	TSoftClassPtr<ALootPickup> DefaultLootPickupClass;
 };
