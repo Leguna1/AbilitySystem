@@ -18,6 +18,9 @@ enum class EItemCategory : uint8
 	/** Used up from the bag (a potion): each use spends one and starts its cooldown. */
 	Consumable UMETA(DisplayName = "Consumable"),
 
+	/** Money (Gold): goes into the inventory's wallet, never into a bag slot. */
+	Currency UMETA(DisplayName = "Currency"),
+
 	// New categories go below, so saved assets keep their values.
 };
 

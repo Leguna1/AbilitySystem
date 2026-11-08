@@ -6,6 +6,7 @@
 #include "CombatantComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "ConsumableDataAsset.h"
+#include "CurrencyDataAsset.h"
 #include "EquipmentDataAsset.h"
 #include "ResourceComponent.h"
 #include "Engine/SkeletalMesh.h"
@@ -99,6 +100,11 @@ bool UInventoryComponent::IsSlotEmpty(const int32 SlotIndex) const
 
 int32 UInventoryComponent::GetItemCount(const UItemDataAsset* Item) const
 {
+	if (const UCurrencyDataAsset* Currency = Cast<UCurrencyDataAsset>(Item))
+	{
+		return GetCurrency(Currency);
+	}
+
 	int32 Total = 0;
 
 	for (const FInventorySlot& InventorySlot : Slots)
@@ -122,6 +128,13 @@ int32 UInventoryComponent::AddItem(UItemDataAsset* Item, const int32 Count)
 	if (!IsValid(Item) || Count <= 0)
 	{
 		return FMath::Max(Count, 0);
+	}
+
+	// Money never takes a bag slot, so a gold pickup is always taken even with a full bag.
+	if (UCurrencyDataAsset* Currency = Cast<UCurrencyDataAsset>(Item))
+	{
+		AddCurrency(Currency, Count);
+		return 0;
 	}
 
 	const int32 MaxStack = Item->GetMaxStackSize();
@@ -181,6 +194,15 @@ int32 UInventoryComponent::RemoveItemAt(const int32 SlotIndex, const int32 Count
 
 int32 UInventoryComponent::RemoveItem(const UItemDataAsset* Item, const int32 Count)
 {
+	if (const UCurrencyDataAsset* Currency = Cast<UCurrencyDataAsset>(Item))
+	{
+		// Takes what there is, like bag items do; Spend Currency is the all-or-nothing version.
+		// The cast only feeds the event's parameter; data assets are never changed at runtime.
+		const int32 Taken = FMath::Clamp(Count, 0, GetCurrency(Currency));
+		SpendCurrency(const_cast<UCurrencyDataAsset*>(Currency), Taken);
+		return Taken;
+	}
+
 	int32 Removed = 0;
 
 	// From the back, so the stacks the player sees first stay full.
@@ -279,6 +301,55 @@ void UInventoryComponent::SortItems()
 	}
 
 	BroadcastSlotChanged(INDEX_NONE);
+}
+
+/* -------------------- Currency -------------------- */
+
+int32 UInventoryComponent::GetCurrency(const UCurrencyDataAsset* Currency) const
+{
+	// Lookup only: the map's keys are non-const pointers, and the asset is never changed.
+	const int32* Amount = Wallet.Find(const_cast<UCurrencyDataAsset*>(Currency));
+	return Amount ? *Amount : 0;
+}
+
+bool UInventoryComponent::CanAfford(const UCurrencyDataAsset* Currency, const int32 Amount) const
+{
+	return Amount <= 0 || GetCurrency(Currency) >= Amount;
+}
+
+void UInventoryComponent::AddCurrency(UCurrencyDataAsset* Currency, const int32 Amount)
+{
+	if (!IsValid(Currency) || Amount <= 0)
+	{
+		return;
+	}
+
+	int32& Held = Wallet.FindOrAdd(Currency);
+	const int32 Previous = Held;
+
+	// Capped rather than wrapping negative if someone farms past two billion.
+	Held = static_cast<int32>(FMath::Min<int64>(static_cast<int64>(Held) + Amount, MAX_int32));
+
+	OnCurrencyChanged.Broadcast(Currency, Held, Held - Previous);
+}
+
+bool UInventoryComponent::SpendCurrency(UCurrencyDataAsset* Currency, const int32 Amount)
+{
+	if (!IsValid(Currency) || Amount < 0 || !CanAfford(Currency, Amount))
+	{
+		return false;
+	}
+
+	if (Amount == 0)
+	{
+		return true;
+	}
+
+	int32& Held = Wallet.FindChecked(Currency);
+	Held -= Amount;
+
+	OnCurrencyChanged.Broadcast(Currency, Held, -Amount);
+	return true;
 }
 
 /* -------------------- Consumables -------------------- */

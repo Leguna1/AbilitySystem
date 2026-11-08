@@ -8,6 +8,7 @@
 class UAbilityComponent;
 class UCombatantComponent;
 class UConsumableDataAsset;
+class UCurrencyDataAsset;
 class UEquipmentDataAsset;
 class UItemDataAsset;
 class UResourceComponent;
@@ -20,6 +21,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FInventorySlotChangedSignature, int3
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEquipmentChangedSignature, int32, EquipmentSlotIndex, UEquipmentDataAsset*, PreviousItem, UEquipmentDataAsset*, NewItem);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FItemUsedSignature, UConsumableDataAsset*, Item);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FItemCooldownStartedSignature, FGameplayTag, CooldownTag, float, Duration);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FCurrencyChangedSignature, UCurrencyDataAsset*, Currency, int32, NewAmount, int32, Delta);
 
 /** One inventory slot: an item and how many. Empty when Item is null. */
 USTRUCT(BlueprintType)
@@ -95,6 +97,8 @@ struct FRegisteredEquipmentMesh
  * spawns, holsters and draws the weapon actors; the drawn weapon's slot can't change while an ability runs.
  * Consumables: Use Item spends one and starts its Cooldown Group's cooldown. Cooldowns live on the
  * owner's Ability Component (keyed by tag, like ability cooldowns), so the owner needs one for cooldowns to work.
+ * Currency: Currency Data Assets (Gold) go into a wallet, not the bag. Add Item, Get Item Count and Remove Item
+ * work on them too, so loot pickups and starting items need nothing special; Spend Currency is for shops.
  *
  * Character Blueprint setup: on Begin Play, call Register Equipment Meshes with one binding per body part,
  * e.g. (Equipment.Slot.Head, Helmet), (Equipment.Slot.Feet, Boots). Whatever mesh the component has
@@ -123,14 +127,17 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	bool IsSlotEmpty(int32 SlotIndex) const;
 
-	/** Total count of Item across every slot. */
+	/** Total count of Item across every slot. For a currency, the amount in the wallet. */
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	int32 GetItemCount(const UItemDataAsset* Item) const;
 
 	UFUNCTION(BlueprintPure, Category = "Inventory")
 	int32 FindFirstEmptySlot() const;
 
-	/** Tops up existing stacks first, then fills empty slots. Returns how many did NOT fit (0 = all added). */
+	/**
+	 * Tops up existing stacks first, then fills empty slots. Returns how many did NOT fit (0 = all added).
+	 * A currency goes straight into the wallet and always fits.
+	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 AddItem(UItemDataAsset* Item, int32 Count = 1);
 
@@ -138,7 +145,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 RemoveItemAt(int32 SlotIndex, int32 Count = 1);
 
-	/** Takes up to Count of Item from anywhere in the bag, last slots first. Returns how many were removed. */
+	/** Takes up to Count of Item from anywhere in the bag, last slots first (or from the wallet). Returns how many were removed. */
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	int32 RemoveItem(const UItemDataAsset* Item, int32 Count = 1);
 
@@ -152,6 +159,23 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	void SortItems();
+
+	/* -------------------- Currency -------------------- */
+
+	/** How much of Currency the wallet holds. */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Currency")
+	int32 GetCurrency(const UCurrencyDataAsset* Currency) const;
+
+	UFUNCTION(BlueprintPure, Category = "Inventory|Currency")
+	bool CanAfford(const UCurrencyDataAsset* Currency, int32 Amount) const;
+
+	/** Adds Amount (looting, quest rewards, selling). Negative amounts are ignored; use Spend Currency. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Currency")
+	void AddCurrency(UCurrencyDataAsset* Currency, int32 Amount);
+
+	/** Takes Amount if the wallet has it all (buying). False and nothing taken otherwise. */
+	UFUNCTION(BlueprintCallable, Category = "Inventory|Currency")
+	bool SpendCurrency(UCurrencyDataAsset* Currency, int32 Amount);
 
 	/* -------------------- Consumables -------------------- */
 
@@ -258,6 +282,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Inventory|Consumables")
 	FItemCooldownStartedSignature OnItemCooldownStarted;
 
+	/** A wallet total changed. Delta is positive for gains, negative for spending. Hook a coin sound or "+12 Gold" popup here. */
+	UPROPERTY(BlueprintAssignable, Category = "Inventory|Currency")
+	FCurrencyChangedSignature OnCurrencyChanged;
+
 	// Public to match UActorComponent, so the override doesn't narrow the base class's visibility.
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -326,6 +354,10 @@ private:
 
 	UPROPERTY(Transient)
 	TArray<FInventorySlot> Slots;
+
+	/** Currency -> amount held. Outside the bag, so money never competes with items for space. */
+	UPROPERTY(Transient)
+	TMap<TObjectPtr<UCurrencyDataAsset>, int32> Wallet;
 
 	/** Parallel to EquipmentSlots. */
 	UPROPERTY(Transient)

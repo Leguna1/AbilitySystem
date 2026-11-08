@@ -6,10 +6,12 @@
 #include "InventoryWidget.generated.h"
 
 class UCharacterMenuTabButton;
+class UCurrencyDataAsset;
 class UEquipmentDataAsset;
 class UInventoryComponent;
 class UInventorySlotWidget;
 class UPanelWidget;
+class UTextBlock;
 
 /** One tab above the bag: shows only items of its categories. */
 USTRUCT(BlueprintType)
@@ -46,7 +48,9 @@ struct FInventoryFilterTab
  *      (a Character Menu Tab Button Blueprint, e.g. WB_CharacterMenuTab). One button per Filter Tab is made
  *      in it (All / Equipment / Consumable by default). Or call Set Filter Tab from your own buttons.
  *      Optional: a button for Sort Items on the inventory, which packs the bag by category.
- *   5. Show it: Create Widget > Add to Viewport. With Auto Initialize on, it finds the owning player's
+ *   5. Optional gold: a Text Block named "CurrencyText" and Displayed Currency set to DA_Gold. It shows the
+ *      wallet amount and updates on pickup. For a fancier display, use On Displayed Currency Changed instead.
+ *   6. Show it: Create Widget > Add to Viewport. With Auto Initialize on, it finds the owning player's
  *      Inventory Component itself; otherwise call Initialize Inventory.
  *      For dragging, the cursor must be visible: Set Show Mouse Cursor on the player controller
  *      and Set Input Mode Game And UI (back to Game Only when closing).
@@ -125,9 +129,26 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI")
 	void OnFilterTabChanged(int32 NewTabIndex);
 
+	/** The currency shown in Currency Text (usually Gold). Empty = no currency display. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inventory|UI|Currency")
+	TObjectPtr<UCurrencyDataAsset> DisplayedCurrency;
+
+	/** Optional: shows how much Displayed Currency the wallet holds. */
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Inventory|UI|Currency")
+	TObjectPtr<UTextBlock> CurrencyText;
+
+	/** Displayed Currency's amount was set: on open and on every change. Delta is 0 on open. For count-up animations. */
+	UFUNCTION(BlueprintImplementableEvent, Category = "Inventory|UI|Currency")
+	void OnDisplayedCurrencyChanged(int32 NewAmount, int32 Delta);
+
 private:
 	UFUNCTION()
 	void HandleInventorySlotChanged(int32 SlotIndex);
+
+	UFUNCTION()
+	void HandleCurrencyChanged(UCurrencyDataAsset* Currency, int32 NewAmount, int32 Delta);
+
+	void RefreshCurrency(int32 Delta);
 
 	UFUNCTION()
 	void HandleFilterTabClicked(int32 ClickedTabIndex);

@@ -4,6 +4,8 @@
 #include "Blueprint/WidgetTree.h"
 #include "CharacterMenuTabButton.h"
 #include "Components/PanelWidget.h"
+#include "Components/TextBlock.h"
+#include "CurrencyDataAsset.h"
 #include "Components/UniformGridPanel.h"
 #include "Components/UniformGridSlot.h"
 #include "EquipmentDataAsset.h"
@@ -60,9 +62,39 @@ void UInventoryWidget::InitializeInventory(UInventoryComponent* InInventory)
 	if (IsValid(Inventory))
 	{
 		Inventory->OnInventorySlotChanged.AddDynamic(this, &UInventoryWidget::HandleInventorySlotChanged);
+		Inventory->OnCurrencyChanged.AddDynamic(this, &UInventoryWidget::HandleCurrencyChanged);
 	}
 
 	RebuildSlots();
+	RefreshCurrency(0);
+}
+
+/* -------------------- Currency -------------------- */
+
+void UInventoryWidget::HandleCurrencyChanged(UCurrencyDataAsset* Currency, const int32 NewAmount, const int32 Delta)
+{
+	if (Currency == DisplayedCurrency)
+	{
+		RefreshCurrency(Delta);
+	}
+}
+
+void UInventoryWidget::RefreshCurrency(const int32 Delta)
+{
+	if (!IsValid(DisplayedCurrency))
+	{
+		return;
+	}
+
+	const int32 Amount = IsValid(Inventory) ? Inventory->GetCurrency(DisplayedCurrency) : 0;
+
+	if (IsValid(CurrencyText))
+	{
+		// AsNumber adds thousands separators for the player's language (12,345).
+		CurrencyText->SetText(FText::AsNumber(Amount));
+	}
+
+	OnDisplayedCurrencyChanged(Amount, Delta);
 }
 
 void UInventoryWidget::RebuildSlots()
@@ -328,6 +360,7 @@ void UInventoryWidget::Unbind()
 	if (IsValid(Inventory))
 	{
 		Inventory->OnInventorySlotChanged.RemoveDynamic(this, &UInventoryWidget::HandleInventorySlotChanged);
+		Inventory->OnCurrencyChanged.RemoveDynamic(this, &UInventoryWidget::HandleCurrencyChanged);
 	}
 }
 

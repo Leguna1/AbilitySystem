@@ -34,7 +34,7 @@ struct FLootDrop
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot", meta = (ClampMin = "0.0", ClampMax = "100.0", Units = "Percent", EditCondition = "bOverrideDropChance", EditConditionHides))
 	float DropChance = 100.0f;
 
-	/** How many drop when it drops, picked at random between Min and Max. */
+	/** How many drop when it drops, picked at random between Min and Max. For a currency (Gold), the coin amount. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Loot", meta = (ClampMin = "1"))
 	int32 MinCount = 1;
 
