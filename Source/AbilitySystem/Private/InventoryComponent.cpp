@@ -2,6 +2,7 @@
 
 #include "AbilityComponent.h"
 #include "AbilitySystemLog.h"
+#include "Algo/StableSort.h"
 #include "CombatantComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "ConsumableDataAsset.h"
@@ -10,6 +11,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/Texture2D.h"
 #include "ItemDataAsset.h"
+#include "WeaponManagerComponent.h"
 
 #if WITH_EDITOR
 #include "Misc/DataValidation.h"
@@ -29,6 +31,7 @@ void UInventoryComponent::BeginPlay()
 	CombatantComponent = GetOwner()->FindComponentByClass<UCombatantComponent>();
 	AbilityComponent = GetOwner()->FindComponentByClass<UAbilityComponent>();
 	ResourceComponent = GetOwner()->FindComponentByClass<UResourceComponent>();
+	WeaponManager = GetOwner()->FindComponentByClass<UWeaponManagerComponent>();
 
 	if (IsValid(AbilityComponent))
 	{
@@ -48,7 +51,8 @@ void UInventoryComponent::BeginPlay()
 
 	for (UEquipmentDataAsset* Item : StartingEquipment)
 	{
-		const int32 EquipmentSlotIndex = IsValid(Item) ? FindEquipmentSlotIndex(Item->GetEquipmentSlot()) : INDEX_NONE;
+		// Prefers an empty fitting slot, so two starting weapons fill Primary and Secondary.
+		const int32 EquipmentSlotIndex = FindEquipmentSlotFor(Item);
 
 		if (EquipmentSlotIndex == INDEX_NONE)
 		{
@@ -220,6 +224,61 @@ bool UInventoryComponent::MoveItem(const int32 FromSlotIndex, const int32 ToSlot
 	BroadcastSlotChanged(FromSlotIndex);
 	BroadcastSlotChanged(ToSlotIndex);
 	return true;
+}
+
+void UInventoryComponent::SortItems()
+{
+	// Total count per item, in first-seen order so equal items keep a stable place.
+	TArray<FInventorySlot> Totals;
+
+	for (const FInventorySlot& InventorySlot : Slots)
+	{
+		if (InventorySlot.IsEmpty())
+		{
+			continue;
+		}
+
+		if (FInventorySlot* Existing = Totals.FindByPredicate([&InventorySlot](const FInventorySlot& Total) { return Total.Item == InventorySlot.Item; }))
+		{
+			Existing->Count += InventorySlot.Count;
+		}
+		else
+		{
+			Totals.Add(InventorySlot);
+		}
+	}
+
+	Algo::StableSort(Totals, [](const FInventorySlot& A, const FInventorySlot& B)
+	{
+		if (A.Item->GetCategory() != B.Item->GetCategory())
+		{
+			return A.Item->GetCategory() < B.Item->GetCategory();
+		}
+
+		return A.Item->GetDisplayName().CompareTo(B.Item->GetDisplayName()) < 0;
+	});
+
+	// Refill from the front in full stacks. Merging only ever frees slots, so everything fits again.
+	for (FInventorySlot& InventorySlot : Slots)
+	{
+		InventorySlot = FInventorySlot(nullptr, 0);
+	}
+
+	int32 SlotIndex = 0;
+
+	for (const FInventorySlot& Total : Totals)
+	{
+		const int32 MaxStack = Total.Item->GetMaxStackSize();
+
+		for (int32 Remaining = Total.Count; Remaining > 0 && Slots.IsValidIndex(SlotIndex); ++SlotIndex)
+		{
+			const int32 StackCount = FMath::Min(MaxStack, Remaining);
+			Slots[SlotIndex] = FInventorySlot(Total.Item, StackCount);
+			Remaining -= StackCount;
+		}
+	}
+
+	BroadcastSlotChanged(INDEX_NONE);
 }
 
 /* -------------------- Consumables -------------------- */
@@ -412,8 +471,57 @@ bool UInventoryComponent::CanEquip(const UItemDataAsset* Item, const int32 Equip
 		return false;
 	}
 
-	const int32 MatchingIndex = FindEquipmentSlotIndex(Equipment->GetEquipmentSlot());
-	return MatchingIndex != INDEX_NONE && (EquipmentSlotIndex == INDEX_NONE || EquipmentSlotIndex == MatchingIndex);
+	if (EquipmentSlotIndex != INDEX_NONE)
+	{
+		return FitsEquipmentSlot(Equipment, EquipmentSlotIndex) && CanChangeEquipmentSlot(EquipmentSlotIndex);
+	}
+
+	const int32 TargetIndex = FindEquipmentSlotFor(Equipment);
+	return TargetIndex != INDEX_NONE && CanChangeEquipmentSlot(TargetIndex);
+}
+
+bool UInventoryComponent::FitsEquipmentSlot(const UEquipmentDataAsset* Item, const int32 EquipmentSlotIndex) const
+{
+	// A parent tag fits every slot under it: Equipment.Slot.Weapon goes in .Weapon.Primary and .Weapon.Secondary.
+	return IsValid(Item) && Item->GetEquipmentSlot().IsValid() && EquipmentSlots.IsValidIndex(EquipmentSlotIndex)
+		&& EquipmentSlots[EquipmentSlotIndex].SlotTag.MatchesTag(Item->GetEquipmentSlot());
+}
+
+int32 UInventoryComponent::FindEquipmentSlotFor(const UEquipmentDataAsset* Item) const
+{
+	int32 FirstFitting = INDEX_NONE;
+
+	for (int32 EquipmentSlotIndex = 0; EquipmentSlotIndex < EquipmentSlots.Num(); ++EquipmentSlotIndex)
+	{
+		if (!FitsEquipmentSlot(Item, EquipmentSlotIndex))
+		{
+			continue;
+		}
+
+		// An empty one first, so equipping a second weapon doesn't replace the first.
+		if (!GetEquippedItem(EquipmentSlotIndex))
+		{
+			return EquipmentSlotIndex;
+		}
+
+		if (FirstFitting == INDEX_NONE)
+		{
+			FirstFitting = EquipmentSlotIndex;
+		}
+	}
+
+	return FirstFitting;
+}
+
+bool UInventoryComponent::CanChangeEquipmentSlot(const int32 EquipmentSlotIndex) const
+{
+	if (!EquipmentSlots.IsValidIndex(EquipmentSlotIndex))
+	{
+		return false;
+	}
+
+	// The drawn weapon can't be swapped mid-ability; the Weapon Manager would refuse and the two would disagree.
+	return !IsValid(WeaponManager) || WeaponManager->CanChangeWeaponSlot(EquipmentSlots[EquipmentSlotIndex].SlotTag);
 }
 
 bool UInventoryComponent::EquipFromSlot(const int32 SlotIndex, const int32 EquipmentSlotIndex)
@@ -424,7 +532,7 @@ bool UInventoryComponent::EquipFromSlot(const int32 SlotIndex, const int32 Equip
 	}
 
 	UEquipmentDataAsset* Item = CastChecked<UEquipmentDataAsset>(Slots[SlotIndex].Item);
-	const int32 TargetIndex = FindEquipmentSlotIndex(Item->GetEquipmentSlot());
+	const int32 TargetIndex = EquipmentSlotIndex != INDEX_NONE ? EquipmentSlotIndex : FindEquipmentSlotFor(Item);
 
 	// The bag slot the item leaves is exactly where the old piece goes: a swap never needs free space.
 	UEquipmentDataAsset* Previous = SetEquipped(TargetIndex, Item);
@@ -438,7 +546,7 @@ bool UInventoryComponent::Unequip(const int32 EquipmentSlotIndex, int32 SlotInde
 {
 	UEquipmentDataAsset* Item = GetEquippedItem(EquipmentSlotIndex);
 
-	if (!IsValid(Item))
+	if (!IsValid(Item) || !CanChangeEquipmentSlot(EquipmentSlotIndex))
 	{
 		return false;
 	}
@@ -616,7 +724,7 @@ EDataValidationResult UInventoryComponent::IsDataValid(FDataValidationContext& C
 
 	for (const UEquipmentDataAsset* Item : StartingEquipment)
 	{
-		if (IsValid(Item) && FindEquipmentSlotIndex(Item->GetEquipmentSlot()) == INDEX_NONE)
+		if (IsValid(Item) && FindEquipmentSlotFor(Item) == INDEX_NONE)
 		{
 			Context.AddError(FText::Format(LOCTEXT("StartingNoSlot", "Starting equipment {0} has no matching equipment slot."), FText::FromString(Item->GetName())));
 			Result = EDataValidationResult::Invalid;

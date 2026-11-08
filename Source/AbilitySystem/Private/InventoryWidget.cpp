@@ -2,16 +2,40 @@
 
 #include "AbilitySystemLog.h"
 #include "Blueprint/WidgetTree.h"
+#include "CharacterMenuTabButton.h"
 #include "Components/PanelWidget.h"
 #include "Components/UniformGridPanel.h"
+#include "Components/UniformGridSlot.h"
 #include "EquipmentDataAsset.h"
 #include "GameFramework/Pawn.h"
 #include "InventoryComponent.h"
 #include "InventorySlotWidget.h"
 
+#define LOCTEXT_NAMESPACE "InventoryWidget"
+
+UInventoryWidget::UInventoryWidget(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
+{
+	FInventoryFilterTab AllTab;
+	AllTab.Label = LOCTEXT("AllTab", "All");
+	FilterTabs.Add(AllTab);
+
+	FInventoryFilterTab EquipmentTab;
+	EquipmentTab.Label = LOCTEXT("EquipmentTab", "Equipment");
+	EquipmentTab.Categories.Add(EItemCategory::Equipment);
+	FilterTabs.Add(EquipmentTab);
+
+	FInventoryFilterTab ConsumableTab;
+	ConsumableTab.Label = LOCTEXT("ConsumableTab", "Consumable");
+	ConsumableTab.Categories.Add(EItemCategory::Consumable);
+	FilterTabs.Add(ConsumableTab);
+}
+
 void UInventoryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+
+	BuildFilterTabs();
 
 	if (bAutoInitialize && !IsValid(Inventory))
 	{
@@ -72,7 +96,11 @@ void UInventoryWidget::RebuildSlots()
 			}
 
 			BagSlotWidgets.Add(SlotWidget);
+			BagSlotVisibility.Add(SlotWidget->GetVisibility());
 		}
+
+		BagSlotShown.Init(true, BagSlotWidgets.Num());
+		ApplyFilter();
 	}
 	else
 	{
@@ -133,6 +161,12 @@ void UInventoryWidget::HandleInventorySlotChanged(const int32 SlotIndex)
 	if (BagSlotWidgets.IsValidIndex(SlotIndex))
 	{
 		BagSlotWidgets[SlotIndex]->RefreshSlot();
+
+		// A potion moved into a slot the Equipment tab showed: it leaves the view (and the rest close up).
+		if (PassesFilter(SlotIndex) != BagSlotShown[SlotIndex])
+		{
+			ApplyFilter();
+		}
 		return;
 	}
 
@@ -146,6 +180,117 @@ void UInventoryWidget::HandleInventorySlotChanged(const int32 SlotIndex)
 	for (UInventorySlotWidget* SlotWidget : BagSlotWidgets)
 	{
 		SlotWidget->RefreshSlot();
+	}
+
+	ApplyFilter();
+}
+
+/* -------------------- Filter -------------------- */
+
+void UInventoryWidget::BuildFilterTabs()
+{
+	for (UCharacterMenuTabButton* TabButton : FilterTabButtons)
+	{
+		if (IsValid(TabButton))
+		{
+			TabButton->RemoveFromParent();
+		}
+	}
+
+	FilterTabButtons.Reset();
+
+	if (!IsValid(FilterTabContainer) || !FilterTabButtonClass)
+	{
+		return;
+	}
+
+	for (int32 TabIndex = 0; TabIndex < FilterTabs.Num(); ++TabIndex)
+	{
+		UCharacterMenuTabButton* TabButton = CreateWidget<UCharacterMenuTabButton>(this, FilterTabButtonClass);
+		TabButton->SetupTab(TabIndex, FilterTabs[TabIndex].Label);
+		TabButton->SetKeyText(FText::GetEmpty());
+		TabButton->SetSelected(TabIndex == FilterTabIndex);
+		TabButton->OnTabClicked.AddUniqueDynamic(this, &UInventoryWidget::HandleFilterTabClicked);
+		FilterTabContainer->AddChild(TabButton);
+		FilterTabButtons.Add(TabButton);
+	}
+}
+
+void UInventoryWidget::HandleFilterTabClicked(const int32 ClickedTabIndex)
+{
+	SetFilterTab(ClickedTabIndex);
+}
+
+void UInventoryWidget::SetFilterTab(const int32 TabIndex)
+{
+	if (TabIndex == FilterTabIndex)
+	{
+		return;
+	}
+
+	FilterTabIndex = TabIndex;
+
+	for (UCharacterMenuTabButton* TabButton : FilterTabButtons)
+	{
+		if (IsValid(TabButton))
+		{
+			TabButton->SetSelected(TabButton->GetTabIndex() == FilterTabIndex);
+		}
+	}
+
+	ApplyFilter();
+	OnFilterTabChanged(FilterTabIndex);
+}
+
+bool UInventoryWidget::PassesFilter(const int32 SlotIndex) const
+{
+	if (!IsValid(Inventory) || !FilterTabs.IsValidIndex(FilterTabIndex))
+	{
+		return true;
+	}
+
+	const FInventoryFilterTab& Tab = FilterTabs[FilterTabIndex];
+	const FInventorySlot InventorySlot = Inventory->GetSlot(SlotIndex);
+
+	if (InventorySlot.IsEmpty())
+	{
+		return Tab.Categories.IsEmpty() || bShowEmptySlotsWhenFiltered;
+	}
+
+	return Tab.Shows(InventorySlot.Item);
+}
+
+void UInventoryWidget::ApplyFilter()
+{
+	UUniformGridPanel* Grid = Cast<UUniformGridPanel>(BagContainer);
+	const int32 RowLength = FMath::Max(Columns, 1);
+	int32 DisplayIndex = 0;
+
+	for (int32 SlotIndex = 0; SlotIndex < BagSlotWidgets.Num(); ++SlotIndex)
+	{
+		UInventorySlotWidget* SlotWidget = BagSlotWidgets[SlotIndex];
+		const bool bShown = PassesFilter(SlotIndex);
+
+		BagSlotShown[SlotIndex] = bShown;
+		SlotWidget->SetVisibility(bShown ? BagSlotVisibility[SlotIndex] : ESlateVisibility::Collapsed);
+
+		if (!bShown)
+		{
+			continue;
+		}
+
+		// A grid places children by row and column, so shown slots are moved up to close the gaps.
+		// Other panels (a Wrap Box) flow around collapsed children by themselves.
+		if (Grid)
+		{
+			if (UUniformGridSlot* GridSlot = Cast<UUniformGridSlot>(SlotWidget->Slot))
+			{
+				GridSlot->SetRow(DisplayIndex / RowLength);
+				GridSlot->SetColumn(DisplayIndex % RowLength);
+			}
+		}
+
+		++DisplayIndex;
 	}
 }
 
@@ -173,6 +318,8 @@ void UInventoryWidget::ClearCreatedSlots()
 	}
 
 	BagSlotWidgets.Reset();
+	BagSlotShown.Reset();
+	BagSlotVisibility.Reset();
 	EquipmentSlotWidgets.Reset();
 }
 
@@ -183,3 +330,5 @@ void UInventoryWidget::Unbind()
 		Inventory->OnInventorySlotChanged.RemoveDynamic(this, &UInventoryWidget::HandleInventorySlotChanged);
 	}
 }
+
+#undef LOCTEXT_NAMESPACE

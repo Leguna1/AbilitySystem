@@ -14,6 +14,7 @@ class UResourceComponent;
 class USkeletalMesh;
 class USkeletalMeshComponent;
 class UTexture2D;
+class UWeaponManagerComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FInventorySlotChangedSignature, int32, SlotIndex);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FEquipmentChangedSignature, int32, EquipmentSlotIndex, UEquipmentDataAsset*, PreviousItem, UEquipmentDataAsset*, NewItem);
@@ -88,7 +89,10 @@ struct FRegisteredEquipmentMesh
  * Bag: a fixed number of slots, each holding an item asset and a count (stacks up to the item's Max Stack Size).
  * Equipment: one slot per Equipment Slot Definition. Equipping takes the item out of the bag;
  * unequipping puts it back. While worn, an item's stats go to the Combatant Component and its
- * meshes are set on the character's mesh components registered for its slot.
+ * meshes are set on the character's mesh components registered for its slot. An item fits every slot whose
+ * tag is its Equipment Slot or under it (Equipment.Slot.Weapon fits .Weapon.Primary and .Weapon.Secondary).
+ * Weapons: Weapon Data Assets are equipment too. The Weapon Manager watches its Inventory Weapon Slots and
+ * spawns, holsters and draws the weapon actors; the drawn weapon's slot can't change while an ability runs.
  * Consumables: Use Item spends one and starts its Cooldown Group's cooldown. Cooldowns live on the
  * owner's Ability Component (keyed by tag, like ability cooldowns), so the owner needs one for cooldowns to work.
  *
@@ -142,6 +146,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Inventory")
 	bool MoveItem(int32 FromSlotIndex, int32 ToSlotIndex);
 
+	/**
+	 * Tidies the bag: merges partial stacks, then orders items by Category (the enum's order: Equipment
+	 * before Consumable), then by Display Name, packed into the first slots. For a "Sort" button.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Inventory")
+	void SortItems();
+
 	/* -------------------- Consumables -------------------- */
 
 	/**
@@ -193,9 +204,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
 	UEquipmentDataAsset* GetEquippedItemInSlot(FGameplayTag SlotTag) const;
 
-	/** True if Item is equipment that fits EquipmentSlotIndex. -1 = fits any of this inventory's slots. */
+	/**
+	 * True if Item is equipment that fits EquipmentSlotIndex and that slot can change now.
+	 * -1 = the slot it would go to (an empty fitting one first).
+	 */
 	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
 	bool CanEquip(const UItemDataAsset* Item, int32 EquipmentSlotIndex = -1) const;
+
+	/** False while the slot holds the drawn weapon and an ability is running (the weapon can't be swapped then). */
+	UFUNCTION(BlueprintPure, Category = "Inventory|Equipment")
+	bool CanChangeEquipmentSlot(int32 EquipmentSlotIndex) const;
 
 	/**
 	 * Wears the item in bag slot SlotIndex. Whatever was worn there goes back into that bag slot.
@@ -278,6 +296,12 @@ private:
 
 	bool IsValidSlotIndex(int32 SlotIndex) const { return Slots.IsValidIndex(SlotIndex); }
 
+	/** Item's Equipment Slot is the slot's tag or a parent of it. */
+	bool FitsEquipmentSlot(const UEquipmentDataAsset* Item, int32 EquipmentSlotIndex) const;
+
+	/** Where Item goes when no slot is given: the first empty fitting slot, else the first fitting one. -1 if none. */
+	int32 FindEquipmentSlotFor(const UEquipmentDataAsset* Item) const;
+
 	void BroadcastSlotChanged(int32 SlotIndex);
 
 	/** Would using Item change anything right now (something to restore, or a buff)? */
@@ -295,6 +319,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UResourceComponent> ResourceComponent;
+
+	/** Asked before a weapon slot changes, so the drawn weapon isn't swapped mid-ability. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWeaponManagerComponent> WeaponManager;
 
 	UPROPERTY(Transient)
 	TArray<FInventorySlot> Slots;
