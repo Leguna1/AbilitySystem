@@ -16,7 +16,8 @@ class UPanelWidget;
  * Setup in the Widget Blueprint:
  * - A Horizontal or Vertical Box named "SlotContainer".
  * - Slot Widget Class set to your Ability Slot Widget Blueprint.
- * Then call Initialize Bar with the player's Ability Component.
+ * Then call Initialize Bar with the player's Ability Component. Bars inside the Character Menu are
+ * initialized by the menu (Companion Menus excepted), so a copy on the Skills tab needs no wiring.
  *
  * Without an Action Bar Component on the owner, it falls back to one slot per granted ability (read-only).
  *

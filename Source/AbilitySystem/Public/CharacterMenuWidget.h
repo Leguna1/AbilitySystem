@@ -67,7 +67,8 @@ struct FCharacterMenuTab
  * so remapping a tab action also changes it here.
  *
  * Content: when the menu opens for a new pawn (first time, after a respawn), every Attribute Panel,
- * Inventory Widget and Skill Tree Widget inside it is pointed at the pawn, however deeply nested.
+ * Inventory Widget, Skill Tree Widget and Ability Bar Widget inside it is pointed at the pawn, however deeply nested.
+ * An Ability Bar on the Skills tab is a live copy of the HUD bar: drag skill tree nodes onto it to assign keys.
  */
 UCLASS(Abstract, Blueprintable)
 class ABILITYSYSTEM_API UCharacterMenuWidget : public UUserWidget

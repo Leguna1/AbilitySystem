@@ -1,5 +1,7 @@
 #include "CharacterMenuWidget.h"
 
+#include "AbilityBarWidget.h"
+#include "AbilityComponent.h"
 #include "AbilitySystemLog.h"
 #include "AttributePanelWidget.h"
 #include "Blueprint/WidgetTree.h"
@@ -468,8 +470,9 @@ void UCharacterMenuWidget::BindContentToPawn(APawn* Pawn)
 
 	USkillTreeComponent* SkillTree = IsValid(Pawn) ? Pawn->FindComponentByClass<USkillTreeComponent>() : nullptr;
 	UInventoryComponent* Inventory = IsValid(Pawn) ? Pawn->FindComponentByClass<UInventoryComponent>() : nullptr;
+	UAbilityComponent* Abilities = IsValid(Pawn) ? Pawn->FindComponentByClass<UAbilityComponent>() : nullptr;
 
-	CharacterMenu::ForEachWidgetDeep(this, [Pawn, OldPawn, SkillTree, Inventory](UWidget* Widget)
+	CharacterMenu::ForEachWidgetDeep(this, [Pawn, OldPawn, SkillTree, Inventory, Abilities](UWidget* Widget)
 	{
 		// A Companion Menu points its own parts at the companion; the player's pawn must not go in there.
 		if (Widget->IsA<UCompanionMenuWidget>())
@@ -495,6 +498,12 @@ void UCharacterMenuWidget::BindContentToPawn(APawn* Pawn)
 		else if (USkillTreeWidget* SkillTreeWidget = Cast<USkillTreeWidget>(Widget))
 		{
 			SkillTreeWidget->InitializeTree(SkillTree);
+		}
+		else if (UAbilityBarWidget* AbilityBar = Cast<UAbilityBarWidget>(Widget))
+		{
+			// A copy of the HUD bar on the Skills tab: both show the pawn's one Action Bar Component,
+			// so dropping skill tree nodes here changes the real bar.
+			AbilityBar->InitializeBar(Abilities);
 		}
 		else if (UInventorySlotWidget* SlotWidget = Cast<UInventorySlotWidget>(Widget))
 		{
