@@ -114,14 +114,14 @@ void AEnemySpawner::UpdateSlots()
 			SlotEnemy->Destroy();
 		}
 
-		if (!bRespawnAsGroup && RespawnDelay > 0.0f && Now - Slot.DiedAt >= RespawnDelay)
+		if (bRespawnEnabled && !bRespawnAsGroup && RespawnDelay > 0.0f && Now - Slot.DiedAt >= RespawnDelay)
 		{
 			SpawnInSlot(SlotIndex);
 		}
 	}
 
 	// The whole pack returns together, counted from the last one that fell.
-	if (bRespawnAsGroup && bAllDead && RespawnDelay > 0.0f && Now - LastDeath >= RespawnDelay)
+	if (bRespawnEnabled && bRespawnAsGroup && bAllDead && RespawnDelay > 0.0f && Now - LastDeath >= RespawnDelay)
 	{
 		SpawnMissing();
 	}

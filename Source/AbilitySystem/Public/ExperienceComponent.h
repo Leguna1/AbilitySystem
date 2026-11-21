@@ -13,6 +13,7 @@ class USoundBase;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FExperienceChangedSignature, int32, Experience, int32, ExperienceToNextLevel, int32, Level);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FLevelUpSignature, int32, NewLevel);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FKillAwardedSignature, AActor*, Victim);
 
 /**
  * Experience and levels. Kills give experience (the victim's Experience Reward). Every level gained:
@@ -68,6 +69,17 @@ public:
 	/** Experience for Victim, as if the owner had killed it (a companion's kills). */
 	UFUNCTION(BlueprintCallable, Category = "Experience")
 	void AwardKill(AActor* Victim);
+
+	/** A kill was credited to the owner: its own or its companion's. Quests count kills from here. */
+	UPROPERTY(BlueprintAssignable, Category = "Experience")
+	FKillAwardedSignature OnKillAwarded;
+
+	/**
+	 * Puts the owner at a saved level and experience (loading a game). Levels above the current one give
+	 * their skill and attribute points as unspent, without the level up effect. Never lowers the level.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Experience")
+	void RestoreProgress(int32 SavedLevel, int32 SavedExperience);
 
 
 protected:

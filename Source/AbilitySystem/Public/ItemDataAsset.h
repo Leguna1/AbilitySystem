@@ -22,6 +22,12 @@ enum class EItemCategory : uint8
 	Currency UMETA(DisplayName = "Currency"),
 
 	// New categories go below, so saved assets keep their values.
+
+	/** Crafting and enhancement materials, monster parts to sell (a wolf pelt, an enhancement stone). */
+	Material UMETA(DisplayName = "Material"),
+
+	/** Keys and quest items: opens a door or chest, or is what a quest asks for. */
+	Key UMETA(DisplayName = "Key / Quest"),
 };
 
 /**
@@ -62,6 +68,10 @@ public:
 	/** Percent chance to drop when a loot list has this item, before that entry's own changes. */
 	UFUNCTION(BlueprintPure, Category = "Item|Loot")
 	float GetDropChance() const { return DropChance; }
+
+	/** Gold a merchant pays for one. 0 = merchants don't buy it. */
+	UFUNCTION(BlueprintPure, Category = "Item|Trade")
+	int32 GetSellValue() const { return FMath::Max(SellValue, 0); }
 
 	/** Mesh shown on the pickup lying on the ground. Null = the pickup Blueprint keeps its own. */
 	UFUNCTION(BlueprintPure, Category = "Item|Loot")
@@ -104,6 +114,10 @@ protected:
 	 */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Loot", meta = (ClampMin = "0.0", ClampMax = "100.0", Units = "Percent"))
 	float DropChance = 10.0f;
+
+	/** Gold a merchant pays for one of these. 0 = can't be sold (quest items, keys). */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Trade", meta = (ClampMin = "0"))
+	int32 SellValue = 0;
 
 	/** Shown spinning on the pickup when the item lies on the ground. Empty = the pickup Blueprint's own mesh. */
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Item|Loot")

@@ -155,5 +155,39 @@ void UExperienceComponent::BroadcastExperienceChanged()
 void UExperienceComponent::AwardKill(AActor* Victim)
 {
 	AddExperience(GetExperienceForKill(Victim));
+	OnKillAwarded.Broadcast(Victim);
+}
+
+void UExperienceComponent::RestoreProgress(const int32 SavedLevel, const int32 SavedExperience)
+{
+	const int32 TargetLevel = FMath::Clamp(SavedLevel, 1, FMath::Max(MaxLevel, 1));
+	const int32 LevelsGained = TargetLevel - Level;
+
+	if (LevelsGained > 0)
+	{
+		Level = TargetLevel;
+
+		if (IsValid(SkillTreeComponent) && SkillPointsPerLevel > 0)
+		{
+			SkillTreeComponent->AddSkillPoints(SkillPointsPerLevel * LevelsGained);
+		}
+
+		if (IsValid(AttributeComponent))
+		{
+			AttributeComponent->SetCharacterLevel(Level);
+			AttributeComponent->AddAttributePoints(AttributePointsPerLevel * LevelsGained);
+		}
+
+		// Once, so level-locked skill ranks and UI catch up; no effect or sound for a loaded level.
+		OnLevelUp.Broadcast(Level);
+
+		if (IsValid(ResourceComponent))
+		{
+			ResourceComponent->RefillResources();
+		}
+	}
+
+	Experience = IsMaxLevel() ? 0 : FMath::Clamp(SavedExperience, 0, FMath::Max(GetExperienceToNextLevel() - 1, 0));
+	BroadcastExperienceChanged();
 }
 

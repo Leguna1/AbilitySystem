@@ -74,6 +74,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Loot")
 	ALootPickup* SpawnPickup(UItemDataAsset* Item, int32 Count, FVector Origin);
 
+	/** Off for owners that drop by hand (a chest calls Drop Loot when opened). Set before Begin Play. */
+	void SetDropOnDeath(const bool bNewDropOnDeath) { bDropOnDeath = bNewDropOnDeath; }
+
 	/** Loot hit the ground. Only fires when at least one item dropped. */
 	UPROPERTY(BlueprintAssignable, Category = "Loot")
 	FLootDroppedSignature OnLootDropped;

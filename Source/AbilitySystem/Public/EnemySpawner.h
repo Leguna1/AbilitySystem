@@ -31,6 +31,16 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Spawner")
 	int32 GetAliveCount() const;
 
+	/**
+	 * Off = enemies that die stay dead (an altar's guards once the altar is taken). Corpses are still cleared.
+	 * Turning it back on respawns after the usual delay.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Spawner|Respawn")
+	void SetRespawnEnabled(bool bEnabled) { bRespawnEnabled = bEnabled; }
+
+	UFUNCTION(BlueprintPure, Category = "Spawner|Respawn")
+	bool IsRespawnEnabled() const { return bRespawnEnabled; }
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -93,4 +103,5 @@ private:
 
 	TArray<FSpawnSlot> Slots;
 	FTimerHandle UpdateTimer;
+	bool bRespawnEnabled = true;
 };
